@@ -1,0 +1,47 @@
+# =========================
+# CORE PYTHON UTILITIES
+# =========================
+python-dotenv>=1.0.0
+typing-extensions>=4.5.0
+
+# =========================
+# PDF PROCESSING
+# =========================
+pdfplumber>=0.10.0
+pdfminer.six>=20221105
+
+# =========================
+# DATA PROCESSING
+# =========================
+pandas>=2.0.0
+numpy>=1.24.0
+
+# =========================
+# DATABASE
+# =========================
+supabase>=2.3.0
+psycopg2-binary>=2.9.9
+
+# =========================
+# VECTOR DATABASE & EMBEDDING
+# =========================
+pinecone-client>=3.0.0
+langchain>=0.2.0
+langchain-openai>=0.1.0
+openai>=1.12.0
+
+# =========================
+# WEB / API (RAG ENGINE)
+# =========================
+fastapi>=0.110.0
+uvicorn>=0.27.0
+
+# =========================
+# HTML & TEXT CLEANING
+# =========================
+beautifulsoup4>=4.12.0
+
+# =========================
+# LOGGING & CLI
+# =========================
+rich>=13.7.0

@@ -1,0 +1,49 @@
+# ======================
+# ENV & SECRETS
+# ======================
+.env
+.env.backup
+
+# ======================
+# DATA SENSITIVE
+# ======================
+csv/
+db/
+documents/
+
+# ======================
+# RUNTIME OUTPUT
+# ======================
+complete_enterprise_evaluation_results/
+logs/
+cache/
+memory/
+
+# ======================
+# PYTHON
+# ======================
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# ======================
+# VIRTUAL ENV
+# ======================
+venv/
+venv-camelot/
+
+# ======================
+# BACKUP & TEMP
+# ======================
+*.backup
+*.bak
+rag_engine.py.backup.*
+testing/
+
+# ======================
+# DEBUG FILES
+# ======================
+debug_input.html
+debug_voice.html
+macos_chrome_speech_fix.html

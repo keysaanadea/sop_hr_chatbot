@@ -3,11 +3,14 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>DENAI - Natural Speech-to-Speech</title>
-<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Manrope:wght@400;500;600;700;800&family=Orbitron:wght@400;500;600;700;800;900&family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<title>DEN·AI - AI Assistant with Visualization</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+
+<!-- 🎯 Chart.js for LLM-generated visualizations -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js@3.9.1/dist/chart.min.js"></script>
 
 <style>
-/* SEMUA CSS TETAP SAMA - TIDAK DIUBAH */
+/* ================= CORPORATE COLOR SCHEME ================= */
 * { 
   box-sizing: border-box; 
   margin: 0;
@@ -15,46 +18,82 @@
 }
 
 :root {
-  --bg-primary: #0a0b0f;
-  --bg-secondary: #12141a;
-  --bg-tertiary: #1a1d26;
-  --accent-primary: #00d4aa;
-  --accent-secondary: #0891b2;
-  --accent-gradient: linear-gradient(135deg, #00d4aa 0%, #00b4d4 50%, #0891b2 100%);
-  --accent-danger: #f43f5e;
-  --accent-speech: #8b5cf6;
-  --accent-call: #10b981;
-  --text-primary: #f8fafc;
-  --text-secondary: #cbd5e1;
-  --text-muted: #64748b;
-  --border-primary: #1e293b;
-  --border-secondary: #334155;
-  --glow-primary: rgba(0, 212, 170, 0.4);
-  --glow-secondary: rgba(0, 180, 212, 0.3);
+  /* Corporate Colors */
+  --color-primary: #dc2626;        /* Corporate Red - Primary */
+  --color-secondary: #1e40af;      /* Professional Blue - Secondary */
+  --color-accent: #059669;         /* Success Green */
+  --color-warning: #d97706;        /* Warning Orange */
   
-  --font-display: 'Manrope', system-ui, sans-serif;
+  /* Neutral Grays */
+  --color-gray-900: #111827;       /* Dark Gray/Black */
+  --color-gray-800: #1f2937;
+  --color-gray-700: #374151;
+  --color-gray-600: #4b5563;
+  --color-gray-500: #6b7280;
+  --color-gray-400: #9ca3af;
+  --color-gray-300: #d1d5db;
+  --color-gray-200: #e5e7eb;
+  --color-gray-100: #f3f4f6;
+  --color-gray-50: #f9fafb;
+  --color-white: #ffffff;
+  
+  /* Gradients */
+  --gradient-primary: linear-gradient(135deg, var(--color-primary) 0%, var(--color-secondary) 100%);
+  --gradient-subtle: linear-gradient(135deg, var(--color-gray-50) 0%, var(--color-white) 100%);
+  
+  /* Backgrounds */
+  --bg-primary: var(--color-white);
+  --bg-secondary: var(--color-gray-100);
+  --bg-tertiary: var(--color-gray-200);
+  --bg-dark: var(--color-gray-900);
+  --bg-card: var(--color-white);
+  
+  /* Text */
+  --text-primary: var(--color-gray-900);
+  --text-secondary: var(--color-gray-600);
+  --text-muted: var(--color-gray-500);
+  --text-light: var(--color-white);
+  
+  /* Borders */
+  --border-primary: var(--color-gray-200);
+  --border-secondary: var(--color-gray-300);
+  --border-focus: var(--color-primary);
+  
+  /* Shadows */
+  --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.05);
+  --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
+  --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
+  --shadow-xl: 0 20px 25px -5px rgb(0 0 0 / 0.1), 0 8px 10px -6px rgb(0 0 0 / 0.1);
+  
+  /* Typography */
+  --font-primary: 'Inter', system-ui, -apple-system, sans-serif;
   --font-mono: 'JetBrains Mono', monospace;
-  --font-brand: 'Orbitron', 'JetBrains Mono', monospace;
   
-  --space-xs: 0.25rem;
-  --space-sm: 0.5rem;
-  --space-md: 1rem;
-  --space-lg: 1.5rem;
-  --space-xl: 2rem;
-  --space-2xl: 3rem;
+  /* Spacing */
+  --space-1: 0.25rem;
+  --space-2: 0.5rem;
+  --space-3: 0.75rem;
+  --space-4: 1rem;
+  --space-5: 1.25rem;
+  --space-6: 1.5rem;
+  --space-8: 2rem;
+  --space-10: 2.5rem;
+  --space-12: 3rem;
   
+  /* Border radius */
   --radius-sm: 0.375rem;
   --radius-md: 0.5rem;
   --radius-lg: 0.75rem;
   --radius-xl: 1rem;
+  --radius-2xl: 1.5rem;
 }
 
 body {
-  height: 100vh;
-  font-family: var(--font-display);
-  background: var(--bg-primary);
+  font-family: var(--font-primary);
+  background: var(--bg-secondary);
   color: var(--text-primary);
   display: flex;
+  height: 100vh;
   overflow: hidden;
   font-weight: 400;
   line-height: 1.5;
@@ -62,17 +101,279 @@ body {
 
 ::-webkit-scrollbar { width: 6px; }
 ::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: var(--border-secondary); border-radius: 3px; }
-::-webkit-scrollbar-thumb:hover { background: var(--text-muted); }
+::-webkit-scrollbar-thumb { background: var(--color-gray-300); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: var(--color-gray-400); }
 
-/* ================= CALL MODE - TETAP SAMA ================= */
+/* ================= ENHANCED LOADING STATES ================= */
+.processing-message {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-4) var(--space-6);
+  background: linear-gradient(135deg, var(--color-primary) 0%, #b91c1c 100%);
+  color: var(--text-light);
+  border-radius: var(--radius-xl);
+  font-weight: 600;
+  animation: popInMessage 0.5s cubic-bezier(0.68, -0.55, 0.265, 1.55);
+  box-shadow: 
+    0 10px 25px rgba(220, 38, 38, 0.3),
+    0 4px 10px rgba(0, 0, 0, 0.2);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+@keyframes popInMessage {
+  0% {
+    opacity: 0;
+    transform: translateY(30px) scale(0.7);
+  }
+  50% {
+    opacity: 0.8;
+    transform: translateY(-5px) scale(1.05);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.processing-spinner {
+  width: 22px;
+  height: 22px;
+  border: 3px solid rgba(255, 255, 255, 0.3);
+  border-radius: 50%;
+  border-top-color: var(--text-light);
+  animation: spinFast 0.8s linear infinite;
+}
+
+@keyframes spinFast {
+  to { transform: rotate(360deg); }
+}
+
+.processing-message .message-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.processing-message .main-text {
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.processing-message .sub-text {
+  font-size: 12px;
+  opacity: 0.9;
+  font-weight: 400;
+}
+
+.typing-indicator {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  padding: var(--space-4);
+  justify-content: center;
+}
+
+.typing-dot {
+  width: 10px;
+  height: 10px;
+  background: var(--color-primary);
+  border-radius: 50%;
+  animation: typingBounce 1.4s infinite ease-in-out;
+  box-shadow: 0 2px 6px rgba(220, 38, 38, 0.3);
+}
+
+.typing-dot:nth-child(1) { animation-delay: 0s; }
+.typing-dot:nth-child(2) { animation-delay: 0.2s; }
+.typing-dot:nth-child(3) { animation-delay: 0.4s; }
+
+@keyframes typingBounce {
+  0%, 60%, 100% { 
+    transform: translateY(0) scale(1); 
+    opacity: 0.5; 
+  }
+  30% { 
+    transform: translateY(-10px) scale(1.2); 
+    opacity: 1; 
+  }
+}
+
+/* Enhanced bubble for processing state */
+.processing-bubble {
+  background: linear-gradient(135deg, #f3f4f6 0%, #e5e7eb 100%);
+  border: 2px solid var(--color-primary);
+  position: relative;
+  overflow: hidden;
+}
+
+.processing-bubble::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -100%;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(90deg, transparent, rgba(220, 38, 38, 0.1), transparent);
+  animation: shimmer 2s infinite;
+}
+
+@keyframes shimmer {
+  0% { left: -100%; }
+  100% { left: 100%; }
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+/* ================= CHART VISUALIZATION STYLES ================= */
+.chart-container {
+  position: relative;
+  height: 400px;
+  width: 100%;
+  margin: var(--space-6) 0;
+  padding: var(--space-4);
+  background: var(--bg-card);
+  border-radius: var(--radius-xl);
+  border: 1px solid var(--border-primary);
+  box-shadow: var(--shadow-md);
+}
+
+.chart-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: var(--space-4);
+  padding-bottom: var(--space-3);
+  border-bottom: 1px solid var(--border-secondary);
+}
+
+.chart-title {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--color-primary);
+  font-family: var(--font-primary);
+}
+
+.chart-actions {
+  display: flex;
+  gap: var(--space-2);
+}
+
+.chart-action-btn {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-primary);
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  font-size: 12px;
+  color: var(--text-muted);
+  transition: all 0.2s ease;
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.chart-action-btn:hover {
+  background: var(--color-primary);
+  color: var(--text-light);
+  transform: scale(1.05);
+}
+
+.chart-canvas-wrapper {
+  position: relative;
+  height: 320px;
+  width: 100%;
+}
+
+.chart-loading {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-3);
+  color: var(--text-muted);
+}
+
+.chart-loading .spinner {
+  width: 32px;
+  height: 32px;
+  border: 3px solid var(--color-gray-300);
+  border-top: 3px solid var(--color-primary);
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+.chart-error {
+  text-align: center;
+  padding: var(--space-8);
+  color: var(--color-secondary);
+  background: rgba(220, 38, 38, 0.05);
+  border-radius: var(--radius-lg);
+  border: 1px solid rgba(220, 38, 38, 0.2);
+}
+
+.chart-footer {
+  margin-top: var(--space-4);
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--border-secondary);
+  font-size: 12px;
+  color: var(--text-muted);
+  text-align: center;
+  font-style: italic;
+}
+
+/* Chart animation */
+@keyframes chartFadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.chart-container {
+  animation: chartFadeIn 0.5s ease-out;
+}
+
+/* Mobile responsive charts */
+@media (max-width: 768px) {
+  .chart-container {
+    height: 350px;
+    margin: var(--space-4) 0;
+    padding: var(--space-3);
+  }
+  
+  .chart-canvas-wrapper {
+    height: 280px;
+  }
+  
+  .chart-header {
+    flex-direction: column;
+    gap: var(--space-2);
+    align-items: flex-start;
+  }
+  
+  .chart-actions {
+    width: 100%;
+    justify-content: flex-end;
+  }
+}
+
+/* ================= EXISTING STYLES CONTINUE... ================= */
 .call-mode-overlay {
   position: fixed;
   top: 0;
   left: 0;
   right: 0;
   bottom: 0;
-  background: linear-gradient(135deg, rgba(0, 0, 0, 0.95) 0%, rgba(16, 185, 129, 0.2) 100%);
+  background: linear-gradient(135deg, var(--color-gray-900) 0%, var(--color-primary) 100%);
   backdrop-filter: blur(20px);
   display: none;
   flex-direction: column;
@@ -94,50 +395,48 @@ body {
 .call-interface {
   text-align: center;
   max-width: 500px;
-  padding: var(--space-2xl);
-  background: rgba(26, 29, 38, 0.8);
-  border-radius: var(--radius-xl);
-  border: 1px solid var(--accent-call);
-  box-shadow: 
-    0 20px 60px rgba(16, 185, 129, 0.3),
-    0 0 0 1px rgba(16, 185, 129, 0.2);
+  padding: var(--space-12);
+  background: rgba(255, 255, 255, 0.95);
+  border-radius: var(--radius-2xl);
+  box-shadow: var(--shadow-xl);
+  border: 1px solid var(--border-primary);
 }
 
 .call-avatar {
   width: 120px;
   height: 120px;
-  margin: 0 auto var(--space-xl);
-  background: var(--accent-gradient);
+  margin: 0 auto var(--space-8);
+  background: var(--gradient-primary);
   border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-family: var(--font-brand);
+  font-family: var(--font-mono);
   font-size: 48px;
-  font-weight: 900;
-  color: var(--bg-primary);
+  font-weight: 800;
+  color: var(--text-light);
   position: relative;
   animation: callPulse 2s infinite ease-in-out;
 }
 
 @keyframes callPulse {
-  0%, 100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7); }
-  50% { transform: scale(1.05); box-shadow: 0 0 0 20px rgba(16, 185, 129, 0); }
+  0%, 100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(30, 64, 175, 0.7); }
+  50% { transform: scale(1.05); box-shadow: 0 0 0 20px rgba(30, 64, 175, 0); }
 }
 
 .call-status {
   font-size: 24px;
   font-weight: 700;
-  color: var(--accent-call);
-  margin-bottom: var(--space-md);
-  font-family: var(--font-brand);
+  color: var(--color-primary);
+  margin-bottom: var(--space-4);
+  font-family: var(--font-primary);
 }
 
 .call-transcript {
   background: var(--bg-tertiary);
   border-radius: var(--radius-lg);
-  padding: var(--space-lg);
-  margin: var(--space-lg) 0;
+  padding: var(--space-6);
+  margin: var(--space-6) 0;
   min-height: 100px;
   display: flex;
   align-items: center;
@@ -149,9 +448,9 @@ body {
 
 .call-controls {
   display: flex;
-  gap: var(--space-lg);
+  gap: var(--space-6);
   justify-content: center;
-  margin-top: var(--space-xl);
+  margin-top: var(--space-8);
 }
 
 .call-control-btn {
@@ -165,20 +464,21 @@ body {
   justify-content: center;
   transition: all 0.3s ease;
   font-size: 24px;
+  box-shadow: var(--shadow-md);
 }
 
 .call-control-btn.end-call {
-  background: var(--accent-danger);
-  color: white;
+  background: var(--color-secondary);
+  color: var(--text-light);
 }
 
 .call-control-btn.end-call:hover {
-  background: #dc2626;
+  background: #b91c1c;
   transform: scale(1.1);
 }
 
 .call-control-btn.mute {
-  background: var(--bg-secondary);
+  background: var(--bg-card);
   color: var(--text-secondary);
   border: 2px solid var(--border-primary);
 }
@@ -189,82 +489,23 @@ body {
 }
 
 .call-control-btn.mute.active {
-  background: var(--accent-danger);
-  color: white;
+  background: var(--color-secondary);
+  color: var(--text-light);
 }
 
-/* ================= SPEECH CONTROLS - TETAP SAMA ================= */
-.speech-controls {
-  display: flex;
-  gap: var(--space-sm);
-  align-items: center;
-  margin-left: auto;
-}
-
-.speech-btn {
-  background: var(--bg-tertiary);
-  border: 1px solid var(--border-primary);
-  padding: var(--space-md);
-  border-radius: var(--radius-lg);
-  cursor: pointer;
-  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 48px;
-  min-height: 48px;
-  position: relative;
-  overflow: hidden;
-}
-
-.speech-btn:hover {
-  background: rgba(139, 92, 246, 0.1);
-  border-color: var(--accent-speech);
-  transform: scale(1.05);
-}
-
-.speech-btn.listening {
-  background: linear-gradient(135deg, var(--accent-speech) 0%, #a855f7 100%);
-  border-color: var(--accent-speech);
-  animation: pulse 2s infinite;
-}
-
-.speech-btn.call-mode {
-  background: linear-gradient(135deg, var(--accent-call) 0%, #059669 100%);
-  border-color: var(--accent-call);
-  animation: callGlow 2s infinite;
-}
-
-@keyframes callGlow {
-  0%, 100% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7); }
-  50% { box-shadow: 0 0 0 10px rgba(16, 185, 129, 0); }
-}
-
-.speech-btn svg {
-  width: 20px;
-  height: 20px;
-  color: var(--text-secondary);
-  transition: color 0.3s ease;
-}
-
-.speech-btn:hover svg,
-.speech-btn.listening svg,
-.speech-btn.call-mode svg {
-  color: var(--text-primary);
-}
-
-/* ================= AUDIO VISUALIZER - TETAP SAMA ================= */
+/* ================= AUDIO VISUALIZER ================= */
 .audio-visualizer {
   display: flex;
   gap: 3px;
   align-items: center;
   height: 30px;
-  margin: var(--space-lg) 0;
+  margin: var(--space-6) 0;
+  justify-content: center;
 }
 
 .audio-bar {
   width: 4px;
-  background: var(--accent-call);
+  background: var(--color-primary);
   border-radius: 2px;
   transition: height 0.1s ease;
   min-height: 4px;
@@ -279,114 +520,126 @@ body {
   50% { height: 24px; }
 }
 
-/* ================= VOLUME INDICATOR - TETAP SAMA ================= */
+/* ================= VOLUME INDICATOR ================= */
 .volume-indicator {
   position: absolute;
   top: 50%;
-  right: var(--space-lg);
+  right: var(--space-6);
   transform: translateY(-50%);
-  background: rgba(0, 0, 0, 0.8);
-  padding: var(--space-sm) var(--space-md);
+  background: rgba(0, 0, 0, 0.9);
+  padding: var(--space-2) var(--space-4);
   border-radius: var(--radius-lg);
   font-size: 12px;
-  color: var(--accent-call);
+  color: var(--text-light);
   font-family: var(--font-mono);
   opacity: 0;
   transition: opacity 0.3s ease;
+  box-shadow: var(--shadow-lg);
 }
 
 .volume-indicator.show {
   opacity: 1;
 }
 
-/* ================= SIDEBAR - TETAP SAMA ================= */
+/* ================= SIDEBAR ================= */
 .sidebar {
   width: 300px;
-  background: var(--bg-secondary);
+  background: var(--bg-card);
   border-right: 1px solid var(--border-primary);
-  padding: var(--space-lg);
+  padding: var(--space-6);
   display: flex;
   flex-direction: column;
-  gap: var(--space-lg);
-  position: relative;
+  gap: var(--space-6);
+  box-shadow: var(--shadow-sm);
 }
 
 .sidebar-header {
   display: flex;
   align-items: center;
-  gap: var(--space-lg);
-  padding: var(--space-xl);
-  background: linear-gradient(135deg, rgba(26, 29, 38, 0.9) 0%, rgba(18, 20, 26, 0.95) 100%);
+  gap: var(--space-4);
+  padding: var(--space-6);
+  background: var(--gradient-subtle);
   border-radius: var(--radius-xl);
   border: 1px solid var(--border-primary);
-  position: relative;
-  overflow: hidden;
+  box-shadow: var(--shadow-sm);
 }
 
 .sidebar-header .logo {
   width: 42px;
   height: 42px;
-  background: var(--accent-gradient);
+  background: var(--gradient-primary);
   border-radius: var(--radius-lg);
   display: flex;
   align-items: center;
   justify-content: center;
-  font-family: var(--font-brand);
+  font-family: var(--font-mono);
   font-weight: 800;
   font-size: 16px;
-  color: var(--bg-primary);
-  box-shadow: 
-    0 4px 16px rgba(0, 212, 170, 0.4),
-    0 8px 32px rgba(0, 180, 212, 0.2),
-    inset 0 1px 0 rgba(255, 255, 255, 0.2);
-  position: relative;
-  z-index: 1;
+  color: var(--text-light);
+  box-shadow: var(--shadow-md);
 }
 
 .sidebar-header .title {
-  font-family: var(--font-brand);
+  font-family: var(--font-primary);
   font-weight: 700;
   font-size: 18px;
-  letter-spacing: 0.05em;
   color: var(--text-primary);
   text-transform: uppercase;
-  background: var(--accent-gradient);
-  background-clip: text;
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  filter: drop-shadow(0 0 8px var(--glow-primary));
+  letter-spacing: 0.05em;
   position: relative;
-  z-index: 1;
+}
+
+.sidebar-header .title .middle-dot {
+  color: var(--color-primary);
+  font-weight: 900;
+  font-size: 24px;
+  line-height: 1;
+  margin: 0 2px;
+  display: inline-block;
+  vertical-align: middle;
+}
+
+#appTitle .middle-dot {
+  color: var(--color-primary);
+  font-weight: 900;
+  font-size: 28px;
+  line-height: 1;
+  margin: 0 3px;
+  display: inline-block;
+  vertical-align: middle;
+}
+
+#landing h1 .middle-dot {
+  color: var(--color-primary);
+  font-weight: 900;
+  font-size: 56px;
+  line-height: 1;
+  margin: 0 4px;
+  display: inline-block;
+  vertical-align: middle;
 }
 
 .new-chat {
-  background: var(--accent-gradient);
+  background: var(--gradient-primary);
   border: none;
-  padding: var(--space-lg) var(--space-2xl);
+  padding: var(--space-4) var(--space-6);
   border-radius: var(--radius-xl);
-  color: var(--bg-primary);
-  font-weight: 700;
+  color: var(--text-light);
+  font-weight: 600;
   font-size: 14px;
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: var(--space-sm);
-  transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
-  box-shadow: 
-    0 6px 20px rgba(0, 212, 170, 0.3),
-    0 12px 40px rgba(0, 180, 212, 0.15);
-  font-family: var(--font-display);
-  position: relative;
-  overflow: hidden;
-  z-index: 1;
+  gap: var(--space-2);
+  transition: all 0.3s ease;
+  box-shadow: var(--shadow-md);
+  font-family: var(--font-primary);
 }
 
 .new-chat:hover {
-  transform: translateY(-3px) scale(1.02);
-  box-shadow: 
-    0 8px 30px rgba(0, 212, 170, 0.5),
-    0 16px 60px rgba(0, 180, 212, 0.25);
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-lg);
 }
 
 .new-chat svg {
@@ -399,39 +652,38 @@ body {
   flex: 1;
   display: flex;
   flex-direction: column;
-  gap: var(--space-sm);
+  gap: var(--space-2);
 }
 
 .session-item {
-  padding: var(--space-md) var(--space-lg);
+  padding: var(--space-4) var(--space-5);
   border-radius: var(--radius-lg);
   cursor: pointer;
-  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-  background: var(--bg-tertiary);
+  transition: all 0.2s ease;
+  background: var(--bg-secondary);
   border: 1px solid transparent;
   display: flex;
   align-items: center;
   justify-content: space-between;
   position: relative;
-  overflow: hidden;
 }
 
 .session-item:hover {
-  background: rgba(45, 212, 191, 0.1);
-  border-color: rgba(45, 212, 191, 0.3);
-  transform: translateX(4px);
+  background: rgba(30, 64, 175, 0.05);
+  border-color: var(--color-primary);
+  transform: translateX(2px);
 }
 
 .session-item.active {
-  background: rgba(45, 212, 191, 0.15);
-  border-color: rgba(45, 212, 191, 0.4);
+  background: rgba(30, 64, 175, 0.1);
+  border-color: var(--color-primary);
   font-weight: 600;
 }
 
 .session-item .title {
   display: flex;
   align-items: center;
-  gap: var(--space-sm);
+  gap: var(--space-2);
   font-size: 13px;
   color: var(--text-secondary);
   flex: 1;
@@ -441,11 +693,38 @@ body {
   font-weight: 500;
 }
 
-/* 🔥 NEW: Session Management Styles */
+/* Remove pin indicators - use sections instead */
+.session-item .pin-indicator {
+  display: none;
+}
+
 .session-item .pin-icon {
+  display: none;
+}
+
+/* Section headers for organized sidebar */
+.session-section {
+  margin: var(--space-6) 0 var(--space-3) 0;
+}
+
+.section-header {
   font-size: 12px;
-  color: var(--accent-primary);
-  margin-right: 4px;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 0 var(--space-2);
+  margin-bottom: var(--space-2);
+}
+
+.session-section:first-child .section-header {
+  margin-top: 0;
+}
+
+.session-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
 }
 
 .session-actions {
@@ -455,11 +734,12 @@ body {
   right: 12px;
   top: 50%;
   transform: translateY(-50%);
-  background: var(--bg-secondary);
+  background: var(--bg-card);
   padding: 4px;
   border-radius: var(--radius-md);
   border: 1px solid var(--border-primary);
   z-index: 10;
+  box-shadow: var(--shadow-md);
 }
 
 .session-item:hover .session-actions {
@@ -494,13 +774,15 @@ body {
 }
 
 .session-action-btn.pin-btn.active svg {
-  color: var(--accent-primary);
-  fill: var(--accent-primary);
+  color: var(--color-secondary);
+  fill: var(--color-secondary);
 }
 
 .session-action-btn.delete-btn:hover svg {
-  color: var(--accent-danger);
+  color: var(--color-secondary);
 }
+
+/* ================= MAIN CONTENT ================= */
 .main {
   flex: 1;
   display: flex;
@@ -509,65 +791,111 @@ body {
 }
 
 .header {
-  padding: var(--space-xl) var(--space-2xl);
+  padding: var(--space-6) var(--space-8);
   border-bottom: 1px solid var(--border-primary);
-  background: var(--bg-secondary);
+  background: var(--bg-card);
   display: flex;
   justify-content: space-between;
   align-items: center;
-  position: relative;
+  box-shadow: var(--shadow-sm);
 }
 
 #appTitle {
   font-size: 24px;
   font-weight: 800;
-  letter-spacing: 0.02em;
   display: flex;
   align-items: center;
-  gap: var(--space-lg);
+  gap: var(--space-4);
   color: var(--text-primary);
-  font-family: var(--font-brand);
-  text-transform: uppercase;
-  background: var(--accent-gradient);
-  background-clip: text;
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  filter: drop-shadow(0 0 12px var(--glow-primary));
-  position: relative;
+  font-family: var(--font-primary);
 }
 
 #appTitle .logo-icon {
   width: 48px;
   height: 48px;
-  background: var(--accent-gradient);
+  background: var(--gradient-primary);
   border-radius: var(--radius-xl);
   display: flex;
   align-items: center;
   justify-content: center;
-  font-family: var(--font-brand);
+  font-family: var(--font-mono);
   font-weight: 900;
   font-size: 20px;
-  color: var(--bg-primary);
-  box-shadow: 
-    0 6px 20px rgba(0, 212, 170, 0.4),
-    0 12px 40px rgba(0, 180, 212, 0.2),
-    inset 0 1px 0 rgba(255, 255, 255, 0.2);
-  position: relative;
-  z-index: 1;
+  color: var(--text-light);
+  box-shadow: var(--shadow-md);
 }
 
 .header-right {
   display: flex;
-  gap: var(--space-lg);
+  gap: var(--space-4);
   align-items: center;
+}
+
+.speech-controls {
+  display: flex;
+  gap: var(--space-2);
+  align-items: center;
+}
+
+.speech-btn {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-primary);
+  padding: var(--space-3);
+  border-radius: var(--radius-lg);
+  cursor: pointer;
+  transition: all 0.3s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 48px;
+  min-height: 48px;
+  box-shadow: var(--shadow-sm);
+}
+
+.speech-btn:hover {
+  background: rgba(30, 64, 175, 0.1);
+  border-color: var(--color-primary);
+  transform: scale(1.05);
+}
+
+.speech-btn.listening {
+  background: var(--color-primary);
+  border-color: var(--color-primary);
+  color: var(--text-light);
+  animation: pulse 2s infinite;
+}
+
+.speech-btn.call-mode {
+  background: var(--color-accent);
+  border-color: var(--color-accent);
+  color: var(--text-light);
+  animation: callGlow 2s infinite;
+}
+
+@keyframes callGlow {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(5, 150, 105, 0.7); }
+  50% { box-shadow: 0 0 0 10px rgba(5, 150, 105, 0); }
+}
+
+.speech-btn svg {
+  width: 20px;
+  height: 20px;
+  color: var(--text-secondary);
+  transition: color 0.3s ease;
+}
+
+.speech-btn:hover svg,
+.speech-btn.listening svg,
+.speech-btn.call-mode svg {
+  color: currentColor;
 }
 
 .user-badge {
   display: flex;
   align-items: center;
-  gap: var(--space-sm);
-  padding: var(--space-sm) var(--space-lg);
-  background: var(--bg-tertiary);
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-4);
+  background: var(--bg-secondary);
   border-radius: var(--radius-lg);
   border: 1px solid var(--border-primary);
   font-size: 12px;
@@ -576,54 +904,46 @@ body {
   color: var(--text-muted);
   text-transform: uppercase;
   letter-spacing: 0.05em;
+  box-shadow: var(--shadow-sm);
 }
 
 .user-badge.hr {
-  color: var(--accent-danger);
-  border-color: rgba(244, 63, 94, 0.3);
-  background: rgba(244, 63, 94, 0.1);
+  color: var(--color-secondary);
+  border-color: var(--color-secondary);
+  background: rgba(220, 38, 38, 0.1);
 }
 
 .user-badge .badge-icon {
   width: 8px;
   height: 8px;
   border-radius: 50%;
-  background: var(--accent-primary);
+  background: var(--color-accent);
   animation: pulse 2s infinite;
 }
 
 .user-badge.hr .badge-icon {
-  background: var(--accent-danger);
+  background: var(--color-secondary);
 }
 
+/* ================= LANDING PAGE ================= */
 #landing {
   flex: 1;
   display: flex;
   flex-direction: column;
   justify-content: center;
   align-items: center;
-  padding: var(--space-2xl);
-  gap: var(--space-2xl);
-  position: relative;
+  padding: var(--space-12);
+  gap: var(--space-8);
 }
 
 #landing h1 {
-  font-size: 64px;
+  font-size: 48px;
   font-weight: 900;
   color: var(--text-primary);
   text-align: center;
-  letter-spacing: 0.05em;
-  line-height: 0.9;
-  font-family: var(--font-brand);
-  text-transform: uppercase;
-  background: var(--accent-gradient);
-  background-clip: text;
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  position: relative;
-  z-index: 1;
-  filter: drop-shadow(0 0 20px var(--glow-primary));
-  margin-bottom: var(--space-lg);
+  line-height: 1.1;
+  font-family: var(--font-primary);
+  margin-bottom: var(--space-4);
 }
 
 #landing .subtitle {
@@ -632,9 +952,8 @@ body {
   font-weight: 400;
   text-align: center;
   max-width: 600px;
-  font-family: var(--font-display);
+  font-family: var(--font-primary);
   line-height: 1.6;
-  margin-top: var(--space-md);
 }
 
 .search-box {
@@ -642,25 +961,18 @@ body {
   max-width: 600px;
   display: flex;
   align-items: center;
-  background: var(--bg-secondary);
-  border: 1px solid var(--border-primary);
-  border-radius: var(--radius-xl);
-  padding: var(--space-sm);
-  box-shadow: 
-    0 8px 30px rgba(0, 0, 0, 0.3),
-    inset 0 1px 0 rgba(255, 255, 255, 0.1);
+  background: var(--bg-card);
+  border: 2px solid var(--border-primary);
+  border-radius: var(--radius-2xl);
+  padding: var(--space-2);
+  box-shadow: var(--shadow-lg);
   transition: all 0.3s ease;
-  position: relative;
-  overflow: hidden;
-  gap: var(--space-sm);
+  gap: var(--space-2);
 }
 
 .search-box:focus-within {
-  border-color: rgba(45, 212, 191, 0.5);
-  box-shadow: 
-    0 8px 30px rgba(0, 0, 0, 0.3),
-    0 0 0 1px rgba(45, 212, 191, 0.2),
-    inset 0 1px 0 rgba(255, 255, 255, 0.1);
+  border-color: var(--color-primary);
+  box-shadow: var(--shadow-xl);
 }
 
 .search-box input {
@@ -670,8 +982,8 @@ body {
   outline: none;
   color: var(--text-primary);
   font-size: 16px;
-  padding: var(--space-lg) var(--space-xl);
-  font-family: var(--font-display);
+  padding: var(--space-4) var(--space-6);
+  font-family: var(--font-primary);
   font-weight: 500;
 }
 
@@ -682,54 +994,32 @@ body {
 .search-box .speech-btn {
   background: transparent;
   border: none;
-  padding: var(--space-md);
-  border-radius: var(--radius-md);
-  cursor: pointer;
-  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  margin: 0;
+  box-shadow: none;
   min-width: 44px;
   min-height: 44px;
-  margin: 0;
-}
-
-.search-box .speech-btn:hover {
-  background: rgba(139, 92, 246, 0.1);
-  transform: scale(1.05);
-}
-
-.search-box .speech-btn.listening {
-  background: rgba(139, 92, 246, 0.2);
-  color: var(--accent-speech);
 }
 
 .search-box button {
-  background: var(--accent-gradient);
+  background: var(--gradient-primary);
   border: none;
-  color: var(--bg-primary);
-  padding: var(--space-lg) var(--space-2xl);
+  color: var(--text-light);
+  padding: var(--space-4) var(--space-6);
   border-radius: var(--radius-xl);
   cursor: pointer;
   font-weight: 700;
   font-size: 15px;
-  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-  font-family: var(--font-display);
-  box-shadow: 
-    0 4px 16px rgba(0, 212, 170, 0.3),
-    0 8px 32px rgba(0, 180, 212, 0.15);
-  position: relative;
-  overflow: hidden;
-  z-index: 1;
+  transition: all 0.3s ease;
+  font-family: var(--font-primary);
+  box-shadow: var(--shadow-md);
 }
 
 .search-box button:hover {
-  transform: translateY(-2px) scale(1.05);
-  box-shadow: 
-    0 6px 24px rgba(0, 212, 170, 0.4),
-    0 12px 48px rgba(0, 180, 212, 0.2);
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-lg);
 }
 
+/* ================= CHAT INTERFACE ================= */
 #chat {
   display: none;
   flex: 1;
@@ -739,18 +1029,18 @@ body {
 
 .messages {
   flex: 1;
-  padding: var(--space-xl) var(--space-2xl);
+  padding: var(--space-6) var(--space-8);
   overflow-y: auto;
   display: flex;
   flex-direction: column;
-  gap: var(--space-lg);
+  gap: var(--space-6);
 }
 
 .msg {
   display: flex;
-  gap: var(--space-md);
+  gap: var(--space-4);
   max-width: 75%;
-  animation: slideInMessage 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+  animation: slideInMessage 0.4s ease-out;
   position: relative;
 }
 
@@ -763,6 +1053,41 @@ body {
     opacity: 1;
     transform: translateY(0) scale(1);
   }
+}
+
+@keyframes popInMessage {
+  0% {
+    opacity: 0;
+    transform: translateY(30px) scale(0.7);
+  }
+  50% {
+    opacity: 0.8;
+    transform: translateY(-5px) scale(1.05);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes spinFast {
+  to { transform: rotate(360deg); }
+}
+
+@keyframes typingBounce {
+  0%, 60%, 100% { 
+    transform: translateY(0) scale(1); 
+    opacity: 0.5; 
+  }
+  30% { 
+    transform: translateY(-10px) scale(1.2); 
+    opacity: 1; 
+  }
+}
+
+@keyframes shimmer {
+  0% { left: -100%; }
+  100% { left: 100%; }
 }
 
 .user-msg {
@@ -781,22 +1106,21 @@ body {
   font-weight: 700;
   font-family: var(--font-mono);
   flex-shrink: 0;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
-  color: var(--bg-primary);
+  box-shadow: var(--shadow-md);
+  color: var(--text-light);
   letter-spacing: 0.05em;
 }
 
 .user .avatar {
-  background: linear-gradient(135deg, var(--accent-primary) 0%, var(--accent-secondary) 100%);
+  background: var(--gradient-primary);
 }
 
 .bot .avatar {
-  background: linear-gradient(135deg, var(--bg-tertiary) 0%, var(--border-secondary) 100%);
-  color: var(--accent-primary);
+  background: var(--color-gray-600);
 }
 
 .bubble {
-  padding: var(--space-lg) var(--space-xl);
+  padding: var(--space-4) var(--space-6);
   border-radius: var(--radius-xl);
   line-height: 1.6;
   word-break: break-word;
@@ -804,36 +1128,37 @@ body {
   font-size: 14px;
   font-weight: 500;
   position: relative;
+  box-shadow: var(--shadow-sm);
 }
 
 .user .bubble {
-  background: linear-gradient(135deg, var(--accent-primary) 0%, var(--accent-secondary) 100%);
-  color: var(--bg-primary);
+  background: var(--color-primary);
+  color: var(--text-light);
   border-bottom-right-radius: var(--radius-sm);
   white-space: pre-wrap;
   font-weight: 600;
 }
 
 .bot .bubble {
-  background: var(--bg-secondary);
+  background: #fafafa;
   border: 1px solid var(--border-primary);
-  color: var(--text-secondary);
+  color: var(--text-primary);
   border-bottom-left-radius: var(--radius-sm);
 }
 
 .message-actions {
   position: absolute;
-  top: -12px;
-  right: 12px;
-  background: var(--bg-tertiary);
-  border: 1px solid var(--border-primary);
-  border-radius: var(--radius-lg);
-  padding: 4px;
+  top: -8px;
+  right: 8px;
+  background: var(--color-white);
+  border: 1px solid var(--border-secondary);
+  border-radius: var(--radius-md);
+  padding: 2px;
   display: none;
-  gap: 4px;
+  gap: 2px;
   opacity: 0;
   transition: opacity 0.2s ease;
-  backdrop-filter: blur(10px);
+  box-shadow: var(--shadow-sm);
 }
 
 .msg:hover .message-actions {
@@ -855,8 +1180,8 @@ body {
 }
 
 .action-btn:hover {
-  background: var(--accent-speech);
-  color: var(--text-primary);
+  background: var(--color-primary);
+  color: var(--text-light);
   transform: scale(1.1);
 }
 
@@ -865,15 +1190,13 @@ body {
   height: 16px;
 }
 
-/* 🔥 HTML FORMAT DISPLAY - TETAP BAGUS! */
+/* HTML format display in bubbles */
 .bubble h3 {
   margin: 16px 0 10px 0;
   font-size: 18px;
   font-weight: 800;
-  color: var(--accent-primary);
+  color: var(--color-primary);
   line-height: 1.3;
-  letter-spacing: -0.02em;
-  text-transform: none;
 }
 
 .bubble h3:first-child {
@@ -893,7 +1216,6 @@ body {
 .bubble ol {
   margin: 8px 0 12px 0;
   padding-left: 20px;
-  list-style-position: outside;
 }
 
 .bubble li {
@@ -917,31 +1239,32 @@ body {
   font-style: italic;
 }
 
+/* ================= INPUT BOX ================= */
 .input-box {
-  padding: var(--space-xl) var(--space-2xl);
+  padding: var(--space-6) var(--space-8);
   display: flex;
-  gap: var(--space-md);
+  gap: var(--space-4);
   border-top: 1px solid var(--border-primary);
-  background: var(--bg-secondary);
-  position: relative;
+  background: var(--bg-card);
   align-items: center;
+  box-shadow: var(--shadow-sm);
 }
 
 .input-container {
   flex: 1;
   display: flex;
   align-items: center;
-  background: var(--bg-tertiary);
-  border: 1px solid var(--border-primary);
+  background: var(--bg-secondary);
+  border: 2px solid var(--border-primary);
   border-radius: var(--radius-lg);
-  padding: var(--space-sm);
+  padding: var(--space-2);
   transition: all 0.3s ease;
 }
 
 .input-container:focus-within {
-  border-color: rgba(45, 212, 191, 0.5);
+  border-color: var(--color-primary);
   background: var(--bg-primary);
-  box-shadow: 0 0 0 1px rgba(45, 212, 191, 0.2);
+  box-shadow: 0 0 0 1px var(--color-primary);
 }
 
 .input-container input {
@@ -951,9 +1274,9 @@ body {
   outline: none;
   color: var(--text-primary);
   font-size: 14px;
-  font-family: var(--font-display);
+  font-family: var(--font-primary);
   font-weight: 500;
-  padding: var(--space-md) var(--space-lg);
+  padding: var(--space-3) var(--space-4);
 }
 
 .input-container input::placeholder {
@@ -968,64 +1291,29 @@ body {
 .input-container .speech-btn {
   background: transparent;
   border: none;
-  padding: var(--space-sm);
-  border-radius: var(--radius-sm);
-  cursor: pointer;
-  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  margin: 0;
+  box-shadow: none;
   min-width: 36px;
   min-height: 36px;
-  margin: 0;
-}
-
-.input-container .speech-btn:hover {
-  background: rgba(139, 92, 246, 0.1);
-  transform: scale(1.05);
-}
-
-.input-container .speech-btn.listening {
-  background: rgba(139, 92, 246, 0.2);
-  color: var(--accent-speech);
-}
-
-.input-container .speech-btn svg {
-  width: 18px;
-  height: 18px;
-  color: var(--text-muted);
-  transition: color 0.3s ease;
-}
-
-.input-container .speech-btn:hover svg,
-.input-container .speech-btn.listening svg {
-  color: var(--accent-speech);
 }
 
 .input-box button {
-  background: var(--accent-gradient);
+  background: var(--gradient-primary);
   border: none;
-  padding: var(--space-lg) var(--space-2xl);
+  padding: var(--space-4) var(--space-6);
   border-radius: var(--radius-xl);
-  color: var(--bg-primary);
+  color: var(--text-light);
   cursor: pointer;
   font-weight: 700;
   font-size: 14px;
-  font-family: var(--font-display);
-  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-  box-shadow: 
-    0 4px 16px rgba(0, 212, 170, 0.3),
-    0 8px 32px rgba(0, 180, 212, 0.15);
-  position: relative;
-  overflow: hidden;
-  z-index: 1;
+  font-family: var(--font-primary);
+  transition: all 0.3s ease;
+  box-shadow: var(--shadow-md);
 }
 
 .input-box button:hover:not(:disabled) {
-  transform: translateY(-2px) scale(1.05);
-  box-shadow: 
-    0 6px 24px rgba(0, 212, 170, 0.4),
-    0 12px 48px rgba(0, 180, 212, 0.2);
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-lg);
 }
 
 .input-box button:disabled {
@@ -1038,14 +1326,10 @@ body {
   display: inline-block;
   width: 20px;
   height: 20px;
-  border: 2px solid var(--border-primary);
+  border: 2px solid rgba(255, 255, 255, 0.3);
   border-radius: 50%;
-  border-top-color: var(--accent-primary);
-  animation: spin 1s ease-in-out infinite;
-}
-
-@keyframes spin {
-  to { transform: rotate(360deg); }
+  border-top-color: var(--text-light);
+  animation: spin 1s linear infinite;
 }
 
 @keyframes pulse {
@@ -1059,13 +1343,13 @@ body {
   #landing h1 { font-size: 36px; }
   .search-box { max-width: 95%; }
   .msg { max-width: 90%; }
-  .messages { padding: var(--space-lg); }
-  .input-box { padding: var(--space-lg); }
+  .messages { padding: var(--space-4); }
+  .input-box { padding: var(--space-4); }
 }
 
 @media (max-width: 640px) {
   .sidebar { display: none; }
-  .header { padding: var(--space-lg); }
+  .header { padding: var(--space-4); }
   #appTitle { font-size: 18px; }
   #landing h1 { font-size: 28px; }
   .search-box input { font-size: 14px; }
@@ -1075,13 +1359,13 @@ body {
 
 <body>
 
-<!-- Call Mode Overlay - TETAP SAMA -->
+<!-- Call Mode Overlay -->
 <div class="call-mode-overlay" id="callModeOverlay">
   <div class="call-interface">
     <div class="call-avatar">AI</div>
     <div class="call-status" id="callStatus">🔊 Call Mode Active</div>
     <div class="call-transcript" id="callTranscript">
-      Bicara sekarang... DENAI sedang mendengarkan
+      Bicara sekarang... DEN·AI sedang mendengarkan
     </div>
     
     <!-- Audio Visualizer -->
@@ -1112,8 +1396,8 @@ body {
 
 <div class="sidebar" id="sidebar">
   <div class="sidebar-header">
-    <div class="logo">DN</div>
-    <span class="title">DENAI</span>
+    <div class="logo">AI</div>
+    <span class="title">DEN<span class="middle-dot">·</span>AI</span>
   </div>
   
   <button class="new-chat" onclick="newChat()">
@@ -1129,8 +1413,8 @@ body {
 <div class="main">
   <div class="header">
     <span id="appTitle">
-      <div class="logo-icon">DN</div>
-      <span>DENAI</span>
+      <div class="logo-icon">AI</div>
+      <span>DEN<span class="middle-dot">·</span>AI Assistant</span>
     </span>
     
     <div class="header-right">
@@ -1151,10 +1435,10 @@ body {
   </div>
 
   <div id="landing">
-    <h1>DENAI</h1>
-    <p class="subtitle">Ask anything about procedures, policies, or company data. Now with natural speech!</p>
+    <h1>DEN<span class="middle-dot">·</span>AI Assistant</h1>
+    <p class="subtitle">Your intelligent AI assistant for company procedures, policies, and data. Experience natural conversations with voice support.</p>
     <div class="search-box">
-      <input id="landingInput" placeholder="Type or speak your question..." />
+      <input id="landingInput" placeholder="Type your question or use voice input..." />
       <button class="speech-btn" id="landingSpeechBtn" title="Voice Input">
         <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z"></path>
@@ -1168,7 +1452,7 @@ body {
     <div class="messages" id="messages"></div>
     <div class="input-box">
       <div class="input-container">
-        <input id="chatInput" placeholder="Type or speak your question..." />
+        <input id="chatInput" placeholder="Type your question or use voice input..." />
         <button class="speech-btn" id="chatSpeechBtn" title="Voice Input">
           <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z"></path>
@@ -1203,37 +1487,9 @@ let isProcessingCall = false;
 let currentAudio = null;
 let processingAudio = null;
 
-/* ================= 🔥 AUDIO FEEDBACK SYSTEM ================= */
-async function playProcessingFeedback() {
-  try {
-    console.log('🔊 Playing processing feedback...');
-    
-    if (window.speechSynthesis) {
-      window.speechSynthesis.cancel();
-      
-      const utterance = new SpeechSynthesisUtterance("Please wait, processing your request.");
-      utterance.lang = 'en-US';
-      utterance.rate = 1.0;
-      utterance.pitch = 1.0;
-      utterance.volume = 0.8;
-      
-      utterance.onstart = () => console.log('🔊 Processing feedback started');
-      utterance.onend = () => console.log('🔊 Processing feedback ended');
-      
-      window.speechSynthesis.speak(utterance);
-      processingAudio = utterance;
-    }
-  } catch (error) {
-    console.error('🔊 Failed to play processing feedback:', error);
-  }
-}
-
-function stopProcessingFeedback() {
-  if (window.speechSynthesis) {
-    window.speechSynthesis.cancel();
-  }
-  processingAudio = null;
-}
+// Input mode detection
+let isTextOnlyMode = false;
+let isVoiceToTextMode = false;
 
 /* ================= DOM CACHE ================= */
 const landing = document.getElementById("landing");
@@ -1258,6 +1514,353 @@ const volumeIndicator = document.getElementById("volumeIndicator");
 // Speech buttons
 const landingSpeechBtn = document.getElementById("landingSpeechBtn");
 const chatSpeechBtn = document.getElementById("chatSpeechBtn");
+
+/* ================= CHART VISUALIZATION SYSTEM ================= */
+let activeCharts = new Map(); // Store active Chart.js instances
+
+async function renderLLMGeneratedChart(chartConfig, container) {
+  /**
+   * Render LLM-generated Chart.js configuration
+   * Handles all chart types with professional styling
+   */
+  console.log('📊 Rendering LLM-generated chart:', chartConfig.type);
+  
+  try {
+    // Create canvas element
+    const canvas = document.createElement('canvas');
+    canvas.id = `chart_${Date.now()}`;
+    container.appendChild(canvas);
+    
+    const ctx = canvas.getContext('2d');
+    
+    // Clean up function references in config (LLM sometimes generates function strings)
+    const cleanConfig = cleanChartConfig(chartConfig);
+    
+    // Create Chart.js instance
+    const chart = new Chart(ctx, cleanConfig);
+    
+    // Store chart instance for cleanup
+    activeCharts.set(canvas.id, chart);
+    
+    console.log('✅ Chart rendered successfully');
+    return chart;
+    
+  } catch (error) {
+    console.error('❌ Chart rendering error:', error);
+    container.innerHTML = `
+      <div class="chart-error">
+        <h3>❌ Chart Error</h3>
+        <p>Failed to render visualization: ${error.message}</p>
+      </div>
+    `;
+    return null;
+  }
+}
+
+function cleanChartConfig(config) {
+  /**
+   * Clean LLM-generated config for Chart.js compatibility
+   * Handles function strings and ensures proper formatting
+   */
+  const cleaned = JSON.parse(JSON.stringify(config));
+  
+  // Handle tooltip callbacks that might be function strings
+  if (cleaned.options?.plugins?.tooltip?.callbacks) {
+    const callbacks = cleaned.options.plugins.tooltip.callbacks;
+    
+    // Clean up function strings
+    Object.keys(callbacks).forEach(key => {
+      if (typeof callbacks[key] === 'string' && callbacks[key].includes('function')) {
+        // Remove function string to prevent errors
+        delete callbacks[key];
+      }
+    });
+  }
+  
+  // Ensure proper responsive settings
+  cleaned.options = cleaned.options || {};
+  cleaned.options.responsive = true;
+  cleaned.options.maintainAspectRatio = false;
+  
+  return cleaned;
+}
+
+function createChartContainer(title = "Data Visualization") {
+  /**
+   * Create professional chart container with actions
+   */
+  const container = document.createElement('div');
+  container.className = 'chart-container';
+  container.innerHTML = `
+    <div class="chart-header">
+      <div class="chart-title">${title}</div>
+      <div class="chart-actions">
+        <button class="chart-action-btn" onclick="exportChart(this)" title="Export PNG">
+          <svg width="14" height="14" fill="currentColor" viewBox="0 0 24 24">
+            <path d="M19 12v7H5v-7H3v7c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2v-7h-2zm-6 .67l2.59-2.58L17 11.5l-5 5-5-5 1.41-1.41L11 12.67V3h2v9.67z"/>
+          </svg>
+          Export
+        </button>
+        <button class="chart-action-btn" onclick="toggleChart(this)" title="Toggle View">
+          <svg width="14" height="14" fill="currentColor" viewBox="0 0 24 24">
+            <path d="M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5zM12 17c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3z"/>
+          </svg>
+          View
+        </button>
+      </div>
+    </div>
+    <div class="chart-canvas-wrapper">
+      <div class="chart-loading">
+        <div class="spinner"></div>
+        <span>Generating visualization...</span>
+      </div>
+    </div>
+    <div class="chart-footer">
+      Generated by DEN·AI using LLM-powered visualization
+    </div>
+  `;
+  
+  return container;
+}
+
+async function exportChart(button) {
+  /**
+   * Export chart as PNG image
+   */
+  try {
+    const container = button.closest('.chart-container');
+    const canvas = container.querySelector('canvas');
+    
+    if (!canvas) {
+      alert('No chart found to export');
+      return;
+    }
+    
+    // Create download link
+    const link = document.createElement('a');
+    link.download = `denai_chart_${Date.now()}.png`;
+    link.href = canvas.toDataURL('image/png');
+    
+    // Trigger download
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    
+    console.log('✅ Chart exported successfully');
+    
+  } catch (error) {
+    console.error('❌ Chart export error:', error);
+    alert('Failed to export chart');
+  }
+}
+
+function toggleChart(button) {
+  /**
+   * Toggle between chart and table view
+   */
+  try {
+    const container = button.closest('.chart-container');
+    const wrapper = container.querySelector('.chart-canvas-wrapper');
+    
+    // Simple toggle for now - could expand to show data table
+    if (wrapper.style.display === 'none') {
+      wrapper.style.display = 'block';
+      button.innerHTML = button.innerHTML.replace('Show', 'Hide');
+    } else {
+      wrapper.style.display = 'none';  
+      button.innerHTML = button.innerHTML.replace('Hide', 'Show');
+    }
+    
+  } catch (error) {
+    console.error('❌ Chart toggle error:', error);
+  }
+}
+
+async function askWithVisualization(question) {
+  /**
+   * Enhanced ask function that supports LLM-generated visualizations
+   */
+  console.log('🎯 Asking with visualization support:', question);
+  
+  try {
+    // Show processing message
+    let processingMessage = showProcessingMessage();
+    
+    const payload = {
+      question: question,
+      session_id: activeChatId,
+      user_role: userRole || "Employee",
+      enable_visualization: true
+    };
+
+    const response = await fetch("http://127.0.0.1:8000/hr/analyze-with-visualization", {
+      method: "POST",
+      headers: { 
+        "Content-Type": "application/json",
+        "Accept": "application/json"
+      },
+      body: JSON.stringify(payload),
+      signal: AbortSignal.timeout(45000)
+    });
+
+    // Remove processing message
+    if (processingMessage && processingMessage.parentNode) {
+      processingMessage.remove();
+    }
+
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+    }
+
+    const data = await response.json();
+    
+    // Handle errors
+    if (data.error || !data.authorized) {
+      addMessage("bot", data.text_response || "❌ Request failed");
+      return;
+    }
+    
+    // Add text response
+    const messageElement = addMessage("bot", data.text_response);
+    
+    // Add visualization if available
+    if (data.has_visualization && data.chart_config) {
+      await renderVisualizationInChat(data);
+    }
+    
+    // Auto-speak in appropriate modes
+    setTimeout(() => {
+      if (isCallModeActive) {
+        speakText(data.text_response);
+      } else if (!isTextOnlyMode && !isVoiceToTextMode) {
+        speakText(data.text_response);
+      }
+    }, 800);
+    
+  } catch (err) {
+    console.error('❌ Visualization request error:', err);
+    if (processingMessage && processingMessage.parentNode) {
+      processingMessage.remove();
+    }
+    
+    // Fallback to regular ask
+    console.log('🔄 Falling back to regular ask...');
+    return askBackend(question);
+  }
+}
+
+async function renderVisualizationInChat(data) {
+  /**
+   * Render LLM-generated visualization in chat interface
+   */
+  console.log('📊 Rendering visualization in chat:', data.chart_type);
+  
+  try {
+    // Create chart container
+    const title = `${data.chart_type?.toUpperCase()} Chart - ${data.query_info?.explanation || 'HR Analytics'}`;
+    const chartContainer = createChartContainer(title);
+    
+    // Add to messages
+    messages.appendChild(chartContainer);
+    messages.scrollTop = messages.scrollHeight;
+    
+    // Get canvas wrapper and clear loading
+    const canvasWrapper = chartContainer.querySelector('.chart-canvas-wrapper');
+    canvasWrapper.innerHTML = '';
+    
+    // Render the chart
+    await renderLLMGeneratedChart(data.chart_config, canvasWrapper);
+    
+    // Update footer with reasoning if available
+    if (data.visualization_reasoning) {
+      const footer = chartContainer.querySelector('.chart-footer');
+      footer.textContent = `AI Reasoning: ${data.visualization_reasoning}`;
+    }
+    
+    console.log('✅ Visualization rendered in chat successfully');
+    
+  } catch (error) {
+    console.error('❌ Failed to render visualization in chat:', error);
+  }
+}
+
+/* ================= ENHANCED TOOL EXECUTION ================= */
+function showProcessingMessage() {
+  const processingDiv = document.createElement("div");
+  processingDiv.className = "msg bot";
+  processingDiv.innerHTML = `
+    <div class="avatar">AI</div>
+    <div class="bubble processing-message">
+      <div class="processing-spinner"></div>
+      <div class="message-text">
+        <div class="main-text">Processing your request...</div>
+        <div class="sub-text">Please wait a moment</div>
+      </div>
+    </div>
+  `;
+  messages.appendChild(processingDiv);
+  messages.scrollTop = messages.scrollHeight;
+  
+  // Force repaint to ensure animation is visible
+  processingDiv.offsetHeight;
+  
+  return processingDiv;
+}
+
+function showTypingIndicator() {
+  const typingDiv = document.createElement("div");
+  typingDiv.className = "msg bot typing-msg";
+  typingDiv.innerHTML = `
+    <div class="avatar">AI</div>
+    <div class="bubble processing-bubble">
+      <div class="typing-indicator">
+        <div class="typing-dot"></div>
+        <div class="typing-dot"></div>
+        <div class="typing-dot"></div>
+      </div>
+    </div>
+  `;
+  messages.appendChild(typingDiv);
+  messages.scrollTop = messages.scrollHeight;
+  return typingDiv;
+}
+
+/* ================= AUDIO FEEDBACK SYSTEM ================= */
+async function playProcessingFeedback() {
+  if (isTextOnlyMode) {
+    console.log('🔇 Text-only mode: No audio feedback');
+    return;
+  }
+
+  try {
+    console.log('🔊 Playing processing feedback...');
+    
+    if (window.speechSynthesis) {
+      window.speechSynthesis.cancel();
+      
+      const utterance = new SpeechSynthesisUtterance("Processing your request, please wait.");
+      utterance.lang = 'en-US';
+      utterance.rate = 1.0;
+      utterance.pitch = 1.0;
+      utterance.volume = 0.8;
+      
+      utterance.onstart = () => console.log('🔊 Processing feedback started');
+      utterance.onend = () => console.log('🔊 Processing feedback ended');
+      
+      window.speechSynthesis.speak(utterance);
+      processingAudio = utterance;
+    }
+  } catch (error) {
+    console.error('🔊 Failed to play processing feedback:', error);
+  }
+}
+
+function stopProcessingFeedback() {
+  if (window.speechSynthesis) {
+    window.speechSynthesis.cancel();
+  }
+  processingAudio = null;
+}
 
 /* ================= SPEECH RECOGNITION SYSTEM ================= */
 function initializeSpeechRecognition() {
@@ -1306,7 +1909,6 @@ function initializeSpeechRecognition() {
 
     const displayText = finalTranscript || interimTranscript;
     
-    // Update UI based on mode
     if (isCallModeActive) {
       callTranscript.textContent = displayText || 'Listening...';
     }
@@ -1315,15 +1917,15 @@ function initializeSpeechRecognition() {
       currentInput.value = displayText;
     }
 
-    // Handle final transcript
     if (finalTranscript) {
       console.log('[STT] ✅ Final transcript received:', finalTranscript);
       
       if (isCallModeActive) {
-        // Real-time call mode - process immediately
         handleCallModeInput(finalTranscript.trim());
       } else if (currentInput) {
-        // Regular mode - auto-submit
+        isVoiceToTextMode = true;
+        isTextOnlyMode = false;
+        
         currentInput.value = finalTranscript.trim();
         setTimeout(() => {
           if (currentInput === landingInput) {
@@ -1343,7 +1945,6 @@ function initializeSpeechRecognition() {
       alert('Microphone access is required. Please allow microphone access and try again.');
     } else if (event.error === 'no-speech') {
       if (isCallModeActive && continuousListening) {
-        // Restart listening in call mode
         setTimeout(() => restartCallListening(), 1000);
       }
     }
@@ -1357,7 +1958,6 @@ function initializeSpeechRecognition() {
     if (isCallModeActive) {
       showAudioVisualization(false);
       if (continuousListening && !isProcessingCall) {
-        // Restart listening in call mode
         setTimeout(() => restartCallListening(), 500);
       }
     }
@@ -1366,9 +1966,14 @@ function initializeSpeechRecognition() {
   return true;
 }
 
-/* ================= 🔥 ENHANCED NATURAL TTS SYSTEM ================= */
+/* ================= NATURAL TTS SYSTEM ================= */
 async function speakText(text, options = {}) {
   console.log('🔊 speakText called with:', text ? text.substring(0, 50) : 'null/empty');
+  
+  if (isTextOnlyMode || isVoiceToTextMode) {
+    console.log('🔇 Skipping TTS - Text-only or Voice-to-text mode');
+    return null;
+  }
   
   if (!text || text.trim().length === 0) {
     console.error('🔊 No text provided to speak');
@@ -1378,18 +1983,15 @@ async function speakText(text, options = {}) {
   console.log('🔊 Calling NATURAL TTS API');
 
   try {
-    // Stop any currently playing audio
     if (currentAudio) {
       currentAudio.pause();
       currentAudio = null;
     }
 
-    // Show volume indicator
     showVolumeIndicator();
 
-    // 🔥 CALL NATURAL TTS API - HTML akan di-clean di backend!
     const requestPayload = {
-      text: text,  // Kirim HTML asli, backend yang clean
+      text: text,
       language: options.language || 'id',
       voice: options.voice || 'indonesian',
       slow: options.slow || false
@@ -1397,7 +1999,6 @@ async function speakText(text, options = {}) {
     
     console.log('🔊 Natural TTS Request');
     
-    // Call Natural TTS API
     const controller = new AbortController();
     const timeoutId = setTimeout(() => {
       controller.abort();
@@ -1421,7 +2022,6 @@ async function speakText(text, options = {}) {
       throw new Error(`TTS API failed: ${response.status}`);
     }
 
-    // Get audio blob
     const audioBlob = await response.blob();
     console.log('🔊 ✅ Received natural audio blob:', audioBlob.size, 'bytes');
 
@@ -1429,7 +2029,6 @@ async function speakText(text, options = {}) {
       throw new Error('Received empty audio blob');
     }
 
-    // Create and play audio
     const audioUrl = URL.createObjectURL(audioBlob);
     const audio = new Audio(audioUrl);
     currentAudio = audio;
@@ -1447,7 +2046,7 @@ async function speakText(text, options = {}) {
         isSpeaking = true;
         
         if (isCallModeActive) {
-          callStatus.textContent = '🔊 DENAI Speaking...';
+          callStatus.textContent = '🔊 DEN·AI Speaking...';
         }
       };
 
@@ -1459,7 +2058,6 @@ async function speakText(text, options = {}) {
         hideVolumeIndicator();
         
         if (isCallModeActive && !isProcessingCall) {
-          // Resume listening in call mode after TTS completes
           setTimeout(() => {
             if (isCallModeActive && continuousListening) {
               callStatus.textContent = '🎤 Listening...';
@@ -1481,7 +2079,6 @@ async function speakText(text, options = {}) {
         reject(error);
       };
 
-      // Start playback
       audio.play().catch(playError => {
         console.error('🔊 ❌ Audio.play() failed:', playError);
         
@@ -1507,13 +2104,17 @@ async function speakText(text, options = {}) {
       return null;
     }
     
-    // Fallback to browser TTS
     console.log('🔊 Attempting browser TTS fallback...');
     return speakTextFallback(text.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim());
   }
 }
 
 function speakTextFallback(text) {
+  if (isTextOnlyMode || isVoiceToTextMode) {
+    console.log('🔇 Skipping fallback TTS - Text-only or Voice-to-text mode');
+    return null;
+  }
+
   try {
     if (!window.speechSynthesis) {
       console.error('🔊 Browser TTS not available');
@@ -1556,13 +2157,11 @@ function speakTextFallback(text) {
 }
 
 function stopTextToSpeech() {
-  // Stop server TTS
   if (currentAudio) {
     currentAudio.pause();
     currentAudio = null;
   }
   
-  // Stop browser TTS
   if (window.speechSynthesis) {
     window.speechSynthesis.cancel();
   }
@@ -1596,23 +2195,22 @@ async function startCallMode() {
   }
 
   try {
-    // Request microphone permission
     const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
     stream.getTracks().forEach(track => track.stop());
     
-    // Initialize call mode
     isCallModeActive = true;
     continuousListening = true;
     isProcessingCall = false;
     callSession = activeChatId || crypto.randomUUID();
     
-    // Update UI
+    isTextOnlyMode = false;
+    isVoiceToTextMode = false;
+    
     callModeOverlay.classList.add('active');
     callModeBtn.classList.add('call-mode');
     callStatus.textContent = '📞 Call Connected';
-    callTranscript.textContent = 'Bicara sekarang... DENAI sedang mendengarkan';
+    callTranscript.textContent = 'DEN.AI sedang mendengarkan';
     
-    // Hide main interface
     if (landing.style.display !== 'none') {
       landing.style.display = 'none';
       chat.style.display = 'flex';
@@ -1621,7 +2219,6 @@ async function startCallMode() {
       }
     }
     
-    // Start continuous listening
     restartCallListening();
     
     console.log('🔥 CALL MODE: Activated - Natural speech-to-speech ready!');
@@ -1637,18 +2234,15 @@ function endCallMode() {
   continuousListening = false;
   isProcessingCall = false;
   
-  // Stop speech recognition
   if (speechRecognition && isListening) {
     speechRecognition.stop();
   }
   
-  // Stop any playing audio
   if (currentAudio) {
     currentAudio.pause();
     currentAudio = null;
   }
   
-  // Update UI
   callModeOverlay.classList.remove('active');
   callModeBtn.classList.remove('call-mode');
   showAudioVisualization(false);
@@ -1681,26 +2275,19 @@ async function handleCallModeInput(transcript) {
   callStatus.textContent = '🤖 Processing...';
   callTranscript.textContent = `You: ${transcript}`;
   
-  // Stop listening temporarily (STT SELESAI - microphone FREE!)
   if (speechRecognition && isListening) {
     speechRecognition.stop();
   }
   
-  // 🔥 NOW SAFE to play audio feedback - STT is done!
-  // Wait a tiny bit to ensure STT fully stopped
   await new Promise(resolve => setTimeout(resolve, 300));
   
   try {
-    // 🔥 Play audio feedback in Call Mode
     playProcessingFeedback();
     
-    // Add user message to chat
     addMessage("user", transcript);
     
-    // Get AI response (this will auto-stop processing feedback)
     await askBackend(transcript);
     
-    // Wait a bit for TTS to complete before restarting listening
     setTimeout(() => {
       if (isCallModeActive && continuousListening) {
         isProcessingCall = false;
@@ -1712,7 +2299,7 @@ async function handleCallModeInput(transcript) {
     
   } catch (error) {
     console.error('[CALL] Error processing input:', error);
-    stopProcessingFeedback(); // 🔥 Stop on error
+    stopProcessingFeedback();
     isProcessingCall = false;
     if (isCallModeActive) {
       restartCallListening();
@@ -1724,7 +2311,6 @@ function toggleMute() {
   const isMuted = muteBtn.classList.contains('active');
   
   if (isMuted) {
-    // Unmute
     muteBtn.classList.remove('active');
     muteBtn.textContent = '🎤';
     continuousListening = true;
@@ -1732,7 +2318,6 @@ function toggleMute() {
       restartCallListening();
     }
   } else {
-    // Mute
     muteBtn.classList.add('active');
     muteBtn.textContent = '🔇';
     continuousListening = false;
@@ -1771,7 +2356,6 @@ async function startSpeechRecognition(button, input) {
   }
 
   try {
-    // Request microphone permission
     const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
     stream.getTracks().forEach(track => track.stop());
     
@@ -1781,7 +2365,6 @@ async function startSpeechRecognition(button, input) {
     return;
   }
 
-  // Stop any playing audio
   if (isSpeaking) {
     stopTextToSpeech();
   }
@@ -1789,7 +2372,9 @@ async function startSpeechRecognition(button, input) {
   currentSpeechButton = button;
   currentInput = input;
   
-  // Configure for single-shot recognition
+  isVoiceToTextMode = true; 
+  isTextOnlyMode = false;
+  
   speechRecognition.continuous = false;
   speechRecognition.interimResults = true;
 
@@ -1867,6 +2452,9 @@ function startFromLanding() {
   const text = landingInput.value.trim();
   if (!text || isWaitingForResponse) return;
   
+  isTextOnlyMode = true;
+  isVoiceToTextMode = false;
+  
   setInputState(true);
   newChat();
   addMessage("user", text);
@@ -1887,14 +2475,14 @@ function addMessage(role, text, shouldSave = true) {
   if (role === "user") {
     bubble.textContent = text;
   } else {
-    // 🔥 TAMPILKAN HTML DENGAN FORMAT BAGUS (TIDAK BERUBAH!)
     bubble.innerHTML = text;
   }
   
   div.innerHTML = `<div class="avatar">${avatarText}</div>`;
   div.appendChild(bubble);
   
-  if (role === "bot") {
+  // Only show TTS controls for bot messages and when not in text-only mode
+  if (role === "bot" && !isTextOnlyMode && !isCallModeActive) {
     const actions = document.createElement("div");
     actions.className = "message-actions";
     actions.innerHTML = `
@@ -1930,7 +2518,9 @@ function addMessage(role, text, shouldSave = true) {
 function speakMessage(button) {
   const bubble = button.closest('.msg').querySelector('.bubble');
   if (bubble) {
-    // 🔥 AMBIL FULL HTML - Backend yang akan clean untuk TTS!
+    isTextOnlyMode = false;
+    isVoiceToTextMode = false;
+    
     const htmlText = bubble.innerHTML;
     speakText(htmlText);
   }
@@ -1968,11 +2558,32 @@ async function askBackend(text) {
   
   setInputState(true);
 
-
-  let loadingMessage = null;
-  // 🔥 Play processing feedback
+  // 🔥 ENHANCED UX: Show processing message immediately
+  let processingMessage = null;
   if (!isCallModeActive) {
+    processingMessage = showProcessingMessage();
+  }
+
+  console.log(`🔊 Mode check: isTextOnlyMode=${isTextOnlyMode}, isVoiceToTextMode=${isVoiceToTextMode}, isCallModeActive=${isCallModeActive}`);
+  
+  if (!isTextOnlyMode && !isVoiceToTextMode) {
+    console.log('🔊 Playing processing feedback (normal mode)');
     playProcessingFeedback();
+  } else {
+    console.log('🔇 Skipping processing feedback (text/voice-to-text mode)');
+  }
+  
+  // 🎯 SMART VISUALIZATION DETECTION
+  const shouldTryVisualization = detectVisualizationQuery(text);
+  
+  if (shouldTryVisualization && userRole === "HR") {
+    console.log('📊 Detected potential visualization query, using enhanced endpoint');
+    try {
+      return await askWithVisualization(text);
+    } catch (error) {
+      console.log('📊 Visualization failed, falling back to regular endpoint');
+      // Continue with regular flow
+    }
   }
   
   const payload = {
@@ -1996,14 +2607,15 @@ async function askBackend(text) {
     });
 
     clearTimeout(timeoutId);
-    // 🔥 Stop processing feedback
     stopProcessingFeedback();
 
+    // Remove processing message
+    if (processingMessage && processingMessage.parentNode) {
+      processingMessage.remove();
+    }
+
     if (res.status === 429) {
-      if (loadingMessage && loadingMessage.parentNode) {
-        loadingMessage.remove();
-      }
-      addMessage("bot", "⏰ <b>Rate Limit Exceeded</b><br><br>Too many requests. Please wait a moment.");
+      addMessage("bot", "⏰ <strong>Rate Limit Exceeded</strong><br><br>Too many requests. Please wait a moment.");
       return;
     }
 
@@ -2013,18 +2625,13 @@ async function askBackend(text) {
 
     const data = await res.json();
     
-    if (loadingMessage && loadingMessage.parentNode) {
-      loadingMessage.remove();
-    }
-    
     let responseText = "";
     
     if (data.error) {
-      responseText = `❌ <b>Error</b><br><br>${data.error}`;
+      responseText = `❌ <strong>Error</strong><br><br>${data.error}`;
     } else if (data.authorized === false) {
-      responseText = `🔒 <b>Access Denied</b><br><br>${data.answer}`;
+      responseText = `🔒 <strong>Access Denied</strong><br><br>${data.answer}`;
     } else if (data.answer) {
-      // 🔥 RESPONSE TETAP HTML FORMAT (TIDAK BERUBAH!)
       responseText = data.answer;
     } else {
       responseText = "❓ Received unexpected response format from server.";
@@ -2032,19 +2639,35 @@ async function askBackend(text) {
     
     const messageElement = addMessage("bot", responseText);
     
-    // 🔥 Auto-speak dengan NATURAL TTS (backend akan clean HTML)
+    // 🔥 CONDITIONAL AUTO-SPEAK
     setTimeout(() => {
-      speakText(responseText, {  // Kirim HTML asli
-        language: 'id',
-        voice: 'indonesian'
-      });
+      if (isCallModeActive) {
+        console.log('🔊 Call mode: Auto-speaking response');
+        speakText(responseText, {
+          language: 'id',
+          voice: 'indonesian'
+        });
+      }
+      else if (isTextOnlyMode) {
+        console.log('🔇 Text-only mode: No auto-speech');
+      }
+      else if (isVoiceToTextMode) {
+        console.log('🔇 Voice-to-text mode: No auto-speech');
+        isVoiceToTextMode = false;
+      }
+      else {
+        console.log('🔊 Normal mode: Auto-speaking response');
+        speakText(responseText, {
+          language: 'id',
+          voice: 'indonesian'
+        });
+      }
     }, isCallModeActive ? 200 : 800);
     
   } catch (err) {
-    // 🔥 Stop processing feedback
     stopProcessingFeedback();
-    if (loadingMessage && loadingMessage.parentNode) {
-      loadingMessage.remove();
+    if (processingMessage && processingMessage.parentNode) {
+      processingMessage.remove();
     }
     
     let errorMessage = "❌ Failed to connect to server.";
@@ -2074,7 +2697,34 @@ async function askBackend(text) {
     }
   }
 }
-/* ================= 🔥 SESSION MANAGEMENT - PIN & DELETE ================= */
+
+function detectVisualizationQuery(text) {
+  /**
+   * Smart detection of queries that might benefit from visualization
+   */
+  const vizKeywords = [
+    'distribusi', 'distribution', 'breakdown', 'sebaran',
+    'berapa per', 'jumlah per', 'count per',
+    'perbandingan', 'compare', 'vs',
+    'trend', 'perkembangan', 'over time',
+    'chart', 'grafik', 'diagram',
+    'analisis', 'analysis', 'analytics'
+  ];
+  
+  const textLower = text.toLowerCase();
+  
+  // Check for visualization keywords
+  const hasVizKeyword = vizKeywords.some(keyword => textLower.includes(keyword));
+  
+  // Check for HR data patterns
+  const hasHRPattern = textLower.includes('karyawan') || textLower.includes('employee') || 
+                      textLower.includes('band') || textLower.includes('pendidikan') ||
+                      textLower.includes('lokasi') || textLower.includes('status');
+  
+  return hasVizKeyword && hasHRPattern;
+}
+
+/* ================= SESSION MANAGEMENT ================= */
 async function togglePinSession(sessionId, event) {
   event.stopPropagation();
   
@@ -2105,7 +2755,6 @@ async function deleteSession(sessionId, event) {
     });
     
     if (response.ok) {
-      // If deleting active session, return to landing
       if (sessionId === activeChatId) {
         activeChatId = null;
         conversationHistory = [];
@@ -2121,7 +2770,7 @@ async function deleteSession(sessionId, event) {
     alert('Failed to delete conversation. Please try again.');
   }
 }
-/* ================= SESSION MANAGEMENT ================= */
+
 async function loadSessions() {
   try {
     const res = await fetch("http://127.0.0.1:8000/sessions", {
@@ -2151,53 +2800,86 @@ async function loadSessions() {
       });
     }
     
-    // Sessions already sorted by backend (pinned first, then by date)
-
-    filteredSessions.forEach((s) => {
-      const div = document.createElement("div");
-      div.className = "session-item";
-      if (s.session_id === activeChatId) div.classList.add("active");
-
-      const isPinned = s.pinned || false;
-      const pinIcon = isPinned ? '<span class="pin-icon">📌</span>' : '';
-      
-      div.innerHTML = `
-        <span class="title">
-          ${pinIcon}
-          ${s.title || 'Untitled Conversation'}
-        </span>
-        <div class="session-actions">
-          <button class="session-action-btn pin-btn ${isPinned ? 'active' : ''}" 
-                  onclick="togglePinSession('${s.session_id}', event)" 
-                  title="${isPinned ? 'Unpin' : 'Pin'}">
-            <svg fill="${isPinned ? 'currentColor' : 'none'}" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" 
-                    d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z"></path>
-            </svg>
-          </button>
-          <button class="session-action-btn delete-btn" 
-                  onclick="deleteSession('${s.session_id}', event)" 
-                  title="Delete">
-            <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" 
-                    d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path>
-            </svg>
-          </button>
-        </div>
+    // Separate pinned and recent sessions
+    const pinnedSessions = filteredSessions.filter(s => s.pinned);
+    const recentSessions = filteredSessions.filter(s => !s.pinned);
+    
+    // Create Starred section if there are pinned sessions
+    if (pinnedSessions.length > 0) {
+      const starredSection = document.createElement("div");
+      starredSection.className = "session-section";
+      starredSection.innerHTML = `
+        <div class="section-header">Starred</div>
+        <div class="session-list starred-list"></div>
       `;
-
-      div.onclick = (e) => {
-        // Don't load session if clicking on action buttons
-        if (e.target.closest('.session-actions')) return;
-        loadSession(s.session_id);
-      };
+      list.appendChild(starredSection);
       
-      list.appendChild(div);
-    });
+      const starredList = starredSection.querySelector('.starred-list');
+      pinnedSessions.forEach((s) => {
+        const div = createSessionItem(s);
+        starredList.appendChild(div);
+      });
+    }
+    
+    // Create Recents section
+    if (recentSessions.length > 0) {
+      const recentsSection = document.createElement("div");
+      recentsSection.className = "session-section";
+      recentsSection.innerHTML = `
+        <div class="section-header">Recents</div>
+        <div class="session-list recents-list"></div>
+      `;
+      list.appendChild(recentsSection);
+      
+      const recentsList = recentsSection.querySelector('.recents-list');
+      recentSessions.forEach((s) => {
+        const div = createSessionItem(s);
+        recentsList.appendChild(div);
+      });
+    }
     
   } catch (err) {
     console.error("Failed to load sessions:", err);
   }
+}
+
+function createSessionItem(s) {
+  const div = document.createElement("div");
+  div.className = "session-item";
+  if (s.session_id === activeChatId) div.classList.add("active");
+
+  const isPinned = s.pinned || false;
+  
+  div.innerHTML = `
+    <span class="title">
+      ${s.title || 'Untitled Conversation'}
+    </span>
+    <div class="session-actions">
+      <button class="session-action-btn pin-btn ${isPinned ? 'active' : ''}" 
+              onclick="togglePinSession('${s.session_id}', event)" 
+              title="${isPinned ? 'Unstar' : 'Star'}">
+        <svg fill="${isPinned ? 'currentColor' : 'none'}" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" 
+                d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z"></path>
+        </svg>
+      </button>
+      <button class="session-action-btn delete-btn" 
+              onclick="deleteSession('${s.session_id}', event)" 
+              title="Delete">
+        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" 
+                d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path>
+        </svg>
+      </button>
+    </div>
+  `;
+
+  div.onclick = (e) => {
+    if (e.target.closest('.session-actions')) return;
+    loadSession(s.session_id);
+  };
+  
+  return div;
 }
 
 async function loadSession(sessionId) {
@@ -2246,6 +2928,9 @@ async function loadSession(sessionId) {
 function sendMessage() {
   const text = chatInput.value.trim();
   if (!text || isWaitingForResponse) return;
+
+  isTextOnlyMode = true;
+  isVoiceToTextMode = false;
 
   addMessage("user", text);
   askBackend(text);
@@ -2302,12 +2987,10 @@ landingInput.addEventListener("input", () => {
 
 // Global keyboard shortcuts
 document.addEventListener('keydown', (e) => {
-  // Escape to end call mode
   if (e.key === 'Escape' && isCallModeActive) {
     endCallMode();
   }
   
-  // Ctrl/Cmd + / to toggle call mode
   if ((e.ctrlKey || e.metaKey) && e.key === '/') {
     e.preventDefault();
     if (isCallModeActive) {
@@ -2327,10 +3010,12 @@ document.addEventListener("DOMContentLoaded", async () => {
     landingInput.focus();
   }
   
-  console.log("🎙️ DENAI Natural Speech-to-Speech Ready!");
+  console.log("🎙️ DEN·AI Professional Assistant with LLM Visualization Ready!");
   console.log(`👤 User: ${userRole} | 🎤 Speech: ${speechAvailable ? 'ENABLED' : 'DISABLED'}`);
+  console.log("📊 VISUALIZATION: LLM-generated charts, zero-hardcoding");
   console.log("📞 CALL MODE: Press phone button or Ctrl+/ for natural conversation!");
-  console.log("🔥 NATURAL TTS: HTML tags automatically cleaned from speech!");
+  console.log("🎯 MODES: Text → No audio | Voice → Text only | Call → Full audio");
+  console.log("📈 CHARTS: Bar, Pie, Line, Doughnut with corporate styling");
 });
 </script>
 

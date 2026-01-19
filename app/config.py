@@ -1,9 +1,12 @@
 """
-DENAI Configuration - BALANCED VERSION
-Production-ready without over-engineering
+DENAI Configuration - CLEAN INFRASTRUCTURE CONFIG
+=================================================
+Pure configuration - no business logic, no engine-specific config
+UPDATED: Added Supabase database configuration for HR CSV ingestion
 """
 import os
 from dotenv import load_dotenv
+
 load_dotenv()
 
 # ======================================================
@@ -12,6 +15,16 @@ load_dotenv()
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_ANON_KEY = os.getenv("SUPABASE_ANON_KEY")
+
+# ======================================================
+# SUPABASE DATABASE CONFIGURATION (HR CSV INGESTION)
+# ======================================================
+# For direct PostgreSQL connections (CSV ingestion, backend operations)
+SUPABASE_DB_PASSWORD = os.getenv("SUPABASE_DB_PASSWORD")
+SUPABASE_SERVICE_ROLE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
+
+# Direct connection string (alternative to components above)
+SUPABASE_CONNECTION_STRING = os.getenv("SUPABASE_CONNECTION_STRING")
 
 # ======================================================
 # OPTIONAL EXTERNAL SERVICES
@@ -55,7 +68,7 @@ TTS_PRIMARY_ENGINE = os.getenv("TTS_PRIMARY_ENGINE", "elevenlabs")
 TTS_FALLBACK_ENGINE = os.getenv("TTS_FALLBACK_ENGINE", "openai")
 
 # ======================================================
-# 🔥 GROUPED TTS SETTINGS (CLEAN APPROACH)
+# GROUPED TTS SETTINGS
 # ======================================================
 ELEVENLABS_SETTINGS = {
     "model": os.getenv("ELEVENLABS_MODEL", "eleven_flash_v2_5"),
@@ -71,23 +84,23 @@ OPENAI_TTS_SETTINGS = {
 }
 
 # ======================================================
-# TIMEOUT CONFIGURATION (ESSENTIAL ONLY)
+# TIMEOUT CONFIGURATION
 # ======================================================
 API_TIMEOUT_DEFAULT = int(os.getenv("API_TIMEOUT_DEFAULT", 30))
 API_TIMEOUT_CALL_MODE = int(os.getenv("API_TIMEOUT_CALL_MODE", 15))
 API_TIMEOUT_TTS = int(os.getenv("API_TIMEOUT_TTS", 8))
 
 # ======================================================
-# MODE-SPECIFIC CONSTANTS (NOT ENV-CONFIGURABLE)
+# MODE-SPECIFIC CONSTANTS (BEHAVIORAL)
 # ======================================================
-# These are behavioral constants, not environment concerns
+# These are behavioral constants for ChatService, not environment concerns
 CALL_MODE_TEMPERATURE = 0.0        # Deterministic for voice calls
 CHAT_MODE_TEMPERATURE = 0.1        # Slightly creative for text
 CALL_MODE_MAX_TOKENS = 150         # Concise for voice
 CHAT_MODE_MAX_TOKENS = 2000        # Full responses for text
 
 # ======================================================
-# MINIMAL FEATURE FLAGS (ONLY WHAT MAKES SENSE)
+# FEATURE FLAGS (GENERAL INFRASTRUCTURE)
 # ======================================================
 FEATURE_NATURAL_TTS = os.getenv("FEATURE_NATURAL_TTS", "true").lower() == "true"
 FEATURE_VERBOSE_LOGGING = os.getenv("FEATURE_VERBOSE_LOGGING", "false").lower() == "true"
@@ -112,26 +125,41 @@ if not PINECONE_API_KEY or not PINECONE_INDEX:
 if not ELEVENLABS_API_KEY:
     print("⚠️ ElevenLabs not configured - using OpenAI TTS fallback")
 
+# Supabase database warnings for HR CSV ingestion
+if not SUPABASE_DB_PASSWORD and not SUPABASE_CONNECTION_STRING:
+    print("⚠️ Supabase database not configured - HR CSV ingestion will be unavailable")
+    print("   Set SUPABASE_DB_PASSWORD or SUPABASE_CONNECTION_STRING")
+
 # ======================================================
-# 🎯 WHAT WE REMOVED (and why):
+# NOTES ON CLEAN ARCHITECTURE
 # ======================================================
 """
-❌ REMOVED - Over-engineered feature flags:
-FEATURE_SESSION_MANAGEMENT    # Session is core functionality
-FEATURE_TOOL_CALLING         # Tool calling is core functionality
+WHAT THIS CONFIG CONTAINS:
+✅ Infrastructure configuration (API keys, timeouts, models)
+✅ General feature flags (logging, TTS)
+✅ Service-level constants (temperatures, token limits)
+✅ Environment variables and validation
+✅ Supabase database configuration for HR CSV ingestion
 
-❌ REMOVED - Granular behavioral configs:  
-CALL_MODE_TEMPERATURE as env # AI personality shouldn't be env-based
-CHAT_MODE_TEMPERATURE as env # These are product decisions, not ops
+WHAT THIS CONFIG DOES NOT CONTAIN:
+❌ Business logic (no functions, no engine discovery)
+❌ Engine-specific configuration (HR, SOP details belong in engines/)
+❌ Tools routing logic (belongs in tools.py)
+❌ Authorization logic (belongs in tools routing)
+❌ Database discovery (belongs in engines/hr/)
+❌ Runtime status determination (belongs in respective engines)
 
-❌ REMOVED - Excessive performance configs:
-MAX_CONCURRENT_REQUESTS      # Infrastructure concern, not app config
-MAX_CONCURRENT_TTS          # Should be handled by load balancer
+ENGINE-SPECIFIC CONFIG LOCATION:
+- HR engine config → engines/hr/config.py or engines/hr/hr_service.py
+- SOP engine config → engines/sop/ (already stable)
+- Tools routing config → tools.py (already implemented)
 
-✅ KEPT - Essential configs:
-- API keys and credentials
-- Model selection (cost/performance trade-off)
-- Timeouts (operational concern)
-- TTS settings grouped cleanly
-- Minimal useful feature flags
+SUPABASE CONFIGURATION NOTES:
+- SUPABASE_URL + SUPABASE_ANON_KEY: For frontend/API operations
+- SUPABASE_URL + SUPABASE_DB_PASSWORD: For direct database connections (CSV ingestion)
+- SUPABASE_CONNECTION_STRING: Alternative direct connection method
+- SUPABASE_SERVICE_ROLE_KEY: For backend operations bypassing RLS
+
+This config file is now purely infrastructure-focused and follows
+clean architecture principles with proper separation of concerns.
 """

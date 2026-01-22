@@ -25,6 +25,7 @@ __pycache__/
 *.pyc
 *.pyo
 *.pyd
+.DS_Store
 
 # ======================
 # VIRTUAL ENV
@@ -56,3 +57,8 @@ test
 test_db.py
 test.py
 test.wav
+
+debug_analysis_routing.py
+debug_backend.py
+
+integration_example.html

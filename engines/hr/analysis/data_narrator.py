@@ -37,7 +37,7 @@ class ProductionDataNarrator:
     def __init__(self, use_llm: bool = True):
         self.use_llm = use_llm
         self.logger = logging.getLogger(__name__)
-        self.logger.info("✅ Production DataNarrator: Data preservation guaranteed")
+        self.logger.info("âœ… Production DataNarrator: Data preservation guaranteed")
     
     def narrate_with_data_guarantee(self, 
                                   query_result: Dict[str, Any],
@@ -85,7 +85,7 @@ class ProductionDataNarrator:
                 total_rows_confirmed=processed_rows
             )
             
-            self.logger.info(f"✅ Data narration: {processed_rows} rows guaranteed displayed")
+            self.logger.info(f"âœ… Data narration: {processed_rows} rows guaranteed displayed")
             return result
             
         except Exception as e:

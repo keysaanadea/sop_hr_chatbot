@@ -15,7 +15,6 @@ __all__ = [
     'HRService',
     'create_hr_service',
     'HRResponse',
-    'QueryResult',
     'ChartRecommendation'
 ]
 

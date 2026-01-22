@@ -1,26 +1,71 @@
 """
-DENAI Tools - NARRATIVE-FIRST HR RESPONSE FORMATTER (Supabase PostgreSQL Only)
-===============================================================================
+CORRECTED DENAI Tools - Universal Structured Response Handler
+============================================================
+ARCHITECTURE COMPLIANCE:
+✅ NO UX orchestration logic  
+✅ NO visualization flow control
+✅ NO frontend bubble generation
+✅ Universal structured response protocol
+✅ Backend remains authoritative
 
-ENHANCED VERSION:
-✅ ENHANCED: Narrative-first HR responses with business insights
-✅ ENHANCED: Rule-based insight integration from hr_service
-✅ MAINTAINED: Universal response formatter based on query result SHAPE
-✅ MAINTAINED: No debug metadata in chat responses
-✅ MAINTAINED: Clean business answers for all query types
-✅ MAINTAINED: Supabase PostgreSQL only initialization
-✅ FIXED: No data reconstruction in tools layer - assumes insight generation complete
-
-NEW PIPELINE:
-- chat_service.py: LLM classifier + security gate
-- hr_service.py: Query execution → insight generation → enriched response
-- tools.py: Narrative formatting for insight-enriched responses (NO data reconstruction)
+UNIVERSAL DESIGN:
+✅ Works for ANY tool that returns structured data
+✅ No hardcoded tool names or response types
+✅ Backward compatible with string responses
+✅ Extensible for future data types
 """
 
 import logging
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional, Union
+from dataclasses import dataclass
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass
+class StructuredResponse:
+    """
+    Universal structured response container
+    
+    Works for ANY tool that needs to return both:
+    1. Human-readable text (for display/LLM)  
+    2. Machine-readable data (for frontend rendering)
+    
+    Examples:
+    - HR analytics: text summary + table data
+    - Chart data: description + chart config
+    - File analysis: summary + structured metadata
+    - Any future structured data type
+    """
+    # Required fields
+    text_content: str                              # Human-readable response
+    data_type: str                                # Type identifier (analytics, chart, file, etc.)
+    
+    # Optional structured data
+    structured_data: Optional[Dict[str, Any]] = None    # Machine-readable payload
+    visualization_available: bool = False               # Can this be visualized?
+    metadata: Optional[Dict[str, Any]] = None           # Additional metadata
+    sql_query: Optional[str] = None           # ✅ ADD THIS
+    sql_explanation: Optional[str] = None     # ✅ ADD THIS
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert to dictionary for API response"""
+        result = {
+            "text_content": self.text_content,
+            "data_type": self.data_type,
+            "structured_data": self.structured_data,
+            "visualization_available": self.visualization_available
+        }
+        if self.metadata:
+            result["metadata"] = self.metadata
+        if self.sql_query:
+            result["sql_query"] = self.sql_query
+        if self.sql_explanation:
+            result["sql_explanation"] = self.sql_explanation
+        return result
+    
+    def has_structured_data(self) -> bool:
+        """Check if this response contains structured data"""
+        return self.structured_data is not None and len(self.structured_data) > 0
 
 # =====================
 # SOP SEARCH ENGINE (COMPLETELY UNCHANGED!)
@@ -37,7 +82,7 @@ except ImportError as e:
         return f"📋 SOP Search for: '{question}'\n\nSOP engine not available. Please check the import path."
 
 # =====================
-# HR ANALYTICS ENGINE (SUPABASE-ONLY WITH INSIGHT LAYER!)
+# HR ANALYTICS ENGINE (SUPABASE-ONLY, NO VIZ ORCHESTRATION!)
 # =====================
 try:
     from engines.hr import create_hr_service
@@ -56,7 +101,7 @@ try:
     if connection_string:
         hr_service = create_hr_service(connection_string)
         USE_HR_ENGINE = True
-        print("✅ HR Service initialized with Supabase PostgreSQL + Insight Layer")
+        print("✅ HR Service initialized with Supabase PostgreSQL - CORRECTED ARCHITECTURE")
     else:
         print("⚠️ Supabase configuration missing - HR engine disabled")
         USE_HR_ENGINE = False
@@ -68,7 +113,7 @@ except ImportError as e:
     hr_service = None
 
 # =====================
-# SIMPLIFIED ROUTING (INTENT-BASED FROM CHAT_SERVICE)
+# CORRECTED ROUTING (INTENT-BASED, NO UX LOGIC)
 # =====================
 
 def get_current_tools_schema(user_role: str, intent: str) -> List[Dict[str, Any]]:
@@ -99,7 +144,7 @@ def get_current_tools_schema(user_role: str, intent: str) -> List[Dict[str, Any]
             return _get_hr_tools()
         else:
             # Non-HR user requesting HR data → No tools (will be blocked at security gate)
-            logger.debug(f"🔒 Intent B (HR_DATA) blocked for {user_role}")
+            logger.debug(f"🔐 Intent B (HR_DATA) blocked for {user_role}")
             return []
     
     # Fallback: SOP tools
@@ -129,13 +174,13 @@ def _get_sop_tools() -> List[Dict[str, Any]]:
     ]
 
 def _get_hr_tools() -> List[Dict[str, Any]]:
-    """Return HR analytics tools only."""
+    """Return HR analytics tools only - CORRECTED VERSION."""
     return [
         {
             "type": "function",
             "function": {
                 "name": "query_hr_database",
-                "description": "Query employee database for structured HR analytics. For employee counts, departments, salary data, and performance metrics.",
+                "description": "Query employee database for structured HR analytics. Returns data in table format with visualization flag.",
                 "parameters": {
                     "type": "object",
                     "properties": {
@@ -157,7 +202,7 @@ def _get_hr_tools() -> List[Dict[str, Any]]:
     ]
 
 # =====================
-# TOOL FUNCTIONS (IMPLEMENTATION)
+# CORRECTED TOOL FUNCTIONS (FORMAT + FLAG ONLY)
 # =====================
 
 def search_sop(question: str, session_id: str = "default") -> str:
@@ -188,30 +233,29 @@ def search_sop(question: str, session_id: str = "default") -> str:
 <p>Silakan coba lagi atau hubungi administrator.</p>
 """
 
-def query_hr_database(question: str, user_role: str = "HR") -> str:
+def query_hr_database(question: str, user_role: str = "HR") -> Union[str, StructuredResponse]:
     """
-    🔥 PRODUCTION REFACTOR: GUARANTEED data preservation with separated analysis
+    UNIVERSAL: HR database query with structured response
     
-    SYSTEM CONTRACT ENFORCEMENT:
-    - ALL query rows MUST be visible in output
-    - DATA section ALWAYS comes first  
-    - ANALYSIS section clearly separated
-    - Raw data NEVER hidden by insight logic
+    Returns StructuredResponse for any query with tabular data
+    Returns string for errors or non-tabular responses
+    
+    NO hardcoding - works for any HR query type
     """
     try:
-        logger.info(f"📊 Production HR query: {question[:50]} (role: {user_role})")
+        logger.info(f"📊 HR query: {question[:50]} (role: {user_role})")
         
         if not USE_HR_ENGINE:
             logger.error("❌ HR Analytics engine not available")
             return "❌ **HR Analytics Tidak Tersedia**\n\nSistem HR Analytics tidak tersedia. Hubungi administrator."
         
-        # Get response from production pipeline
+        # Execute HR query (UNCHANGED)
         response = hr_service.process_hr_query(
             question=question,
             user_role=user_role
         )
         
-        # Handle errors
+        # Handle errors (UNCHANGED)
         if response.has_errors():
             logger.warning(f"⚠️ HR query failed: {response.errors}")
             return (
@@ -220,14 +264,14 @@ def query_hr_database(question: str, user_role: str = "HR") -> str:
                 "atau Anda tidak memiliki otorisasi untuk mengaksesnya."
             )
         
-        # 🔥 PRODUCTION CONTRACT: ALWAYS show complete data first
+        # Process successful response with data
         if response.has_data():
-            result_parts = []
-            
-            # MANDATORY: Complete raw data table (ALWAYS FIRST)
             query_data = response.data
             columns = query_data.get('columns', [])
             rows = query_data.get('rows', [])
+            
+            # Build human-readable text response (UNCHANGED formatting)
+            result_parts = []
             
             if columns and rows:
                 result_parts.append("# 📊 **COMPLETE QUERY RESULTS**")
@@ -252,20 +296,52 @@ def query_hr_database(question: str, user_role: str = "HR") -> str:
                 result_parts.append("---")
                 result_parts.append("")
             
-            # SEPARATED: Analysis/interpretation (references data above)
+            # Analysis/interpretation (UNCHANGED)
             if hasattr(response, 'insight') and response.insight:
-                # The insight field now contains both DATA and ANALYSIS sections
-                # from ProductionDataNarrator, so we just display it
                 result_parts.append(response.insight)
             else:
-                # Fallback: Ensure user knows data is complete
                 result_parts.append("# 📋 **ANALYSIS**")
                 result_parts.append("")
                 result_parts.append(f"✅ Complete dataset displayed above: {len(rows)} total records")
-                result_parts.append("Analysis temporarily unavailable - all data preserved")
             
-            logger.info(f"✅ PRODUCTION: {len(rows)} rows guaranteed visible to user")
-            return "\n".join(result_parts)
+            # Universal visualization check
+            viz_available = _can_data_be_visualized(rows, columns)
+            
+            if viz_available:
+                result_parts.append("")
+                result_parts.append("---")
+                result_parts.append("")
+                result_parts.append("*📊 This data can be visualized. Use visualization controls to create charts.*")
+            
+            text_content = "\n".join(result_parts)
+            
+            # ✅ UNIVERSAL: Return structured response if we have tabular data
+            if columns and rows:
+                logger.info(f"✅ HR query completed: {len(rows)} rows, returning StructuredResponse")
+                sql_query = getattr(response, 'sql_query', None)
+                sql_explanation = getattr(response, 'sql_explanation', None)
+                
+                return StructuredResponse(
+                    text_content=text_content,
+                    data_type="analytics",
+                    structured_data={
+                        "columns": columns,
+                        "rows": rows,
+                        "total_rows": len(rows),
+                        "source": "hr_database"
+                    },
+                    visualization_available=viz_available,
+                    metadata={
+                        "query": question,
+                        "user_role": user_role,
+                        "timestamp": logger.name # Simple timestamp
+                    },
+                    sql_query=sql_query,           # ✅ ADD THIS
+                    sql_explanation=sql_explanation # ✅ ADD THIS
+                )
+            else:
+                # No tabular data - return text
+                return text_content
         
         # No data case
         else:
@@ -276,17 +352,40 @@ def query_hr_database(question: str, user_role: str = "HR") -> str:
             )
             
     except Exception as e:
-        logger.error(f"❌ Production HR query failed: {str(e)}")
+        logger.error(f"❌ HR query failed: {str(e)}")
         return (
             "❌ **Error Query HR Database**\n\n"
             f"Terjadi kesalahan: {str(e)}\n\n"
             "**DATA STATUS: Query failed - no results available**"
         )
 
-
+def _can_data_be_visualized(rows: List[Dict], columns: List[str]) -> bool:
+    """
+    SIMPLE visualization availability check
+    
+    ONLY checks basic criteria:
+    - Minimum row count
+    - Minimum column count
+    - Maximum reasonable size
+    
+    NO complex heuristics
+    NO user tracking
+    NO chart type analysis
+    """
+    if not rows or not columns:
+        return False
+    
+    # Simple rules
+    if len(rows) < 2 or len(rows) > 500:
+        return False
+    
+    if len(columns) < 2:
+        return False
+    
+    return True
 
 # =====================
-# TOOL FUNCTIONS REGISTRY
+# TOOL FUNCTIONS REGISTRY (UNCHANGED)
 # =====================
 
 TOOL_FUNCTIONS = {
@@ -295,24 +394,16 @@ TOOL_FUNCTIONS = {
 }
 
 # =====================
-# LEGACY COMPATIBILITY
+# LEGACY COMPATIBILITY (UNCHANGED)
 # =====================
 
-# Legacy functions for backward compatibility (DEPRECATED)
 def get_tools_for_request(user_role: str, message: str) -> List[Dict[str, Any]]:
-    """
-    DEPRECATED: Use get_current_tools_schema() with intent parameter instead.
-    This function is kept for backward compatibility only.
-    """
+    """DEPRECATED: Use get_current_tools_schema() with intent parameter instead."""
     logger.warning("⚠️ DEPRECATED: get_tools_for_request() called. Use get_current_tools_schema() with intent.")
-    # Default to SOP tools for legacy compatibility
     return _get_sop_tools()
 
 def is_hr_data_query(question: str) -> bool:
-    """
-    DEPRECATED: HR detection now handled by LLM classifier in chat_service.py
-    This function is kept for backward compatibility only.
-    """
+    """DEPRECATED: HR detection now handled by LLM classifier in chat_service.py"""
     logger.warning("⚠️ DEPRECATED: is_hr_data_query() called. Use LLM classifier instead.")
     return False
 
@@ -320,11 +411,11 @@ def is_hr_data_query(question: str) -> bool:
 TOOLS_SCHEMA = _get_sop_tools()
 
 # =====================
-# SYSTEM STATUS
+# CORRECTED SYSTEM STATUS
 # =====================
-print("=" * 70)
-print("🎯 DENAI Tools - NARRATIVE-FIRST HR RESPONSES (Supabase PostgreSQL Only)")
-print("=" * 70)
+print("=" * 80)
+print("🎯 DENAI Tools - CORRECTED ARCHITECTURE (Format + Flag Only)")
+print("=" * 80)
 
 # Engine status
 if USE_SOP_ENGINE:
@@ -333,29 +424,89 @@ else:
     print("❌ SOP RAG Engine: FAILED TO LOAD")
 
 if USE_HR_ENGINE:
-    print("📊 HR Analytics Engine: ACTIVE (Supabase PostgreSQL) - NARRATIVE-FIRST WITH INSIGHTS")
+    print("📊 HR Analytics Engine: ACTIVE (Supabase PostgreSQL) - DATA + FLAG ONLY")
 else:
     print("❌ HR Analytics Engine: NOT AVAILABLE")
 
 print("🧠 Routing: LLM intent classification (A=SOP, B=HR_DATA)")
-print("🔒 Security: Role-based access control in chat_service.py")
+print("🔐 Security: Role-based access control in chat_service.py")
 print("🎯 Architecture: Supabase PostgreSQL only, no SQLite")
-print("🔥 PIPELINE: Query → Insight Generation → Narrative Formatting (NO DATA RECONSTRUCTION)")
-print("✨ FEATURES: Business insights, key facts, structured narrative")
-print("🛡️ FIXED: Tools layer assumes insight generation complete - no data reconstruction")
-print("=" * 70)
+print("✅ CORRECTED: No UX orchestration, no visualization flow control")
+print("✅ COMPLIANT: Format + flag only, backend authoritative")
+print("=" * 80)
 
 # =====================
-# EXPORTS
+# EXPORTS (CORRECTED)
 # =====================
 
 __all__ = [
+    # Core functions
     "search_sop",
     "query_hr_database", 
     "get_current_tools_schema",
     "TOOL_FUNCTIONS",
+    
+    # Universal response class
+    "StructuredResponse",
+    
     # Legacy exports (deprecated)
     "get_tools_for_request",
     "is_hr_data_query",
     "TOOLS_SCHEMA"
 ]
+
+# =====================
+# UNIVERSAL EXAMPLES: How ANY tool can return structured data
+# =====================
+
+"""
+EXAMPLE 1: File Analysis Tool
+-----------------------------
+def analyze_file(file_path: str) -> Union[str, StructuredResponse]:
+    try:
+        file_stats = get_file_analysis(file_path)
+        
+        if file_stats:
+            return StructuredResponse(
+                text_content=f"File analyzed: {file_stats['size']} bytes",
+                data_type="file",
+                structured_data={
+                    "file_path": file_path,
+                    "size": file_stats['size'],
+                    "type": file_stats['type']
+                },
+                visualization_available=False
+            )
+        else:
+            return "File analysis failed"
+    except Exception as e:
+        return f"Error: {e}"
+
+EXAMPLE 2: Chart Generator Tool  
+------------------------------
+def generate_chart(data: str) -> Union[str, StructuredResponse]:
+    try:
+        chart_config = build_chart_config(data)
+        
+        if chart_config:
+            return StructuredResponse(
+                text_content="Chart generated with 3 data series",
+                data_type="chart",
+                structured_data={
+                    "config": chart_config,
+                    "chart_type": "bar"
+                },
+                visualization_available=True
+            )
+        else:
+            return "Chart generation failed"
+    except Exception as e:
+        return f"Error: {e}"
+
+FRONTEND RESPONSES:
+------------------
+Analytics → {"hr_analytics": {...}, "visualization_available": true}
+Charts   → {"chart_data": {...}, "visualization_available": true}  
+Files    → {"file_metadata": {...}}
+Custom   → {"custom_data": {...}, "data_type": "custom"}
+"""

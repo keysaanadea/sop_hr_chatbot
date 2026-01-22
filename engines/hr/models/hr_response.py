@@ -1,13 +1,15 @@
 """
-HR Response Data Model - ENHANCED with Insight Support
-=====================================================
-Extended data contracts for insight-enriched HR analytics responses
+HR Response Data Model - ENHANCED with Frontend Analysis Support
+==============================================================
+Extended data contracts for frontend-compatible HR analytics responses
 
 Key Enhancement:
-- Added insight field for business context
+- Added narrative field for insight cards
+- Added analysis field for key facts
 - Enhanced recommendations for key facts
 - Maintained backward compatibility
 - Clear separation of concerns
+- 🆕 SQL transparency fields
 """
 
 from dataclasses import dataclass
@@ -18,20 +20,32 @@ from typing import List, Dict, Any, Optional
 class HRResponse:
     """
     Enhanced HR analytics response format
-    Now supports rule-based insights and narrative content
+    Now supports frontend-compatible analysis and narrative content
     
     Fields:
     - data: Raw query results (maintained)
     - visualization: Chart configuration (maintained) 
-    - insight: NEW - Business context and narrative insights
-    - recommendations: ENHANCED - Now used for key facts
+    - insight: Business context and narrative insights (maintained)
+    - recommendations: Key facts from insight layer (maintained)
     - errors: Error messages (maintained)
+    - narrative: 🔧 NEW - Frontend insight card data (title, summary)
+    - analysis: 🔧 NEW - Frontend key facts data (highest, lowest, concentration)
+    - sql_query: 🆕 NEW - SQL query untuk transparency
+    - sql_explanation: 🆕 NEW - Human-readable SQL explanation
     """
     data: Optional[Dict[str, Any]] = None
     visualization: Optional[Dict[str, Any]] = None
-    insight: Optional[str] = None  # 🔥 NEW: Business insights and narrative context
-    recommendations: Optional[List[str]] = None  # 🔥 ENHANCED: Now key facts from insight layer
+    insight: Optional[str] = None  # Business insights and narrative context
+    recommendations: Optional[List[str]] = None  # Key facts from insight layer
     errors: Optional[List[str]] = None
+    
+    # 🔧 NEW: Frontend-compatible fields
+    narrative: Optional[Dict[str, Any]] = None  # For insight cards: {title, summary}
+    analysis: Optional[Dict[str, Any]] = None   # For key facts: {highest, lowest, top_concentration_percent}
+    
+    # 🆕 NEW: SQL transparency fields
+    sql_query: Optional[str] = None
+    sql_explanation: Optional[str] = None
     
     def has_data(self) -> bool:
         """Check apakah ada data yang berhasil di-query"""
@@ -42,12 +56,24 @@ class HRResponse:
         return self.visualization is not None
     
     def has_insights(self) -> bool:
-        """🔥 NEW: Check apakah ada business insights"""
+        """Check apakah ada business insights"""
         return self.insight is not None and len(self.insight.strip()) > 0
     
     def has_key_facts(self) -> bool:
-        """🔥 NEW: Check apakah ada key facts (recommendations field)"""
+        """Check apakah ada key facts (recommendations field)"""
         return self.recommendations is not None and len(self.recommendations) > 0
+    
+    def has_narrative(self) -> bool:
+        """🔧 NEW: Check apakah ada narrative untuk frontend insight cards"""
+        return self.narrative is not None and isinstance(self.narrative, dict)
+    
+    def has_analysis(self) -> bool:
+        """🔧 NEW: Check apakah ada analysis untuk frontend key facts"""
+        return self.analysis is not None and isinstance(self.analysis, dict)
+    
+    def has_sql_query(self) -> bool:
+        """🆕 NEW: Check apakah ada SQL query untuk transparency"""
+        return self.sql_query is not None and len(self.sql_query.strip()) > 0
     
     def has_errors(self) -> bool:
         """Check apakah ada error"""
@@ -55,22 +81,41 @@ class HRResponse:
     
     def to_dict(self) -> Dict[str, Any]:
         """Convert ke dictionary untuk JSON response"""
-        return {
+        result = {
             'data': self.data,
             'visualization': self.visualization,
             'insight': self.insight,
             'recommendations': self.recommendations,
-            'errors': self.errors
+            'errors': self.errors,
+            'narrative': self.narrative,  # 🔧 NEW
+            'analysis': self.analysis     # 🔧 NEW
         }
+        
+        # 🆕 ADD SQL transparency fields if available
+        if self.has_sql_query():
+            result['sql_query'] = self.sql_query
+            
+        if self.sql_explanation:
+            result['sql_explanation'] = self.sql_explanation
+            
+        return result
     
     def get_narrative_summary(self) -> str:
         """
-        🔥 NEW: Get narrative summary for logging/debugging
+        Get narrative summary for logging/debugging
         """
         parts = []
         
         if self.has_insights():
             parts.append(f"Insight: {self.insight[:50]}...")
+        
+        if self.has_narrative():
+            title = self.narrative.get('title', 'N/A')
+            parts.append(f"Narrative: {title}")
+        
+        if self.has_analysis():
+            analysis_keys = list(self.analysis.keys())
+            parts.append(f"Analysis: {len(analysis_keys)} metrics")
         
         if self.has_key_facts():
             parts.append(f"Key Facts: {len(self.recommendations)} items")
@@ -79,13 +124,16 @@ class HRResponse:
             row_count = self.data.get('total_rows', 0)
             parts.append(f"Data: {row_count} rows")
         
+        if self.has_sql_query():
+            parts.append("SQL: Available")
+        
         return " | ".join(parts) if parts else "No content"
 
 
 @dataclass 
 class InsightContext:
     """
-    🔥 NEW: Context information for insight generation
+    Context information for insight generation
     Used internally by insight generators
     """
     original_question: str
@@ -124,24 +172,30 @@ class ChartRecommendation:
         }
 
 
-# 🔥 NEW: Convenience functions
+# 🔧 ENHANCED: Convenience functions with new fields
 def create_insight_response(data: Dict[str, Any], insight: str, 
-                          key_facts: List[str]) -> HRResponse:
+                          key_facts: List[str],
+                          narrative: Optional[Dict[str, Any]] = None,
+                          analysis: Optional[Dict[str, Any]] = None) -> HRResponse:
     """
-    Convenience function untuk membuat insight-enriched response
+    🔧 ENHANCED: Convenience function untuk membuat frontend-compatible response
     
     Args:
         data: Query result data
         insight: Business insight narrative
         key_facts: List of key quantitative facts
+        narrative: Frontend narrative data (title, summary)
+        analysis: Frontend analysis data (highest, lowest, etc.)
     
     Returns:
-        Complete HRResponse with insights
+        Complete HRResponse with frontend-compatible insights
     """
     return HRResponse(
         data=data,
         insight=insight,
-        recommendations=key_facts
+        recommendations=key_facts,
+        narrative=narrative,
+        analysis=analysis
     )
 
 

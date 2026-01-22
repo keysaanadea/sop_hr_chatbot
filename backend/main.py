@@ -23,6 +23,8 @@ from backend.api.chat import router as chat_router
 from backend.api.speech import router as speech_router  
 from backend.api.sessions import router as sessions_router
 from backend.api.info import router as info_router
+# FIXED: Correct import path for visualization router
+from backend.api.visualization import router as visualization_router
 
 # Setup logging
 logging.basicConfig(
@@ -52,7 +54,10 @@ app.include_router(chat_router, prefix="", tags=["Chat"])
 app.include_router(speech_router, prefix="/speech", tags=["Speech"])
 app.include_router(sessions_router, prefix="/sessions", tags=["Sessions"])
 app.include_router(info_router, prefix="", tags=["Info"])
+# FIXED: Visualization router now properly imported and registered
+app.include_router(visualization_router, prefix="/api/viz", tags=["Visualization"])
 # NOTE: HR functionality is accessed via chat router with dynamic tools routing
+app.include_router(chat_router, prefix="/api/chat", tags=["Chat-API"])
 
 
 @app.on_event("startup")
@@ -99,6 +104,7 @@ def read_root():
             "💬 Chat API (/ask) - Main conversation interface",
             "🎤 Speech API (/speech/*) - Voice interaction",
             "💾 Session Management (/sessions/*) - Conversation history",
+            "📊 Visualization API (/api/viz/*) - Chart generation",
             "ℹ️ System Info (/*) - API information"
         ],
         "note": "HR analytics accessed via /ask endpoint with role-based routing"

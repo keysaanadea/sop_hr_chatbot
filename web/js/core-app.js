@@ -1,7 +1,7 @@
 /* ================= CORE APP MODULE - ENHANCED WITH HR ANALYTICS ================= */
 /**
  * 🎯 CORE: Main application state and initialization
- * ENHANCED: Smart response routing for HR Analytics dashboard
+ * 🔥 FIXED: Robust HR Analytics detection and rendering pipeline
  * File: js/core-app.js
  */
 
@@ -93,10 +93,128 @@ function startFromLanding() {
 }
 
 /**
- * 🆕 ENHANCED: Smart message rendering with HR Analytics support
- * FIXED: DOM API sequence bug that reset bubble content
+ * 🔥 CRITICAL FIX: Enhanced message rendering with robust HR Analytics support
+ * FIXED: Consistent HR Analytics detection and rendering pipeline
+ */
+/**
+ * 🔥 ENHANCED: Complete addMessage function with Rich Dashboard UI
+ * READY TO COPY-PASTE: Replace your existing addMessage function with this
+ * 
+ * FEATURES:
+ * ✅ Rich Dashboard UI for HR Analytics (like photos 3 & 4)
+ * ✅ Full dashboard rendering (not chat bubble) 
+ * ✅ Backward compatible with all existing functionality
+ * ✅ Pure presentation - no business logic changes
+ * ✅ Error handling and fallback mechanisms
  */
 function addMessage(role, text, shouldSave = true, responseData = null) {
+  console.log("🎯 Enhanced CoreApp.addMessage called:", {
+    role,
+    textLength: text ? text.length : 0,
+    hasResponseData: !!responseData,
+    responseDataType: responseData ? typeof responseData : 'none',
+    isHRAnalytics: isHRAnalyticsResponse(responseData)
+  });
+
+  // 🔍 Check if this is HR Analytics response
+  const isHRData = isHRAnalyticsResponse(responseData);
+  // 🎯 CRITICAL FIX: Pass REAL HR analytics data to visualization module
+  if (role === "bot" && responseData && isHRAnalyticsResponse(responseData)) {
+    console.log("🎯 CRITICAL: HR Analytics detected - passing REAL data to VisualizationModule");
+    
+    // Extract the real analytics data from response
+    const analyticsData = extractAnalyticsData(responseData);
+    
+    if (analyticsData && responseData.turn_id) {
+      console.log("🎯 PASSING REAL HR DATA to VisualizationModule:", {
+        turnId: responseData.turn_id,
+        analyticsData: analyticsData
+      });
+      
+      // 🚨 CRITICAL FIX: This was MISSING! Pass real data to visualization module
+      if (window.VisualizationModule && window.VisualizationModule.setAnalyticsData) {
+        window.VisualizationModule.setAnalyticsData(responseData.turn_id, analyticsData);
+        console.log("✅ REAL HR analytics data successfully passed to VisualizationModule");
+      } else {
+        console.error("❌ VisualizationModule.setAnalyticsData not available!");
+      }
+    } else {
+      console.error("❌ Missing analytics data or turn_id:", {
+        hasAnalyticsData: !!analyticsData,
+        hasTurnId: !!responseData.turn_id
+      });
+    }
+  }
+  // 🎨 FOR HR ANALYTICS: Create FULL DASHBOARD (not chat bubble)
+  if (role === "bot" && isHRData && window.HRAnalyticsRenderer) {
+    console.log("🎨 Rendering HR Analytics as FULL RICH DASHBOARD (not chat bubble)");
+    
+    try {
+      // Create dedicated full-width HR analytics dashboard container
+      const hrDashboardContainer = document.createElement("div");
+      hrDashboardContainer.className = "hr-analytics-full-dashboard-wrapper";
+      hrDashboardContainer.style.cssText = `
+        width: 100%;
+        margin: 24px 0;
+        padding: 0;
+        background: transparent;
+        border-radius: 0;
+        box-shadow: none;
+      `;
+      
+      // Generate unique message ID
+      const messageId = Date.now();
+      
+      // 🎯 ENHANCED: Use the rich dashboard renderer
+      const renderSuccess = window.HRAnalyticsRenderer.render(responseData, messageId, hrDashboardContainer);
+      
+      if (renderSuccess) {
+        // Add to messages container - FULL DASHBOARD, not bubble
+        if (messages) {
+          messages.appendChild(hrDashboardContainer);
+          messages.scrollTop = messages.scrollHeight;
+        }
+        
+        console.log("✅ HR Analytics RICH DASHBOARD rendered successfully");
+        
+        // Save to conversation history (text summary for history)
+        if (shouldSave) {
+          const textForHistory = stripHtml(text);
+          conversationHistory.push({
+            role: role,
+            message: textForHistory,
+            timestamp: new Date().toISOString(),
+            hasHRAnalytics: true,
+            messageType: responseData?.message_type,
+            domain: responseData?.domain
+          });
+        }
+        
+        return hrDashboardContainer;
+        
+      } else {
+        console.warn("⚠️ HR Analytics rendering failed, falling back to regular message");
+        // Fallback to regular message if rendering fails
+        return createRegularMessage(role, text, shouldSave, responseData);
+      }
+      
+    } catch (error) {
+      console.error("❌ Error rendering HR Analytics dashboard:", error);
+      // Fallback to regular message if error occurs
+      return createRegularMessage(role, text, shouldSave, responseData);
+    }
+    
+  } else {
+    // 📝 FOR NON-HR MESSAGES: Use regular chat bubble (unchanged)
+    return createRegularMessage(role, text, shouldSave, responseData);
+  }
+}
+
+/**
+ * 🔄 REGULAR MESSAGE RENDERING - Your existing logic preserved
+ * Handles all non-HR messages exactly as before
+ */
+function createRegularMessage(role, text, shouldSave = true, responseData = null) {
   const div = document.createElement("div");
   div.className = `msg ${role==="user"?"user-msg user":"bot"}`;
   
@@ -108,49 +226,11 @@ function addMessage(role, text, shouldSave = true, responseData = null) {
   if (role === "user") {
     bubble.textContent = text;
   } else {
-    // 🆕 ENHANCED: Smart response rendering based on data type
-    if (responseData && isHRAnalyticsResponse(responseData)) {
-      console.log("🎯 Detected HR Analytics response, rendering embedded dashboard");
-      
-      // Create dedicated HR analytics container
-      const hrContainer = document.createElement("div");
-      const hrContainerId = `hr-analytics-chat-${Date.now()}`;
-      hrContainer.id = hrContainerId;
-      hrContainer.className = "hr-analytics-chat-container";
-      
-      // Add container to bubble first, then render
-      bubble.appendChild(hrContainer);
-      bubble.classList.add("hr-analytics-message");
-      
-      // Render HR analytics dashboard into the container
-      if (window.HRRenderer) {
-        try {
-          const success = window.HRRenderer.renderHRAnalyticsInContainer(hrContainer, responseData);
-          
-          if (success) {
-            console.log("✅ HR Analytics dashboard embedded successfully");
-          } else {
-            console.warn("⚠️ HR Analytics rendering failed, using text fallback");
-            bubble.className = "bubble";
-            bubble.innerHTML = text;
-          }
-        } catch (error) {
-          console.error("❌ Error rendering HR Analytics:", error);
-          bubble.className = "bubble";
-          bubble.innerHTML = text;
-        }
-      } else {
-        console.warn("⚠️ HRRenderer not available, using text fallback");
-        bubble.className = "bubble";
-        bubble.innerHTML = text;
-      }
-    } else {
-      // Regular HTML content (SOP, regular chat, etc.)
-      bubble.innerHTML = text;
-    }
+    // Regular HTML content (SOP, regular chat, etc.)
+    bubble.innerHTML = text;
   }
   
-  // 🔥 CRITICAL FIX: Don't use innerHTML that resets DOM
+  // Create avatar element
   const avatar = document.createElement("div");
   avatar.className = "avatar";
   avatar.textContent = avatarText;
@@ -177,8 +257,10 @@ function addMessage(role, text, shouldSave = true, responseData = null) {
     div.appendChild(actions);
   }
   
-  messages.appendChild(div);
-  messages.scrollTop = messages.scrollHeight;
+  if (messages) {
+    messages.appendChild(div);
+    messages.scrollTop = messages.scrollHeight;
+  }
   
   if (shouldSave) {
     const textForHistory = role === "user" ? text : stripHtml(text);
@@ -193,25 +275,134 @@ function addMessage(role, text, shouldSave = true, responseData = null) {
 }
 
 /**
- * 🆕 FUNCTION: Detect if response contains HR Analytics data
+ * 🔧 Buat bubble sistem untuk visualization
+ * Struktur sama persis: .msg -> .avatar + .bubble
+ */
+function createSystemBubble(text = "", className = "") {
+  const div = document.createElement("div");
+  div.className = `msg bot`;
+  
+  const avatar = document.createElement("div");
+  avatar.className = "avatar";
+  avatar.textContent = "AI";
+  
+  const bubble = document.createElement("div");
+  bubble.className = `bubble ${className}`.trim();
+  if (text) {
+    bubble.innerHTML = text;
+  }
+  
+  div.appendChild(avatar);
+  div.appendChild(bubble);
+  
+  messages.appendChild(div);
+  messages.scrollTop = messages.scrollHeight;
+  
+  return bubble;
+}
+
+/**
+ * 🔥 ENHANCED: More robust HR Analytics response detection
+ * FIXED: Multiple validation strategies for consistent detection
  */
 function isHRAnalyticsResponse(responseData) {
-  if (!responseData) return false;
+  if (!responseData) {
+    return false;
+  }
   
-  // Check for HR analytics structure from backend
-  return (
-    // Primary check: data with rows
-    (responseData.data && 
-     responseData.data.rows && 
-     Array.isArray(responseData.data.rows) &&
-     responseData.data.rows.length > 0) ||
-    // Alternative structure checks
-    responseData.analysis || 
-    responseData.narrative ||
-    // Fallback: check if it looks like structured data
-    (typeof responseData === 'object' && 
-     (responseData.highest || responseData.lowest || responseData.total))
-  );
+  console.log("🔍 UNIVERSAL HR Analytics Detection - Input:", {
+    type: typeof responseData,
+    keys: Object.keys(responseData),
+    hasColumns: !!(responseData.columns),
+    hasRows: !!(responseData.rows),
+    columnsType: responseData.columns ? typeof responseData.columns : 'none',
+    rowsType: responseData.rows ? typeof responseData.rows : 'none',
+    rowsCount: responseData.rows ? responseData.rows.length : 0
+  });
+  
+  // 🎯 UNIVERSAL CONTRACT: Check for direct analytics data structure
+  // This handles the new backend contract where analytics data is passed directly
+  if (responseData.columns && 
+      responseData.rows &&
+      Array.isArray(responseData.columns) && 
+      Array.isArray(responseData.rows) &&
+      responseData.rows.length > 0) {
+    console.log("✅ UNIVERSAL: HR Analytics detected via direct data structure (NEW CONTRACT)");
+    return true;
+  }
+  
+  // Legacy Strategy 1: Check explicit type marker (backward compatibility)
+  if (responseData.type === 'hr_analytics') {
+    console.log("✅ LEGACY: HR Analytics detected via type marker");
+    return true;
+  }
+  
+  // Legacy Strategy 2: Check for nested data structure (backward compatibility)
+  if (responseData.data && 
+      responseData.data.columns && 
+      responseData.data.rows &&
+      Array.isArray(responseData.data.columns) && 
+      Array.isArray(responseData.data.rows) &&
+      responseData.data.rows.length > 0) {
+    console.log("✅ LEGACY: HR Analytics detected via data.rows structure");
+    return true;
+  }
+  
+  // Legacy Strategy 3: Check for analysis structure (backward compatibility)
+  if (responseData.analysis || responseData.narrative) {
+    console.log("✅ LEGACY: HR Analytics detected via analysis/narrative structure");
+    return true;
+  }
+  
+  // Legacy Strategy 4: Check for direct structured data patterns (backward compatibility)
+  if (typeof responseData === 'object') {
+    const hasHRPattern = 
+      responseData.highest || 
+      responseData.lowest || 
+      responseData.total ||
+      (responseData.rows && Array.isArray(responseData.rows));
+      
+    if (hasHRPattern) {
+      console.log("✅ LEGACY: HR Analytics detected via data patterns");
+      return true;
+    }
+  }
+  
+  console.log("❌ No HR Analytics pattern detected");
+  return false;
+}
+
+function extractAnalyticsData(responseData) {
+  if (!responseData) return null;
+  
+  console.log("🎯 Extracting analytics data from response:", responseData);
+  
+  // Strategy 1: Direct data structure (new backend format)
+  if (responseData.data && responseData.data.columns && responseData.data.rows) {
+    console.log("✅ Found analytics data in responseData.data");
+    return {
+      columns: responseData.data.columns,
+      rows: responseData.data.rows
+    };
+  }
+  
+  // Strategy 2: Direct columns + rows (alternative format)
+  if (responseData.columns && responseData.rows) {
+    console.log("✅ Found analytics data in responseData root");
+    return {
+      columns: responseData.columns,
+      rows: responseData.rows
+    };
+  }
+  
+  // Strategy 3: Legacy analytics structure
+  if (responseData.analytics_data) {
+    console.log("✅ Found analytics data in analytics_data field");
+    return responseData.analytics_data;
+  }
+  
+  console.warn("⚠️ No recognizable analytics data structure found");
+  return null;
 }
 
 function stripHtml(html) {
@@ -320,6 +511,29 @@ function detectVisualizationQuery(text) {
   return hasVizKeyword && hasHRPattern;
 }
 
+/* ================= DEBUGGING UTILITIES ================= */
+function debugHRAnalytics(responseData) {
+  /**
+   * 🔧 DEBUG: Helper function for HR Analytics troubleshooting
+   */
+  console.group("🔧 HR Analytics Debug");
+  console.log("Response Data:", responseData);
+  console.log("Is HR Analytics:", isHRAnalyticsResponse(responseData));
+  console.log("HRRenderer Available:", !!window.HRRenderer);
+  
+  if (responseData) {
+    console.log("Data Structure:", {
+      type: typeof responseData,
+      keys: Object.keys(responseData),
+      hasData: !!responseData.data,
+      hasRows: !!(responseData.data && responseData.data.rows),
+      rowCount: responseData.data && responseData.data.rows ? responseData.data.rows.length : 0
+    });
+  }
+  
+  console.groupEnd();
+}
+
 /* ================= INITIALIZATION ================= */
 async function initializeApp() {
   console.log("🚀 Initializing DEN·AI Application...");
@@ -344,9 +558,10 @@ async function initializeApp() {
       window.SessionModule.initialize();
     }
     
-    // 🆕 Initialize HR Analytics Renderer
-    if (window.HRRenderer) {
+    // 🔥 ENHANCED: HR Analytics Renderer initialization check
+    if (window.HRAnalyticsRenderer) {
       console.log("✅ HR Analytics Renderer detected and ready");
+      console.log("   • Available methods:", Object.keys(window.HRAnalyticsRenderer));
     } else {
       console.warn("⚠️ HR Analytics Renderer not found - HR data will display as text");
     }
@@ -357,7 +572,7 @@ async function initializeApp() {
     }
     
     console.log("✅ DEN·AI Application initialized successfully!");
-    console.log(`👤 User: ${userRole} | 🔐 HR Access: ${isHR ? 'ENABLED' : 'DISABLED'}`);
+    console.log(`👤 User: ${userRole} | 📋 HR Access: ${isHR ? 'ENABLED' : 'DISABLED'}`);
     
   } catch (error) {
     console.error("❌ Application initialization failed:", error);
@@ -436,8 +651,12 @@ window.CoreApp = {
   showTypingIndicator,
   stripHtml,
   newChat,
+  createSystemBubble,
   detectVisualizationQuery,
-  isHRAnalyticsResponse, // 🆕 Export for other modules
+  isHRAnalyticsResponse, // 🔥 Enhanced detection function
+  extractAnalyticsData,
+  debugHRAnalytics,      // 🔧 Debug utility
+
   
   // DOM elements
   get messages() { return messages; },

@@ -2,6 +2,8 @@
 HR Service - Supabase PostgreSQL Edition with Integrated Insight Layer
 =====================================================================
 ENHANCED VERSION that routes through insight generation for narrative responses
+FIXED: Properly sends analysis and narrative data to frontend
+🆕 ENHANCED: Added SQL transparency for query inspection
 """
 
 import os
@@ -100,107 +102,96 @@ class SchemaReader:
         try:
             with psycopg2.connect(self.connection_string) as conn:
                 with conn.cursor() as cursor:
-                    # Get all tables in hr schema
-                    cursor.execute("""
-                        SELECT table_name
-                        FROM information_schema.tables 
-                        WHERE table_schema = 'hr'
-                        AND table_type = 'BASE TABLE'
-                        ORDER BY table_name
-                    """)
+                    # Query untuk get table structure dari hr schema
+                    schema_query = """
+                    SELECT 
+                        t.table_name,
+                        COALESCE(
+                            STRING_AGG(
+                                CONCAT(c.column_name, ' (', c.data_type, ')'), 
+                                ', ' ORDER BY c.ordinal_position
+                            ),
+                            'No columns found'
+                        ) as columns
+                    FROM information_schema.tables t
+                    LEFT JOIN information_schema.columns c
+                        ON t.table_name = c.table_name 
+                        AND t.table_schema = c.table_schema
+                    WHERE t.table_schema = 'hr' 
+                        AND t.table_type = 'BASE TABLE'
+                    GROUP BY t.table_name
+                    ORDER BY t.table_name;
+                    """
                     
-                    hr_tables = cursor.fetchall()
+                    cursor.execute(schema_query)
+                    schema_result = cursor.fetchall()
                     
-                    if not hr_tables:
-                        self._cached_schema = "No tables found in hr schema"
-                        return self._cached_schema
+                    # Build formatted schema text
+                    schema_lines = ["HR Database Schema (Supabase PostgreSQL):"]
+                    schema_lines.append("=" * 50)
                     
-                    # Build schema text for LLM
-                    schema_lines = [
-                        "=== HR SCHEMA (Supabase PostgreSQL) ===",
-                        f"Schema: hr",
-                        f"Total Tables: {len(hr_tables)}",
-                        ""
-                    ]
+                    for table_name, columns_info in schema_result:
+                        schema_lines.append(f"\nTable: hr.{table_name}")
+                        schema_lines.append(f"Columns: {columns_info}")
                     
-                    # Get detailed info for each table
-                    for table_row in hr_tables:
-                        table_name = table_row[0]
-                        
-                        # Get columns
-                        cursor.execute("""
-                            SELECT column_name, data_type
-                            FROM information_schema.columns 
-                            WHERE table_schema = 'hr' 
-                            AND table_name = %s
-                            ORDER BY ordinal_position
-                        """, (table_name,))
-                        
-                        columns = cursor.fetchall()
-                        
-                        schema_lines.append(f"TABLE: hr.{table_name}")
-                        schema_lines.append(f"Columns ({len(columns)}):")
-                        
-                        for col in columns:
-                            schema_lines.append(f"  • {col[0]}: {col[1]}")
-                        
-                        schema_lines.append("")
+                    schema_text = "\n".join(schema_lines)
+                    self._cached_schema = schema_text
                     
-                    schema_lines.extend([
-                        "=== SQL GUIDELINES ===",
-                        "• Use PostgreSQL syntax",
-                        "• Prefix tables: hr.table_name", 
-                        "• JOINs between hr tables allowed",
-                        "• No cross-schema queries",
-                        ""
-                    ])
+                    self.logger.debug(f"PostgreSQL schema cached: {len(schema_result)} tables")
+                    return schema_text
                     
-                    self._cached_schema = "\n".join(schema_lines)
-                    self.logger.info(f"✅ Schema loaded: {len(hr_tables)} tables")
-                    return self._cached_schema
-                    
-        except psycopg2.Error as e:
-            self.logger.error(f"Schema loading failed: {str(e)}")
-            self._cached_schema = f"Error loading schema: {str(e)}"
-            return self._cached_schema
+        except Exception as e:
+            self.logger.error(f"Failed to read PostgreSQL schema: {str(e)}")
+            # Fallback schema
+            fallback_schema = """
+            HR Database Schema (Supabase PostgreSQL - Fallback):
+            ==================================================
+            
+            Table: hr.employees
+            Columns: Basic employee information tables available
+            
+            Note: Unable to read detailed schema, using fallback structure.
+            """
+            return fallback_schema
 
 
 class HRService:
     """
-    Pure Supabase HR analytics service with INTEGRATED INSIGHT LAYER
-    Now includes rule-based insight generation for narrative responses
+    🔥 MAIN HR SERVICE with Insight Generation Integration
+    Enhanced dengan SQL transparency
     """
     
     def __init__(self, connection_string: str = None):
         """
-        Initialize HR service dengan Supabase connection and insight generator
-        
-        Args:
-            connection_string: PostgreSQL connection string untuk Supabase
+        Initialize HR Service dengan Supabase PostgreSQL connection + insight layer
+        🆕 ENHANCED: Added SQL transparency tracking
         """
-        self.logger = logging.getLogger(__name__)
-        
         try:
-            # Get Supabase connection
+            self.logger = logging.getLogger(__name__)
+            
+            # Setup database connection
             self.connection_string = connection_string or self._get_supabase_connection()
             
-            # Initialize pure PostgreSQL components
-            self.schema_reader = SchemaReader(self.connection_string)
+            # Initialize components
             self.query_executor = PostgreSQLQueryExecutor(self.connection_string)
-            
-            # Initialize other components (unchanged)
-            self.intent_analyzer = HRIntentAnalyzer()
-            self.sql_generator = SQLGenerator()
+            self.schema_reader = SchemaReader(self.connection_string)
+            self.sql_generator = SQLGenerator()  # Uses OpenAI for natural Indonesian
             self.sql_validator = SQLValidator()
+            self.intent_analyzer = HRIntentAnalyzer()
             
-            # 🔥 PRODUCTION REFACTOR: Data-first pipeline
+            # 🔥 INSIGHT LAYER INTEGRATION (PRODUCTION)
+            # Initialize both analyzers for comprehensive insights
             self.data_analyzer = DataFirstAnalyzer()
             self.data_narrator = ProductionDataNarrator(use_llm=False)  # Start with rule-based
+            
+            # 🆕 SQL transparency tracking
+            self._last_generated_sql = None
+            self._last_user_question = None
             
             # Test connection
             self._test_connection()
             
-            self.logger.info("✅ HR Service initialized with Supabase PostgreSQL + Insight Layer")
+            self.logger.info("✅ HR Service initialized with Supabase PostgreSQL + Insight Layer + SQL Transparency")
             
         except Exception as e:
             self.logger.error(f"HR Service initialization failed: {str(e)}")
@@ -236,10 +227,10 @@ class HRService:
     def process_hr_query(self, question: str, user_role: str, 
                         selected_chart: Optional[str] = None) -> HRResponse:
         """
-        🔥 ENHANCED MAIN ENTRY POINT with integrated insight generation
+        🔥 FIXED MAIN ENTRY POINT with proper frontend data structure + SQL transparency
         
-        NEW PIPELINE:
-        SQL Result → Insight Generation → Enriched HRResponse
+        FIXED PIPELINE:
+        SQL Result → Insight Generation → Frontend-Ready HRResponse + SQL Transparency
         
         Args:
             question: Natural language question dari user
@@ -247,7 +238,7 @@ class HRService:
             selected_chart: Optional chart type (unused for now)
             
         Returns:
-            HRResponse object with insights included
+            HRResponse object with frontend-compatible analysis structure + SQL transparency
         """
         try:
             # STEP 1: Security check
@@ -260,14 +251,14 @@ class HRService:
             intent_result = self.intent_analyzer.analyze(question)
             wants_visualization = intent_result.get('wants_visualization', False)
             
-            # STEP 3: Execute query flow
+            # STEP 3: Execute query flow (WITH SQL TRACKING)
             query_result = self._execute_query_flow(question)
             
             # STEP 4: Check results
             if not query_result or not query_result.rows:
                 return HRResponse(errors=["No data found for your query."])
             
-            # 🔥 PRODUCTION REFACTOR: Guaranteed data preservation pipeline
+            # 🔥 PRODUCTION REFACTOR: Guaranteed data preservation pipeline with FRONTEND COMPATIBILITY
             try:
                 # STEP 1: Analyze data without filtering or hiding rows
                 analysis_response = self.data_analyzer.analyze(query_result.to_dict(), question)
@@ -290,25 +281,126 @@ class HRService:
                 
                 self.logger.info(f"✅ Production pipeline: {narration_result.total_rows_confirmed} rows guaranteed displayed")
                 
-                # STEP 4: Return response with complete data + separated analysis
-                return HRResponse(
+                # 🔧 FIXED: Prepare FRONTEND-COMPATIBLE analysis data structure
+                analysis_for_frontend = self._prepare_analysis_for_frontend(analysis_response, computed_metrics)
+                narrative_for_frontend = self._prepare_narrative_for_frontend(analysis_response, query_result.total_rows)
+                
+                # STEP 4: Return response with complete data + FRONTEND-COMPATIBLE analysis + SQL TRANSPARENCY
+                response = HRResponse(
                     data=query_result.to_dict(),
                     insight=narration_result.raw_data_display + "\n" + narration_result.llm_interpretation,
-                    recommendations=[]  # Not needed - all info in insight field
+                    narrative=narrative_for_frontend,
+                    analysis=analysis_for_frontend,  
+                    recommendations=[]
                 )
+
+                # 🆕 ADD SQL transparency
+                if self._last_generated_sql:
+                    response.sql_query = self._last_generated_sql
+                    response.sql_explanation = self._generate_sql_explanation(
+                        self._last_generated_sql, 
+                        self._last_user_question
+                    )
+                    
+                return response
                 
             except Exception as processing_error:
                 self.logger.error(f"Production pipeline failed: {processing_error}")
                 # CRITICAL FALLBACK: Never lose data, even on error
-                return HRResponse(
+                fallback_response = HRResponse(
                     data=query_result.to_dict(),
                     insight=f"DATA:\nQuery returned {query_result.total_rows} rows (see raw data above)\n\nANALYSIS:\nProcessing temporarily unavailable",
+                    narrative={'title': 'HR Data Analysis', 'summary': f'{query_result.total_rows} rows found'},
+                    analysis={'note': 'Analysis temporarily unavailable'},
                     recommendations=[]
                 )
+                
+                # Add SQL transparency even on fallback
+                if self._last_generated_sql:
+                    fallback_response.sql_query = self._last_generated_sql
+                    fallback_response.sql_explanation = "Query untuk mengambil data HR dari database perusahaan."
+                
+                return fallback_response
             
         except Exception as e:
             self.logger.error(f"HR query processing failed: {str(e)}")
             return HRResponse(errors=[f"Query processing failed: {str(e)}"])
+    
+    def _prepare_analysis_for_frontend(self, analysis_response, computed_metrics) -> Dict[str, Any]:
+        """
+        🔧 NEW: Prepare analysis data in the exact format frontend expects
+        
+        Frontend expects:
+        - analysis.highest.category, analysis.highest.value, analysis.highest.percent
+        - analysis.lowest.category, analysis.lowest.value, analysis.lowest.percent
+        - analysis.top_concentration_percent
+        """
+        analysis_for_frontend = {}
+        
+        # Prepare highest value data
+        if analysis_response.metrics.highest_value:
+            highest_row_idx, highest_category, highest_value = analysis_response.metrics.highest_value
+            concentration_percent = analysis_response.metrics.concentration_top_percent or 0
+            
+            analysis_for_frontend['highest'] = {
+                'category': str(highest_category),
+                'value': float(highest_value),
+                'percent': f"{concentration_percent:.1f}"  # Format as string with 1 decimal
+            }
+        
+        # Prepare lowest value data
+        if analysis_response.metrics.lowest_value:
+            lowest_row_idx, lowest_category, lowest_value = analysis_response.metrics.lowest_value
+            
+            # Calculate lowest percentage if possible
+            lowest_percent = 0.0
+            if analysis_response.metrics.total_sum and analysis_response.metrics.total_sum > 0:
+                lowest_percent = (float(lowest_value) / float(analysis_response.metrics.total_sum)) * 100
+            
+            analysis_for_frontend['lowest'] = {
+                'category': str(lowest_category),
+                'value': float(lowest_value),
+                'percent': f"{lowest_percent:.1f}"  # Calculate actual lowest percentage
+            }
+        
+        # Add concentration data
+        if analysis_response.metrics.concentration_top_percent:
+            analysis_for_frontend['top_concentration_percent'] = f"{analysis_response.metrics.concentration_top_percent:.1f}"
+        
+        self.logger.debug(f"🔧 Analysis prepared for frontend: {analysis_for_frontend}")
+        return analysis_for_frontend
+    
+    def _prepare_narrative_for_frontend(self, analysis_response, total_rows) -> Dict[str, Any]:
+        """
+        🔧 NEW: Prepare narrative data in the exact format frontend expects
+        
+        Frontend expects:
+        - narrative.title
+        - narrative.summary  
+        """
+        category_count = analysis_response.metrics.category_count or total_rows
+        
+        # Create appropriate title based on data
+        if analysis_response.analysis.data_shape == 'distribution':
+            title = f'Distribusi Data - {category_count} Kategori'
+        elif analysis_response.analysis.data_shape == 'listing':
+            title = f'Daftar Data - {category_count} Items'
+        else:
+            title = f'Analisis Data HR - {category_count} Records'
+        
+        # Create summary with total information
+        if analysis_response.metrics.total_sum:
+            summary = f'Ditemukan {total_rows} data dengan total {float(analysis_response.metrics.total_sum):,.0f}'
+        else:
+            summary = f'Ditemukan {total_rows} data siap untuk analisis'
+        
+        narrative = {
+            'title': title,
+            'summary': summary
+        }
+        
+        self.logger.debug(f"🔧 Narrative prepared for frontend: {narrative}")
+        return narrative
     
     def _validate_hr_access(self, user_role: str) -> bool:
         """Validate HR access permissions"""
@@ -324,7 +416,7 @@ class HRService:
     def _execute_query_flow(self, question: str) -> Optional[QueryResult]:
         """
         Execute query flow menggunakan Supabase PostgreSQL
-        ✅ UNCHANGED - No re-processing of already-normalized data
+        🆕 ENHANCED: Now stores SQL query for transparency
         """
         try:
             # 1. Get schema dari PostgreSQL
@@ -335,13 +427,16 @@ class HRService:
             sql = self.sql_generator.generate_sql(question, schema)
             self.logger.info(f"Generated SQL: {sql[:100]}...")
             
+            # 🆕 STORE SQL untuk transparency
+            self._last_generated_sql = sql
+            self._last_user_question = question
+            
             # 3. Validate SQL
             is_valid = self.sql_validator.is_valid(sql)
             if not is_valid:
                 raise Exception("SQL validation failed")
             
             # 4. Execute SQL via PostgreSQL executor
-            # ✅ CRITICAL FIX: query_result is already normalized - DON'T touch it
             query_result = self.query_executor.execute(sql)
             self.logger.info(f"Query executed successfully: {query_result.total_rows} rows")
             
@@ -350,6 +445,29 @@ class HRService:
         except Exception as e:
             self.logger.error(f"Query flow failed: {str(e)}")
             return None
+    
+    def _generate_sql_explanation(self, sql_query: str, user_question: str) -> str:
+        """🆕 Generate human-readable explanation of SQL query"""
+        try:
+            # Simple rule-based explanation untuk common patterns
+            sql_upper = sql_query.upper()
+            
+            if "GROUP BY" in sql_upper and "COUNT(*)" in sql_upper:
+                return "Mengelompokkan data berdasarkan kategori dan menghitung jumlah untuk setiap kelompok, lalu menampilkan dalam urutan dari yang terbesar."
+            elif "GROUP BY" in sql_upper:
+                return "Mengelompokkan data berdasarkan kategori dan menghitung nilai untuk setiap kelompok."
+            elif "COUNT(*)" in sql_upper:
+                return "Menghitung jumlah total data yang sesuai dengan kriteria yang diminta."
+            elif "ORDER BY" in sql_upper:
+                return "Mengambil data dari database dan mengurutkan hasilnya sesuai dengan kriteria tertentu."
+            elif "SELECT" in sql_upper:
+                return "Mengambil data dari database HR perusahaan sesuai dengan pertanyaan yang diajukan."
+            else:
+                return "Mengeksekusi query untuk mendapatkan informasi HR yang diminta."
+                
+        except Exception as e:
+            self.logger.error(f"Failed to generate SQL explanation: {str(e)}")
+            return "Query untuk mengambil data HR dari database perusahaan."
 
 
 # Factory function untuk create HR service
@@ -362,11 +480,11 @@ def create_hr_service(connection_string: str = None) -> HRService:
         connection_string: Optional Supabase connection string
         
     Returns:
-        Configured HRService instance with integrated insight generation
+        Configured HRService instance with integrated insight generation + SQL transparency
     """
     try:
         service = HRService(connection_string)
-        logging.info("✅ HR Service factory: Supabase + Insight Layer initialization successful")
+        logging.info("✅ HR Service factory: Supabase + Insight Layer + SQL Transparency initialization successful")
         return service
     except Exception as e:
         logging.error(f"❌ HR Service factory: initialization failed - {str(e)}")

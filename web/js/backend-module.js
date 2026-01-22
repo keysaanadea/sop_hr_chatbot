@@ -1,7 +1,7 @@
-/* ================= BACKEND COMMUNICATION MODULE ================= */
+/* ================= BACKEND MODULE - UNIVERSAL ANALYTICS FIX ================= */
 /**
- * 📡 THIN BACKEND ADAPTER
- * PURE API communication layer - NO business logic, NO decision making
+ * ðŸ”§ FIXED: Universal analytics contract detection
+ * ðŸŽ¯ SINGLE CONTRACT: Only checks message_type === "analytics_result"
  */
 
 /* ================= CORE API COMMUNICATION ================= */
@@ -62,7 +62,7 @@ async function askBackend(text) {
     // Handle HTTP errors
     if (res.status === 429) {
       if (window.CoreApp) {
-        window.CoreApp.addMessage("bot", "⏱️ <strong>Rate Limit Exceeded</strong><br><br>Too many requests. Please wait a moment.");
+        window.CoreApp.addMessage("bot", "â±ï¸ <strong>Rate Limit Exceeded</strong><br><br>Too many requests. Please wait a moment.");
       }
       return;
     }
@@ -72,8 +72,9 @@ async function askBackend(text) {
     }
 
     const data = await res.json();
+    console.log("ðŸš¨ RAW BACKEND RESPONSE:", data);
     
-    // PURE PASS-THROUGH - handle response based on what backend provides
+    // ðŸ”§ UNIVERSAL: Pure pass-through - NO data interpretation
     handleBackendResponse(data);
     
   } catch (err) {
@@ -86,9 +87,9 @@ async function askBackend(text) {
     }
     
     // Handle network errors
-    let errorMessage = "❌ Failed to connect to server.";
+    let errorMessage = "âŒ Failed to connect to server.";
     if (err.name === 'AbortError') {
-      errorMessage = "⏱️ Request timed out. Please try again.";
+      errorMessage = "â±ï¸ Request timed out. Please try again.";
     }
     
     if (window.CoreApp) {
@@ -121,17 +122,22 @@ async function askBackend(text) {
   }
 }
 
-/* ================= RESPONSE HANDLER ================= */
+/* ================= UNIVERSAL ANALYTICS RESPONSE HANDLER ================= */
 function handleBackendResponse(data) {
   /**
-   * PURE RESPONSE PROCESSOR
-   * Routes response to appropriate UI layers based on what backend provides
+   * ðŸ”§ UNIVERSAL CONTRACT ENFORCEMENT
+   * 
+   * SINGLE CONTRACT: Only checks message_type === "analytics_result"
+   * NO legacy field support (hr_analytics, analytics_data, query_results)
+   * NO text parsing, NO data inference, NO fallback heuristics
+   * 
+   * Backend owns meaning. Frontend renders blindly.
    */
   
   // Handle error responses
   if (data.error) {
     if (window.CoreApp) {
-      window.CoreApp.addMessage("bot", `❌ <strong>Error</strong><br><br>${data.error}`);
+      window.CoreApp.addMessage("bot", `âŒ <strong>Error</strong><br><br>${data.error}`);
     }
     return;
   }
@@ -139,31 +145,94 @@ function handleBackendResponse(data) {
   // Handle authorization failures
   if (data.authorized === false) {
     if (window.CoreApp) {
-      window.CoreApp.addMessage("bot", `🔒 <strong>Access Denied</strong><br><br>${data.answer}`);
+      window.CoreApp.addMessage("bot", `ðŸ”’ <strong>Access Denied</strong><br><br>${data.answer}`);
     }
     return;
   }
   
-  // Add main text response
-  if (data.answer && window.CoreApp) {
-    window.CoreApp.addMessage("bot", data.answer, true, data);
+  // ðŸ”§ UNIVERSAL ANALYTICS CONTRACT - Only use explicit backend schema
+  // NO data inference, NO text parsing, NO analytics detection
+  const textResponse = data.answer || "";
+  
+  // âœ… UNIVERSAL: Check ONLY the canonical analytics schema
+  const isAnalyticsResult = data.message_type === "analytics_result";
+  const analyticsData = isAnalyticsResult ? data.data : null;
+  
+  console.log("ðŸ“¡ UNIVERSAL Frontend Response Handler:", {
+    hasAnswer: !!data.answer,
+    messageType: data.message_type,
+    isAnalyticsResult: isAnalyticsResult,
+    hasAnalyticsData: !!analyticsData,
+    hasVisualizationFlag: data.visualization_available !== undefined,
+    hasConversationId: !!data.conversation_id,
+    hasTurnId: !!data.turn_id,
+    domain: data.domain
+  });
+
+  // ðŸ”§ UNIVERSAL: Add message using ONLY canonical analytics schema
+  if (window.CoreApp) {
+    if (isAnalyticsResult && analyticsData) {
+      // Backend provided universal analytics result
+      console.log("ðŸ“Š Universal analytics result detected - rendering");
+      console.log("ðŸ“Š Analytics data:", analyticsData);
+      console.log("🔍 FINAL DEBUG - data.sql_query:", data.sql_query);
+      console.log("🔍 FINAL DEBUG - data.sql_explanation:", data.sql_explanation);
+      console.log("🔍 FINAL DEBUG - full data object:", data);
+      window.CoreApp.addMessage(
+        "bot",
+        textResponse,
+        true,
+        {
+          message_type: data.message_type,
+          data: analyticsData,          // â¬…ï¸ dibungkus
+          narrative: data.narrative,
+          analysis: data.analysis,
+          domain: data.domain,
+          visualization_available: data.visualization_available,
+          conversation_id: data.conversation_id,
+          turn_id: data.turn_id,
+          sql_query: data.sql_query,           // ✅ TAMBAHKAN INI
+          sql_explanation: data.sql_explanation
+        }
+);
+
+      
+      // ðŸ”§ UNIVERSAL: DUMB visualization flag checking
+      // ONLY check explicit backend visualization_available flag
+      // NO business logic, NO data analysis, NO inference about suitability
+      if (data.visualization_available === true && data.conversation_id && data.turn_id) {
+        console.log("ðŸ“Š Backend explicitly set visualization_available=true - triggering offer");
+        
+        // DUMB: Pass conversation/turn IDs to visualization module
+        // NO decision making, NO validation, NO intelligence
+        if (window.VisualizationModule && window.VisualizationModule.renderVisualizationOffer) {
+          window.VisualizationModule.renderVisualizationOffer(data.conversation_id, data.turn_id);
+        }
+      } else {
+        console.log("ðŸ” No explicit visualization flag or missing IDs:", {
+          vizAvailable: data.visualization_available,
+          hasConversationId: !!data.conversation_id,
+          hasTurnId: !!data.turn_id
+        });
+      }
+    } else {
+      // Regular text response - no analytics result from backend
+      console.log("ðŸ“ Regular text response - no analytics result detected");
+      window.CoreApp.addMessage("bot", textResponse, true);
+    }
   }
   
-  // PURE PASS-THROUGH to visualization module
-  // Backend decides if visualization exists - frontend just renders
+  // Legacy Chart.js support (unchanged)
   if (data.visualization && window.VisualizationModule) {
     window.VisualizationModule.renderVisualizationInChat(data);
   }
   
-  // Handle auto-speech based on current mode
-  scheduleAutoSpeech(data.answer);
+  // Handle auto-speech
+  scheduleAutoSpeech(textResponse);
 }
 
-/* ================= AUTO-SPEECH HANDLER ================= */
+/* ================= AUTO-SPEECH HANDLER (UNCHANGED) ================= */
 function scheduleAutoSpeech(responseText) {
-  /**
-   * Handle auto-speech based on current app mode
-   */
   if (!responseText) return;
   
   setTimeout(() => {
@@ -189,11 +258,8 @@ function scheduleAutoSpeech(responseText) {
   }, window.isCallModeActive ? 200 : 800);
 }
 
-/* ================= SYSTEM UTILITIES ================= */
+/* ================= SYSTEM UTILITIES (UNCHANGED) ================= */
 async function checkAPIHealth() {
-  /**
-   * Check backend API health
-   */
   try {
     const response = await fetch("http://127.0.0.1:8000/", {
       method: "GET",
@@ -203,22 +269,19 @@ async function checkAPIHealth() {
     
     if (response.ok) {
       const data = await response.json();
-      console.log('✅ Backend API is healthy:', data);
+      console.log('âœ… Backend API is healthy:', data);
       return { healthy: true, data };
     } else {
-      console.warn('⚠️ Backend API returned error:', response.status);
+      console.warn('âš ï¸ Backend API returned error:', response.status);
       return { healthy: false, status: response.status };
     }
   } catch (error) {
-    console.error('❌ Backend API health check failed:', error);
+    console.error('âŒ Backend API health check failed:', error);
     return { healthy: false, error: error.message };
   }
 }
 
 async function getUserRole() {
-  /**
-   * Get current user role from backend
-   */
   try {
     const response = await fetch('http://127.0.0.1:8000/user/role', {
       headers: { "Accept": "application/json" }
@@ -245,13 +308,13 @@ async function getUserRole() {
 
 /* ================= MODULE INITIALIZATION ================= */
 async function initialize() {
-  console.log("📡 Initializing Backend Communication Module...");
+  console.log("ðŸ“¡ Initializing UNIVERSAL Backend Communication Module...");
   
-  // Check API health
   const apiHealth = await checkAPIHealth();
   
-  console.log("📡 Backend Module initialized");
-  console.log(`   • API Health: ${apiHealth.healthy ? 'HEALTHY' : 'UNHEALTHY'}`);
+  console.log("ðŸ“¡ UNIVERSAL Backend Module initialized");
+  console.log(`   â€¢ API Health: ${apiHealth.healthy ? 'HEALTHY' : 'UNHEALTHY'}`);
+  console.log("   â€¢ Contract: Universal Analytics (message_type === 'analytics_result')");
   
   return { api: apiHealth };
 }
@@ -272,4 +335,4 @@ window.BackendModule = {
 // Export main function for backward compatibility
 window.askBackend = askBackend;
 
-console.log("📡 Thin Backend Communication Module loaded!"); 
+console.log("ðŸ“¡ UNIVERSAL Backend Communication Module loaded - Single Contract Enforcement!");

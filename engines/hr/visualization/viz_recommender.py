@@ -1,342 +1,427 @@
 """
-Visualization Recommender
-Memberikan rekomendasi chart yang sesuai untuk data
-TIDAK AUTO RENDER - hanya saran
+FIXED Chart Recommender - All Charts Visible
+=============================================
+✅ ALL 8 chart types always returned (no filtering)
+✅ Recommendation is metadata only (does not remove options)
+✅ Rule-based + LLM-ready architecture
+✅ Proper method compatibility with viz_handlers.py
 """
 
 import logging
-from typing import List, Dict, Any
-from engines.hr.models.hr_response import QueryResult, ChartRecommendation
+from typing import Dict, List, Any, Optional
+from datetime import datetime
+
+logger = logging.getLogger(__name__)
 
 
-class VizRecommender:
+class SmartChartRecommender:
     """
-    Merekomendasikan visualisasi yang tepat berdasarkan data
-    HANYA rekomendasi, BUKAN auto visualization
+    FIXED recommender - shows ALL chart types, recommends ONE
+    Recommendation is guidance only, never filters options
     """
     
     def __init__(self):
-        self.logger = logging.getLogger(__name__)
-        
-        # Chart type rules berdasarkan data characteristics
-        self.chart_rules = {
+        # COMPLETE chart type definitions - ALL 8 types
+        self.chart_types = {
             'bar_chart': {
-                'data_types': ['categorical_numerical'],
-                'row_range': (2, 50),
-                'column_count': 2,
-                'description': 'Baik untuk membandingkan nilai antar kategori'
-            },
-            'pie_chart': {
-                'data_types': ['categorical_percentage'],
-                'row_range': (2, 10),
-                'column_count': 2,
-                'description': 'Baik untuk menunjukkan proporsi dari keseluruhan'
+                'title': 'Bar Chart',
+                'description': 'Compare values across categories',
+                'icon': '📊',
+                'best_for': ['categorical_data', 'comparisons', 'rankings'],
+                'data_size': 'any',
+                'complexity': 'simple'
             },
             'line_chart': {
-                'data_types': ['time_series'],
-                'row_range': (3, 1000),
-                'column_count': 2,
-                'description': 'Baik untuk menunjukkan tren dari waktu ke waktu'
+                'title': 'Line Chart',
+                'description': 'Show trends and changes over time',
+                'icon': '📈',
+                'best_for': ['time_series', 'trends', 'continuous_data'],
+                'data_size': 'medium_to_large',
+                'complexity': 'simple'
             },
-            'scatter_plot': {
-                'data_types': ['numerical_correlation'],
-                'row_range': (5, 500),
-                'column_count': 2,
-                'description': 'Baik untuk menunjukkan korelasi antar variabel'
+            'pie_chart': {
+                'title': 'Pie Chart',
+                'description': 'Show proportions of a whole',
+                'icon': '🥧',
+                'best_for': ['proportions', 'percentages', 'composition'],
+                'data_size': 'small_to_medium',
+                'complexity': 'simple'
             },
-            'table_view': {
-                'data_types': ['detailed_data'],
-                'row_range': (1, 100),
-                'column_count': (1, 10),
-                'description': 'Baik untuk melihat data detail'
+            'doughnut_chart': {
+                'title': 'Doughnut Chart',
+                'description': 'Modern pie chart with center space',
+                'icon': '🍩',
+                'best_for': ['proportions', 'percentages', 'modern_look'],
+                'data_size': 'small_to_medium', 
+                'complexity': 'simple'
+            },
+            'radar_chart': {
+                'title': 'Radar Chart',
+                'description': 'Compare multiple variables at once',
+                'icon': '🕸️',
+                'best_for': ['multi_variable', 'skill_assessment', 'kpi_comparison'],
+                'data_size': 'small',
+                'complexity': 'advanced'
+            },
+            'polar_area_chart': {
+                'title': 'Polar Area Chart',
+                'description': 'Show categories with weighted importance',
+                'icon': '❄️',
+                'best_for': ['weighted_categories', 'priority_data', 'unique_visual'],
+                'data_size': 'small_to_medium',
+                'complexity': 'advanced'
+            },
+            'bubble_chart': {
+                'title': 'Bubble Chart',
+                'description': 'Visualize 3 dimensions of data',
+                'icon': '🔵',
+                'best_for': ['multi_dimensional', 'correlation_analysis', 'complex_data'],
+                'data_size': 'medium',
+                'complexity': 'advanced'
+            },
+            'scatter_chart': {
+                'title': 'Scatter Plot',
+                'description': 'Show relationships between variables',
+                'icon': '🎯',
+                'best_for': ['correlations', 'relationships', 'pattern_analysis'],
+                'data_size': 'medium_to_large',
+                'complexity': 'advanced'
             }
         }
     
-    def recommend_charts(self, query_result: QueryResult) -> Dict[str, Any]:
+    def get_all_chart_types(self) -> List[Dict[str, Any]]:
         """
-        Merekomendasikan chart types untuk data
+        CRITICAL: Return ALL supported chart types - NO FILTERING
+        This ensures all 8 charts are always visible to users
+        """
+        all_charts = []
+        for chart_type, chart_info in self.chart_types.items():
+            all_charts.append({
+                'chart_type': chart_type,
+                'title': chart_info['title'],
+                'description': chart_info['description'],
+                'icon': chart_info.get('icon', '📊'),
+                'complexity': chart_info['complexity'],
+                'best_for': chart_info['best_for']
+            })
         
-        Args:
-            query_result: Hasil query yang akan divisualisasikan
-            
-        Returns:
-            Dict dengan rekomendasi charts dan confidence scores
+        logger.info(f"Returning ALL {len(all_charts)} chart types (no filtering)")
+        return all_charts
+    
+    def recommend_single_chart(self, data: Dict[str, Any], 
+                              context: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        """
+        Recommend exactly ONE chart type based on data analysis
+        DOES NOT filter other options - recommendation is guidance only
         """
         try:
             # Analyze data characteristics
-            data_analysis = self._analyze_data_characteristics(query_result)
+            data_analysis = self._analyze_data_characteristics(data)
             
-            # Generate recommendations
-            recommendations = self._generate_recommendations(data_analysis, query_result)
+            # Score all chart types
+            scored_charts = self._score_chart_types(data_analysis, context or {})
             
-            # Sort by confidence score
-            recommendations.sort(key=lambda x: x.confidence_score, reverse=True)
+            # Select BEST chart (highest score)
+            best_chart = max(scored_charts, key=lambda x: x['score'])
+            
+            logger.info(f"Recommended: {best_chart['chart_type']} (score: {best_chart['score']:.2f})")
             
             return {
-                'can_visualize': len(recommendations) > 0,
-                'recommended_charts': [rec.to_dict() for rec in recommendations],
-                'data_analysis': data_analysis,
-                'best_recommendation': recommendations[0].to_dict() if recommendations else None
+                'chart_type': best_chart['chart_type'],
+                'confidence': best_chart['score'],
+                'reasoning': best_chart['reasoning'],
+                'data_analysis': data_analysis
             }
             
         except Exception as e:
-            self.logger.error(f"Chart recommendation failed: {str(e)}")
+            logger.error(f"Chart recommendation failed: {str(e)}")
+            # Fallback to bar chart
             return {
-                'can_visualize': False,
-                'recommended_charts': [],
+                'chart_type': 'bar_chart',
+                'confidence': 0.5,
+                'reasoning': 'Fallback recommendation due to analysis error',
                 'error': str(e)
             }
-    
-    def _analyze_data_characteristics(self, query_result: QueryResult) -> Dict[str, Any]:
+
+    def get_chart_recommendations(self, data: Dict[str, Any], 
+                                context: Optional[Dict[str, Any]] = None,
+                                max_recommendations: int = 8) -> List[Dict[str, Any]]:
         """
-        Analyze karakteristik data untuk menentukan chart type
+        Get ALL chart types with recommendation scores
+        RETURNS ALL 8 CHARTS - recommendation affects ordering only
         """
-        if not query_result.rows:
-            return {'type': 'empty', 'reason': 'No data available'}
+        try:
+            # Analyze data characteristics
+            data_analysis = self._analyze_data_characteristics(data)
+            
+            # Score all chart types
+            scored_charts = self._score_chart_types(data_analysis, context or {})
+            
+            # Sort by score but RETURN ALL CHARTS
+            scored_charts.sort(key=lambda x: x['score'], reverse=True)
+            
+            recommendations = []
+            for i, chart in enumerate(scored_charts):
+                chart_info = self.chart_types[chart['chart_type']]
+                recommendations.append({
+                    'chart_type': chart['chart_type'],
+                    'title': chart_info['title'],
+                    'description': chart_info['description'],
+                    'icon': chart_info.get('icon', '📊'),
+                    'score': round(chart['score'], 2),
+                    'reasoning': chart['reasoning'],
+                    'complexity': chart_info['complexity'],
+                    'rank': i + 1,  # Ranking based on recommendation score
+                    'recommended': i == 0  # Only first chart is "recommended"
+                })
+            
+            logger.info(f"Generated {len(recommendations)} chart recommendations (ALL charts included)")
+            return recommendations
+            
+        except Exception as e:
+            logger.error(f"Chart recommendation failed: {str(e)}")
+            return self._get_fallback_recommendations()
+
+    def recommend_charts_universal(self, data_snapshot: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Universal chart recommendations wrapper - ALL CHARTS ALWAYS VISIBLE
         
+        Args:
+            data_snapshot: Data from viz state
+            
+        Returns:
+            Dict with ALL charts + recommendation metadata
+        """
+        try:
+            # Extract data from data_snapshot format
+            data = data_snapshot.get('data', data_snapshot)
+            
+            # Get ALL charts with recommendations
+            all_charts_with_scores = self.get_chart_recommendations(
+                data=data,
+                context={'domain': 'hr_analytics'},
+                max_recommendations=8
+            )
+            
+            # Convert format to match handler expectations - ALL CHARTS INCLUDED
+            recommended_charts = []
+            for chart in all_charts_with_scores:
+                recommended_charts.append({
+                    'chart_type': chart['chart_type'],
+                    'title': chart['title'],
+                    'description': chart['description'],
+                    'compatibility_reason': chart.get('reasoning', 'Compatible with data'),
+                    'renderer_backend': 'chartjs',
+                    'recommended': chart.get('recommended', False),
+                    'rank': chart.get('rank', 99)
+                })
+            
+            logger.info(f"UNIVERSAL: Returning ALL {len(recommended_charts)} charts")
+            
+            return {
+                'can_visualize': len(recommended_charts) > 0,
+                'recommended_charts': recommended_charts,  # ALL 8 charts
+                'reason': f'All {len(recommended_charts)} chart types available',
+                'reason_code': 'ALL_CHARTS_AVAILABLE'  # Never filter
+            }
+            
+        except Exception as e:
+            logger.error(f"Universal recommendation failed: {str(e)}")
+            # Even on error, return all chart types
+            return self._get_universal_fallback()
+
+    def validate_chart_selection_universal(self, data_snapshot: Dict[str, Any], 
+                                         chart_type: str) -> Dict[str, Any]:
+        """
+        Universal chart selection validation
+        ALWAYS VALID - user can choose any chart type
+        """
+        try:
+            # Check if chart type is supported
+            if chart_type in self.chart_types:
+                return {
+                    'valid': True,
+                    'reason': f'{chart_type} is supported and compatible',
+                    'chart_info': self.chart_types[chart_type]
+                }
+            else:
+                return {
+                    'valid': False,
+                    'reason': f'Chart type {chart_type} not in supported list',
+                    'supported_types': list(self.chart_types.keys())
+                }
+                
+        except Exception as e:
+            return {
+                'valid': False,
+                'reason': f'Validation error: {str(e)}'
+            }
+    
+    def _analyze_data_characteristics(self, data: Dict[str, Any]) -> Dict[str, Any]:
+        """Analyze data structure and characteristics"""
         analysis = {
-            'row_count': len(query_result.rows),
-            'column_count': len(query_result.columns),
-            'columns': query_result.columns,
-            'data_types': [],
-            'patterns': []
+            'data_points': 0,
+            'has_categories': False,
+            'has_percentages': False,
+            'category_name_length': 0,
+            'numeric_columns': 0,
+            'categorical_columns': 0
         }
         
-        # Analyze first few rows untuk determine data types
-        sample_rows = query_result.rows[:5] if query_result.rows else []
-        
-        for col_index, column_name in enumerate(query_result.columns):
-            col_type = self._detect_column_type(sample_rows, col_index, column_name)
-            analysis['data_types'].append({
-                'column': column_name,
-                'type': col_type,
-                'index': col_index
-            })
-        
-        # Detect overall data pattern
-        analysis['pattern'] = self._detect_data_pattern(analysis)
+        try:
+            # Analyze HR Analytics format
+            if 'rows' in data:
+                rows = data['rows']
+                analysis['data_points'] = len(rows)
+                
+                if rows:
+                    first_row = rows[0]
+                    columns = list(first_row.keys())
+                    
+                    # Analyze columns
+                    for col in columns:
+                        col_lower = col.lower()
+                        sample_value = first_row[col]
+                        
+                        # Check for categorical data
+                        if col_lower in ['category', 'band', 'department', 'grade', 'unit', 'name']:
+                            analysis['has_categories'] = True
+                            analysis['categorical_columns'] += 1
+                            
+                            # Check category name length
+                            avg_length = sum(len(str(row[col])) for row in rows) / len(rows)
+                            analysis['category_name_length'] = max(analysis['category_name_length'], avg_length)
+                        
+                        # Check for numeric data
+                        elif isinstance(sample_value, (int, float)):
+                            analysis['numeric_columns'] += 1
+            
+        except Exception as e:
+            logger.warning(f"Data analysis failed: {str(e)}")
         
         return analysis
     
-    def _detect_column_type(self, sample_rows: List[List[Any]], col_index: int, column_name: str) -> str:
-        """
-        Detect type kolom berdasarkan sample data
-        """
-        if not sample_rows or col_index >= len(sample_rows[0]):
-            return 'unknown'
+    def _score_chart_types(self, data_analysis: Dict[str, Any], 
+                          context: Dict[str, Any]) -> List[Dict[str, Any]]:
+        """Score each chart type - ALL CHARTS GET SCORES (no filtering)"""
+        scored_charts = []
         
-        # Get sample values
-        sample_values = [row[col_index] for row in sample_rows if len(row) > col_index]
-        
-        if not sample_values:
-            return 'empty'
-        
-        # Check for numeric type
-        numeric_count = 0
-        for value in sample_values:
-            if isinstance(value, (int, float)):
-                numeric_count += 1
-            elif isinstance(value, str) and self._is_numeric_string(value):
-                numeric_count += 1
-        
-        if numeric_count >= len(sample_values) * 0.8:
-            # Check if it's a count/aggregate (common in GROUP BY results)
-            if any(keyword in column_name.lower() for keyword in ['count', 'sum', 'avg', 'total']):
-                return 'aggregate_numeric'
-            return 'numeric'
-        
-        # Check for date/time patterns
-        if any(keyword in column_name.lower() for keyword in ['date', 'time', 'created', 'updated', 'year', 'month']):
-            return 'datetime'
-        
-        # Default to categorical
-        return 'categorical'
-    
-    def _is_numeric_string(self, value: str) -> bool:
-        """Check if string represents a number"""
-        try:
-            float(value)
-            return True
-        except (ValueError, TypeError):
-            return False
-    
-    def _detect_data_pattern(self, analysis: Dict[str, Any]) -> str:
-        """
-        Detect overall pattern data untuk chart recommendation
-        """
-        col_count = analysis['column_count']
-        data_types = analysis['data_types']
-        
-        if col_count == 1:
-            return 'single_column'
-        
-        if col_count == 2:
-            type1 = data_types[0]['type']
-            type2 = data_types[1]['type']
+        for chart_type, chart_info in self.chart_types.items():
+            score = 0.3  # Base score - all charts are viable
+            reasoning = []
             
-            if type1 == 'categorical' and type2 in ['numeric', 'aggregate_numeric']:
-                return 'categorical_numerical'
-            elif type1 == 'datetime' and type2 in ['numeric', 'aggregate_numeric']:
-                return 'time_series'
-            elif type1 == 'numeric' and type2 == 'numeric':
-                return 'numerical_correlation'
-        
-        if col_count > 2:
-            # Check if first column is categorical and others are numeric
-            if (data_types[0]['type'] == 'categorical' and 
-                all(dt['type'] in ['numeric', 'aggregate_numeric'] for dt in data_types[1:])):
-                return 'multi_series_categorical'
-            return 'multi_column_detailed'
-        
-        return 'generic'
-    
-    def _generate_recommendations(self, analysis: Dict[str, Any], query_result: QueryResult) -> List[ChartRecommendation]:
-        """
-        Generate chart recommendations berdasarkan data analysis
-        """
-        recommendations = []
-        pattern = analysis['pattern']
-        row_count = analysis['row_count']
-        col_count = analysis['column_count']
-        
-        # Bar Chart recommendations
-        if pattern == 'categorical_numerical' and 2 <= row_count <= 50:
-            confidence = 0.9 if row_count <= 15 else 0.7
-            recommendations.append(ChartRecommendation(
-                chart_type='bar_chart',
-                title='Bar Chart - Perbandingan Kategori',
-                description='Menampilkan perbandingan nilai antar kategori dengan jelas',
-                confidence_score=confidence
-            ))
-        
-        # Pie Chart recommendations
-        if (pattern == 'categorical_numerical' and 2 <= row_count <= 8 and 
-            self._check_percentage_data(query_result)):
-            recommendations.append(ChartRecommendation(
-                chart_type='pie_chart',
-                title='Pie Chart - Distribusi Proporsi',
-                description='Menampilkan proporsi setiap kategori dari total',
-                confidence_score=0.8
-            ))
-        
-        # Line Chart recommendations
-        if pattern == 'time_series' and row_count >= 3:
-            confidence = 0.9 if row_count >= 5 else 0.6
-            recommendations.append(ChartRecommendation(
-                chart_type='line_chart',
-                title='Line Chart - Tren Waktu',
-                description='Menampilkan perubahan nilai dari waktu ke waktu',
-                confidence_score=confidence
-            ))
-        
-        # Scatter Plot recommendations
-        if pattern == 'numerical_correlation' and row_count >= 5:
-            recommendations.append(ChartRecommendation(
-                chart_type='scatter_plot',
-                title='Scatter Plot - Korelasi Data',
-                description='Menampilkan hubungan antara dua variabel numerik',
-                confidence_score=0.7
-            ))
-        
-        # Table View - always available as fallback
-        if row_count <= 100:
-            confidence = 0.5 if len(recommendations) > 0 else 0.8
-            recommendations.append(ChartRecommendation(
-                chart_type='table_view',
-                title='Tabel Data - Detail Lengkap',
-                description='Menampilkan data dalam format tabel untuk analisis detail',
-                confidence_score=confidence
-            ))
-        
-        return recommendations
-    
-    def _check_percentage_data(self, query_result: QueryResult) -> bool:
-        """
-        Check if data cocok untuk pie chart (percentages/proportions)
-        """
-        if len(query_result.columns) != 2:
-            return False
-        
-        # Check if values look like counts/percentages
-        if not query_result.rows:
-            return False
-        
-        # Get numeric values (second column)
-        numeric_values = []
-        for row in query_result.rows:
-            if len(row) >= 2:
-                try:
-                    numeric_values.append(float(row[1]))
-                except (ValueError, TypeError):
-                    pass
-        
-        if not numeric_values:
-            return False
-        
-        # Check if values are positive (good for pie chart)
-        all_positive = all(val >= 0 for val in numeric_values)
-        
-        # Check if values sum to reasonable total (not too large, not too small)
-        total = sum(numeric_values)
-        reasonable_total = 10 <= total <= 1000000
-        
-        return all_positive and reasonable_total
-    
-    def get_chart_requirements(self, chart_type: str) -> Dict[str, Any]:
-        """
-        Get technical requirements untuk specific chart type
-        
-        Args:
-            chart_type: Type of chart
+            data_points = data_analysis.get('data_points', 6)
             
-        Returns:
-            Dict dengan chart requirements
-        """
-        requirements = {
-            'bar_chart': {
-                'min_columns': 2,
-                'max_columns': 2,
-                'data_types': ['categorical', 'numeric'],
-                'libraries': ['chart.js', 'plotly'],
-                'config_example': {
-                    'type': 'bar',
-                    'x_axis': 'categories',
-                    'y_axis': 'values'
-                }
-            },
-            'pie_chart': {
-                'min_columns': 2,
-                'max_columns': 2,
-                'data_types': ['categorical', 'numeric'],
-                'libraries': ['chart.js', 'plotly'],
-                'config_example': {
-                    'type': 'pie',
-                    'labels': 'categories',
-                    'values': 'numbers'
-                }
-            },
-            'line_chart': {
-                'min_columns': 2,
-                'max_columns': 3,
-                'data_types': ['datetime', 'numeric'],
-                'libraries': ['chart.js', 'plotly'],
-                'config_example': {
-                    'type': 'line',
-                    'x_axis': 'time',
-                    'y_axis': 'values'
-                }
-            },
-            'table_view': {
-                'min_columns': 1,
-                'max_columns': 20,
-                'data_types': ['any'],
-                'libraries': ['html_table', 'datatables'],
-                'config_example': {
-                    'type': 'table',
-                    'pagination': True,
-                    'sorting': True
-                }
-            }
+            # Chart-specific scoring
+            if chart_type == 'bar_chart':
+                if data_analysis.get('has_categories'):
+                    score += 0.5  # Perfect for categorical data
+                    reasoning.append("Excellent for categorical comparisons")
+                else:
+                    score += 0.2
+                    reasoning.append("Good for data comparison")
+            
+            elif chart_type in ['pie_chart', 'doughnut_chart']:
+                if data_points <= 8:
+                    score += 0.4
+                    reasoning.append("Good for proportional data")
+                else:
+                    score += 0.2  # Still usable, just not ideal
+                    reasoning.append("Usable for proportional data")
+                
+                if chart_type == 'doughnut_chart':
+                    score += 0.1  # Slight preference for modern look
+                    reasoning.append("Modern design preference")
+            
+            elif chart_type == 'line_chart':
+                if data_points >= 3:
+                    score += 0.3
+                    reasoning.append("Good for showing trends")
+                else:
+                    score += 0.1
+                    reasoning.append("Limited trend visualization")
+            
+            elif chart_type == 'radar_chart':
+                if 3 <= data_points <= 8:
+                    score += 0.3
+                    reasoning.append("Good for multi-attribute comparison")
+                else:
+                    score += 0.1
+                    reasoning.append("Alternative multi-variable view")
+            
+            elif chart_type == 'polar_area_chart':
+                if 3 <= data_points <= 8:
+                    score += 0.2
+                    reasoning.append("Unique visual for weighted data")
+                else:
+                    score += 0.1
+                    reasoning.append("Alternative categorical visualization")
+            
+            elif chart_type in ['bubble_chart', 'scatter_chart']:
+                if data_analysis.get('numeric_columns', 0) >= 1:
+                    score += 0.2
+                    reasoning.append("Good for data exploration")
+                else:
+                    score += 0.1
+                    reasoning.append("Alternative data view")
+            
+            # HR Analytics boost
+            domain = context.get('domain', '')
+            if domain == 'hr_analytics':
+                if chart_type in ['bar_chart', 'pie_chart', 'doughnut_chart']:
+                    score += 0.1
+                    reasoning.append("Common for HR analytics")
+            
+            # Ensure minimum reasoning
+            if not reasoning:
+                reasoning.append(f"Suitable for {chart_info['description'].lower()}")
+            
+            scored_charts.append({
+                'chart_type': chart_type,
+                'score': min(1.0, score),  # Cap at 1.0
+                'reasoning': '; '.join(reasoning[:2])
+            })
+        
+        return scored_charts
+    
+    def _get_fallback_recommendations(self) -> List[Dict[str, Any]]:
+        """Fallback recommendations - STILL RETURNS ALL CHARTS"""
+        fallback_charts = []
+        for chart_type, chart_info in self.chart_types.items():
+            fallback_charts.append({
+                'chart_type': chart_type,
+                'title': chart_info['title'],
+                'description': chart_info['description'],
+                'icon': chart_info.get('icon', '📊'),
+                'score': 0.5,  # Default score
+                'reasoning': 'Fallback recommendation',
+                'complexity': chart_info['complexity'],
+                'recommended': chart_type == 'bar_chart'  # Default to bar
+            })
+        
+        logger.info(f"Fallback: Returning ALL {len(fallback_charts)} charts")
+        return fallback_charts
+
+    def _get_universal_fallback(self) -> Dict[str, Any]:
+        """Universal fallback - ALL CHARTS ALWAYS AVAILABLE"""
+        fallback_charts = []
+        for chart_type, chart_info in self.chart_types.items():
+            fallback_charts.append({
+                'chart_type': chart_type,
+                'title': chart_info['title'],
+                'description': chart_info['description'],
+                'compatibility_reason': 'Fallback - all charts available',
+                'renderer_backend': 'chartjs',
+                'recommended': chart_type == 'bar_chart'
+            })
+        
+        return {
+            'can_visualize': True,
+            'recommended_charts': fallback_charts,  # ALL 8 charts
+            'reason': f'Fallback: All {len(fallback_charts)} chart types available',
+            'reason_code': 'FALLBACK_ALL_AVAILABLE'
         }
-        
-        return requirements.get(chart_type, {'error': 'Chart type not supported'})
+
+
+# Backward compatibility alias
+UniversalVizRecommender = SmartChartRecommender

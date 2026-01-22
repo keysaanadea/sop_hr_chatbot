@@ -36,11 +36,12 @@ tts_service = TTSService()
 stt_service = STTService()
 
 
-@router.post("/ask", response_model=QuestionResponse)
+@router.post("/ask")  # Removed response_model to allow dynamic response types
 async def ask_question(request: Request, req: QuestionRequest):
     """
     Text-based question answering endpoint
     PURE ORCHESTRATION - delegates to chat_service
+    Preserves ChatService response format for analytics and other special responses
     """
     try:
         # Setup session
@@ -75,7 +76,13 @@ async def ask_question(request: Request, req: QuestionRequest):
         if MEMORY_AVAILABLE and result.get("answer"):
             save_message(req.session_id, "assistant", result["answer"])
         
-        # Build API response
+        # Check if this is a special response type (analytics, etc.)
+        if result.get("message_type") == "analytics_result":
+            # Pass-through analytics response with all fields intact
+            logger.info(f"🎯 Analytics response passed through: visualization_available={result.get('visualization_available')}")
+            return result
+        
+        # For regular responses, format as QuestionResponse
         return QuestionResponse(
             answer=result.get("answer", "Server error."),
             session_id=req.session_id,

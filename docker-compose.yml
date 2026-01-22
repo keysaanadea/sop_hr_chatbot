@@ -1,0 +1,20 @@
+services:
+  backend:
+    build: .
+    container_name: sop-hr-backend
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: .
+      dockerfile: web/Dockerfile
+    container_name: sop-hr-frontend
+    ports:
+      - "5500:80"
+    depends_on:
+      - backend
+    restart: unless-stopped

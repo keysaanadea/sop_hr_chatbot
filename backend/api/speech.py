@@ -11,6 +11,7 @@ from models.requests import TTSRequest, STTResponse
 from services.tts_service import TTSService
 from services.stt_service import STTService
 from utils.text_utils import clean_text_for_tts
+from utils.speech_utils import rewrite_for_speech  # ✅ ADDED FOR AUTO-SUMMARIZATION
 
 logger = logging.getLogger(__name__)
 
@@ -24,7 +25,10 @@ stt_service = STTService()
 @router.post("/text-to-speech")
 async def text_to_speech_natural(tts_request: TTSRequest):
     """
-    Convert text to natural speech with better ElevenLabs support
+    Convert text to natural speech with auto-summarization for long texts
+    
+    This endpoint automatically summarizes long responses to make them
+    more suitable for voice output, improving user experience.
     
     Args:
         tts_request: Text-to-speech request with text and options
@@ -43,7 +47,29 @@ async def text_to_speech_natural(tts_request: TTSRequest):
         if not clean_text or len(clean_text.strip()) < 5:
             raise HTTPException(status_code=400, detail="No valid text after cleaning")
         
-        logger.info(f"🔊 TTS request: {clean_text[:50]}...")
+        # ✅ AUTO-SUMMARIZE: If text is long, rewrite for speech
+        # This happens when user clicks voice button on a long text response
+        was_summarized = False
+        original_length = len(clean_text)
+        
+        if len(clean_text) > 150:  # Threshold: 150 characters
+            logger.info(f"🔊 TTS request (LONG TEXT - will summarize): {clean_text[:50]}...")
+            logger.info(f"   Original length: {original_length} chars")
+            
+            # Rewrite for speech to make it concise
+            try:
+                voice_text = rewrite_for_speech(clean_text, max_sentences=2)
+                logger.info(f"   ✅ Summarized to: {len(voice_text)} chars")
+                logger.info(f"   Voice text: {voice_text[:100]}...")
+                clean_text = voice_text
+                was_summarized = True
+            except Exception as rewrite_error:
+                logger.warning(f"   ⚠️ Rewrite failed, using truncation: {rewrite_error}")
+                # Fallback: simple truncation with ellipsis
+                clean_text = clean_text[:200].rsplit(' ', 1)[0] + "..."
+                was_summarized = True
+        else:
+            logger.info(f"🔊 TTS request (short): {clean_text[:50]}...")
         
         # Force ElevenLabs for TTS API endpoint
         audio_content, engine = await tts_service.generate_audio(
@@ -62,7 +88,10 @@ async def text_to_speech_natural(tts_request: TTSRequest):
                 "Cache-Control": "no-cache",
                 "X-Voice": "Indonesian-Natural",
                 "X-Engine": engine,
-                "X-Natural-Speech": "true"
+                "X-Natural-Speech": "true",
+                "X-Summarized": "true" if was_summarized else "false",  # ✅ Indicator
+                "X-Original-Length": str(original_length),
+                "X-Final-Length": str(len(clean_text))
             }
         )
         
@@ -137,10 +166,12 @@ async def speech_system_status():
             },
             "text_to_speech": {
                 "available": True,
-                **tts_service.get_engine_info()
+                **tts_service.get_engine_info(),
+                "auto_summarization": True,  # ✅ New feature indicator
+                "summarization_threshold": 150
             },
             "status": "active",
-            "version": "7.0.0"
+            "version": "7.1.0"  # ✅ Bumped version
         }
         
     except Exception as e:
@@ -162,13 +193,15 @@ async def list_speech_engines():
                 "configured": tts_service.elevenlabs_configured,
                 "voice_quality": "high",
                 "languages": ["id", "en"],
-                "natural_speech": True
+                "natural_speech": True,
+                "auto_summarization": True  # ✅ Feature indicator
             },
             "openai": {
                 "configured": True,
                 "voice_quality": "good",
                 "languages": ["id", "en", "es", "fr", "de", "it", "pt", "ru", "ja", "ko", "zh"],
-                "natural_speech": True
+                "natural_speech": True,
+                "auto_summarization": True  # ✅ Feature indicator
             }
         },
         "stt_engines": {
@@ -181,6 +214,14 @@ async def list_speech_engines():
         "recommended": {
             "tts": "elevenlabs" if tts_service.elevenlabs_configured else "openai",
             "stt": "whisper"
+        },
+        "features": {
+            "auto_summarization": {
+                "enabled": True,
+                "threshold": 150,
+                "max_sentences": 2,
+                "description": "Automatically summarizes long texts for better voice output"
+            }
         }
     }
 
@@ -188,15 +229,19 @@ async def list_speech_engines():
 @router.get("/test")
 async def test_speech_system():
     """
-    Test speech system functionality
+    Test speech system functionality including auto-summarization
     
     Returns:
         dict: Test results
     """
     try:
         test_text = "Halo, ini adalah tes sistem speech DEN AI."
+        test_long_text = ("Ini adalah teks yang sangat panjang untuk menguji fitur "
+                         "auto-summarization pada sistem text-to-speech. Fitur ini akan "
+                         "secara otomatis merangkum teks panjang menjadi versi yang lebih "
+                         "ringkas dan mudah didengar.")
         
-        # Test TTS
+        # Test TTS with short text
         try:
             audio_content, engine = await tts_service.generate_audio(test_text)
             tts_test = {
@@ -210,6 +255,21 @@ async def test_speech_system():
                 "error": str(e)
             }
         
+        # Test auto-summarization
+        try:
+            summarized = rewrite_for_speech(test_long_text, max_sentences=2)
+            summarization_test = {
+                "status": "success",
+                "original_length": len(test_long_text),
+                "summarized_length": len(summarized),
+                "reduction_percent": round((1 - len(summarized)/len(test_long_text)) * 100, 1)
+            }
+        except Exception as e:
+            summarization_test = {
+                "status": "failed",
+                "error": str(e)
+            }
+        
         # STT would require actual audio file, so just check service
         stt_test = {
             "status": "ready",
@@ -219,7 +279,9 @@ async def test_speech_system():
         return {
             "tts_test": tts_test,
             "stt_test": stt_test,
-            "overall_status": "healthy" if tts_test["status"] == "success" else "partial"
+            "summarization_test": summarization_test,
+            "overall_status": "healthy" if (tts_test["status"] == "success" and 
+                                           summarization_test["status"] == "success") else "partial"
         }
         
     except Exception as e:
@@ -227,5 +289,6 @@ async def test_speech_system():
         return {
             "tts_test": {"status": "error", "error": str(e)},
             "stt_test": {"status": "error", "error": str(e)},
+            "summarization_test": {"status": "error", "error": str(e)},
             "overall_status": "error"
         }

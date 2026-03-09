@@ -1,786 +1,734 @@
 """
-DENAI Chat Service - FINAL FIX for Analytics API Response
-========================================================
-
-✅ FIXED: Analytics result now includes ALL required fields in API response
-✅ FIXED: message_type field included for frontend detection
-✅ FIXED: Multiple field names for maximum compatibility
+DENAI Chat Service - UNIFIED CLASSIFIER VERSION (COMPLETE)
+==================================================================
+🔥 NEW: Unified Classifier (Greeting + Intent in ONE LLM call!)
+⚡ OPTIMIZED: Reduced from 3-4 LLM calls to 2-3 LLM calls
+✨ NEW: Smart Paraphrase (Skip if question already clear)
+🚀 FEATURE: Greeting/Casual Chat handling with safe templates
 """
-
-print("🔥🔥🔥 USING FINAL FIXED CHAT_SERVICE.PY 🔥🔥🔥")
-
 
 import logging
 import asyncio
 import json
 import time
-from typing import Optional, List, Dict, Any, Literal, Union
-from openai import OpenAI
-import sys
 import os
+import sys
+from typing import Optional, List, Dict, Any, Literal, Union, Callable
+from openai import OpenAI
 
-# Add project root to path
 project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, project_root)
 
 from app.config import (
-    OPENAI_API_KEY,
-    LLM_MODEL,
-    LLM_TEMPERATURE,
-    API_TIMEOUT_DEFAULT,
-    API_TIMEOUT_CALL_MODE,
-    CALL_MODE_TEMPERATURE,
-    CHAT_MODE_TEMPERATURE,
-    CALL_MODE_MAX_TOKENS,
-    CHAT_MODE_MAX_TOKENS
+    OPENAI_API_KEY, LLM_MODEL, LLM_TEMPERATURE,
+    API_TIMEOUT_DEFAULT, API_TIMEOUT_CALL_MODE,
+    CALL_MODE_TEMPERATURE, CHAT_MODE_TEMPERATURE,
+    CALL_MODE_MAX_TOKENS, CHAT_MODE_MAX_TOKENS,
+    SEMANTIC_ROUTER_ENABLED, SEMANTIC_ROUTER_THRESHOLD, SEMANTIC_ROUTER_ENCODER,
+    INTENT_CLASSIFIER_MODEL, INTENT_CLASSIFIER_TEMPERATURE, INTENT_CLASSIFIER_MAX_TOKENS
 )
 
 logger = logging.getLogger(__name__)
-
-# Initialize OpenAI client
 client = OpenAI(api_key=OPENAI_API_KEY)
 
-# Import dynamic tools routing (REQUIRED for proper routing)
+# =====================================
+# SEMANTIC ROUTER SETUP  
+# =====================================
 try:
-    from app.tools import (
-        get_current_tools_schema,  # ✅ DYNAMIC routing
-        TOOL_FUNCTIONS,            # Function registry
-        StructuredResponse,        # ✅ FIX: Import StructuredResponse class
-    )
+    from semantic_router import Route
+    from semantic_router.routers import SemanticRouter
+    from semantic_router.encoders import OpenAIEncoder
+    from semantic_router.index.local import LocalIndex
+    SEMANTIC_ROUTER_AVAILABLE = True
+    logger.info("✅ Semantic Router module imported successfully")
+except ImportError as e:
+    SEMANTIC_ROUTER_AVAILABLE = False
+    logger.warning(f"⚠️ semantic-router tidak tersedia: {e}. Fallback ke LLM Judge.")
+
+# =====================================
+# DYNAMIC TOOLS ROUTING
+# =====================================
+try:
+    from app.tools import get_current_tools_schema, TOOL_FUNCTIONS, StructuredResponse
     TOOLS_AVAILABLE = True
-    logger.info("✅ Dynamic tools system imported successfully")
 except ImportError as e:
     TOOLS_AVAILABLE = False
-    logger.warning(f"⚠️ Tools not available: {e}")
-    
-    # Fallback functions
-    def get_current_tools_schema(user_role="employee", intent="A"):
-        return []
-    
+    def get_current_tools_schema(user_role="employee", intent="A"): return []
     TOOL_FUNCTIONS = {}
-    
-    # ✅ FIX: Fallback StructuredResponse class
     class StructuredResponse:
         def __init__(self, **kwargs):
-            for k, v in kwargs.items():
-                setattr(self, k, v)
-
+            for k, v in kwargs.items(): setattr(self, k, v)
 
 # =====================================
-# UNIVERSAL ANALYTICS RESPONSE BUILDER
+# UNIVERSAL ANALYTICS BUILDER
 # =====================================
-
 def build_analytics_response(
-    *,
-    domain: str,
-    text: str,
-    columns: List[str],
-    rows: List[List[Any]],
-    session_id: str,
-    turn_id: Optional[str] = None,
-    visualization_available: bool = True,
-    chart_hints: Optional[Dict[str, Any]] = None,
-    sql_query: Optional[str] = None,
+    *, domain: str, text: str, columns: List[str], rows: List[List[Any]],
+    session_id: str, turn_id: Optional[str] = None, visualization_available: bool = True,
+    chart_hints: Optional[Dict[str, Any]] = None, sql_query: Optional[str] = None,
     sql_explanation: Optional[str] = None
 ) -> Dict[str, Any]:
-    """Universal analytics response builder for ALL domains."""
-    
-    logger.error(f"🏗️ BUILDING ANALYTICS RESPONSE - Domain: {domain}, Viz: {visualization_available}")
-    logger.error(f"🏗️ Columns: {columns}")
-    logger.error(f"🏗️ Rows count: {len(rows) if rows else 0}")
-    
-    # Auto-generate turn_id if not provided
-    if turn_id is None:
-        turn_id = f"{session_id}-{int(time.time())}"
-    
+    turn_id = turn_id or f"{session_id}-{int(time.time())}"
     response = {
-        "message_type": "analytics_result",
-        "domain": domain,
-        "text": text,
-        "data": {
-            "columns": columns,
-            "rows": rows
-        },
+        "message_type": "analytics_result", "domain": domain, "text": text,
+        "data": {"columns": columns, "rows": rows},
         "visualization_available": visualization_available,
-        "conversation_id": session_id,
-        "turn_id": turn_id
+        "conversation_id": session_id, "turn_id": turn_id
     }
-    if sql_query:
-        response["sql_query"] = sql_query
-    if sql_explanation:
-        response["sql_explanation"] = sql_explanation
-    
-    # Add chart hints if provided (future-proof)
-    if chart_hints:
-        response["chart_hints"] = chart_hints
-    if sql_query:
-        response["sql_query"] = sql_query
-        logger.info("✅ SQL query included in response for transparency")
-    
-    if sql_explanation:
-        response["sql_explanation"] = sql_explanation
-        logger.info("✅ SQL explanation included in response")
-            
-    logger.error(f"🏗️ FINAL ANALYTICS RESPONSE: {json.dumps(response, ensure_ascii=False, default=str)[:300]}...")
-        
+    if chart_hints: response["chart_hints"] = chart_hints
+    if sql_query: response["sql_query"] = sql_query
+    if sql_explanation: response["sql_explanation"] = sql_explanation
     return response
 
-
 def generate_chart_hints(domain: str, columns: List[str], rows: List[List[Any]]) -> Optional[Dict[str, Any]]:
-    """Generate smart chart recommendations based on data characteristics."""
-    if not columns or not rows or len(columns) < 2:
-        return None
-    
-    hints = {}
-    
-    # Domain-specific chart recommendations
-    if domain == "hr":
-        if any("band" in col.lower() for col in columns):
-            hints = {
-                "preferred_types": ["bar", "pie"],
-                "x_axis": columns[0],
-                "y_axis": columns[1] if len(columns) > 1 else None,
-                "title_suggestion": f"Distribusi {columns[1]} per {columns[0]}"
-            }
-    
-    return hints if hints else None
+    if not columns or not rows or len(columns) < 2: return None
+    if domain == "hr" and any("band" in col.lower() for col in columns):
+        return {
+            "preferred_types": ["bar", "pie"], "x_axis": columns[0],
+            "y_axis": columns[1] if len(columns) > 1 else None,
+            "title_suggestion": f"Distribusi {columns[1]} per {columns[0]}"
+        }
+    return None
 
-def generate_sql_explanation(sql_query: str, user_question: str) -> str:
-    """Generate human-readable explanation of SQL query using LLM"""
-    try:
-        explanation_prompt = f"""Jelaskan query SQL berikut dalam bahasa sederhana:
+# =====================================
+# ✨ SEMANTIC INTENT CLASSIFIER
+# =====================================
+class SemanticIntentClassifier:
+    def __init__(self):
+        self.route_layer = None
+        if SEMANTIC_ROUTER_AVAILABLE and SEMANTIC_ROUTER_ENABLED:
+            try:
+                if OPENAI_API_KEY:
+                    os.environ["OPENAI_API_KEY"] = OPENAI_API_KEY
 
-PERTANYAAN: "{user_question}"
-SQL: {sql_query}
+                encoder = OpenAIEncoder(name="text-embedding-3-small", score_threshold=0.0)
+                
+                sop_route = Route(
+                    name="sop_documents",
+                    utterances=[
+                        "bagaimana aturan perusahaan mengenai hal ini",
+                        "apa syarat untuk bisa mengajukan hal tersebut",
+                        "jelaskan prosedur atau langkah-langkahnya",
+                        "apakah ada kebijakan yang mengatur masalah ini",
+                        "saya mau tahu ketentuan dan regulasi dari perusahaan",
+                        "bolehkah saya melakukan ini menurut buku panduan",
+                        "bagaimana cara klaim atau mengajukan permohonan",
+                        "apa hak dan kewajiban karyawan dalam situasi ini",
+                        "bantu jelaskan pedoman operasional standar untuk proses ini",
+                        "apakah hal ini diperbolehkan oleh aturan HR",
+                        "dimana saya bisa membaca panduan tentang hal ini",
+                        "apa sanksi atau konsekuensi jika melanggar aturan ini"
+                    ]
+                )
 
-Berikan penjelasan 2-3 kalimat yang mudah dipahami."""
+                hr_database_route = Route(
+                    name="hr_database",
+                    utterances=[
+                        "berapa total jumlah karyawan yang ada di kriteria ini",
+                        "tampilkan daftar nama orang-orang yang masuk kategori ini",
+                        "hitung total biaya atau pengeluaran untuk periode ini",
+                        "siapa saja yang memiliki status atau level ini",
+                        "berapa rata-rata dari data tersebut",
+                        "tolong rincikan penyebaran atau distribusi datanya",
+                        "kelompokkan data ini berdasarkan divisinya",
+                        "tolong tarik data historis untuk kejadian ini",
+                        "filter data yang nilainya di atas atau di bawah angka ini",
+                        "carikan karyawan dengan spesifikasi atau kualifikasi seperti ini",
+                        "berikan laporan statistik mengenai hal ini",
+                        "coba jumlahkan semua record yang sesuai"
+                    ]
+                )
 
-        response = client.chat.completions.create(
-            model=LLM_MODEL,
-            messages=[
-                {"role": "system", "content": "Kamu ahli database yang menjelaskan SQL dengan sederhana."},
-                {"role": "user", "content": explanation_prompt}
-            ],
-            max_tokens=150,
-            temperature=0.3
-        )
+                local_index = LocalIndex()
+                self.route_layer = SemanticRouter(
+                    encoder=encoder,
+                    routes=[sop_route, hr_database_route],
+                    index=local_index
+                )
+
+                if hasattr(self.route_layer, "index") and len(self.route_layer.index) == 0:
+                    logger.warning("⚙️ Index Semantic Router kosong! Memaksa sinkronisasi manual...")
+                    self.route_layer.add(routes=[sop_route, hr_database_route])
+                    logger.info("✅ Sinkronisasi manual selesai.")
+                
+                logger.info(f"✅ Semantic Router Layer initialized (Threshold: {SEMANTIC_ROUTER_THRESHOLD})")
+                
+            except Exception as e:
+                logger.error(f"❌ Failed to initialize RouteLayer: {e}")
+                self.route_layer = None
+
+    def classify(self, query: str) -> Optional[Literal["A", "B"]]:
+        if not self.route_layer:
+            return None
         
-        return response.choices[0].message.content.strip()
-        
-    except Exception as e:
-        logger.error(f"❌ Failed to generate SQL explanation: {str(e)}")
-        return f"Mengambil data dari database perusahaan."
-
-def classify_intent_llm(question: str) -> Literal["A", "B"]:
-    """Enhanced LLM-based intent classifier for SOP vs HR DATA routing."""
-    try:
-        # Enhanced prompt for better classification accuracy
-        prompt = f"""You are an intent classifier for an internal company assistant.
-Your task is to classify user queries into EXACTLY ONE category based on data source requirements.
-
-=== CLASSIFICATION CATEGORIES ===
-
-A. SOP_EXPLANATION
-   → Information available in Standard Operating Procedures (SOP) documents
-   → Fixed rules, policies, procedures, definitions, rates, and tables
-   → Static company information that doesn't change frequently
-   
-   INCLUDES:
-   • Policy explanations ("aturan cuti karyawan", "prosedur resign")
-   • Procedure steps ("cara mengajukan lembur", "proses klaim medical")
-   • Definition queries ("apa itu tunjangan keluarga", "pengertian band salary")
-   • Fixed rates/amounts ("upah lembur per jam", "tunjangan makan per hari")
-   • Entitlement tables ("cuti tahunan berdasarkan masa kerja", "medical limit per band")
-   • Travel allowances ("uang perjalanan dinas ke luar negeri per band")
-   • Company benefits ("fasilitas karyawan", "program training")
-
-B. HR_DATA_REQUEST  
-   → Information requiring queries to employee database
-   → Dynamic data about actual employees, counts, statistics
-   → Real-time or current employee information
-   
-   INCLUDES:
-   • Employee counts/totals ("berapa jumlah karyawan", "total staff IT")
-   • Individual employee data ("gaji si Andi", "cuti tersisa Budi")
-   • Department statistics ("distribusi karyawan per divisi")
-   • Performance data ("ranking karyawan terbaik")
-   • Attendance records ("absensi bulan ini", "siapa yang lembur")
-   • Current status checks ("apakah Sari masih bekerja di sini")
-   • Analytics/aggregations ("rata-rata gaji per band", "trend recruitment")
-
-=== DECISION FRAMEWORK ===
-
-ASK YOURSELF:
-1. Does this ask for a FIXED RULE/RATE that's the same for everyone in the same category? → A
-2. Does this ask for SPECIFIC EMPLOYEE DATA or COUNTS of actual people? → B
-3. Would the answer come from a POLICY DOCUMENT or from a DATABASE QUERY? → Document=A, Database=B
-
-KEYWORD HINTS:
-• "aturan", "prosedur", "cara", "apa itu" → Usually A
-• "berapa banyak", "siapa saja", "daftar", "jumlah", "total" → Usually B
-• "jika saya", "untuk band X", "limit" → Usually A
-• Names of people ("Andi", "Budi") → Usually B
-
-=== RULES ===
-- Focus on DATA SOURCE needed, not keywords
-- If answer exists in company manuals/policies → A
-- If answer requires querying employee records → B
-- When uncertain → choose A
-- Output ONLY one letter: A or B
-
-User query: "{question}"
-"""
-
-        # LLM call with exact specifications
-        response = client.chat.completions.create(
-            model=LLM_MODEL,
-            messages=[{"role": "user", "content": prompt}],
-            temperature=0,  # Deterministic classification
-            max_tokens=1,   # Only need one letter
-        )
-        
-        result = response.choices[0].message.content.strip().upper()
-        
-        # Strict validation - only A or B allowed
-        if result in ["A", "B"]:
-            logger.info(f"🎯 LLM Intent: '{question[:50]}...' → {result}")
-            return result
-        else:
-            # Fallback to A if invalid response
-            logger.warning(f"⚠️ Invalid LLM response '{result}', defaulting to A")
-            return "A"
+        try:
+            route_choice = self.route_layer(query)
             
+            if not route_choice:
+                logger.info(f"⚠️ No confident match for: '{query[:50]}...'")
+                return None
+            
+            score = getattr(route_choice, 'similarity_score', getattr(route_choice, 'score', 0.0))
+            route_name = route_choice.name or "None"
+            
+            logger.info(f"📊 [SEMANTIC] Rute: '{route_name}' | Score: {score:.4f} | Threshold: {SEMANTIC_ROUTER_THRESHOLD}")
+            
+            if score < SEMANTIC_ROUTER_THRESHOLD:
+                logger.info(f"⚠️ Score {score:.4f} below threshold. Fallback to LLM.")
+                return None
+                
+            route_map = {"sop_documents": "A", "hr_database": "B"}
+            intent = route_map.get(route_name)
+            
+            if intent:
+                logger.info(f"⚡ Semantic Match: '{query[:50]}...' → {intent}")
+                return intent
+            
+            logger.warning(f"⚠️ Unknown route: {route_name}")
+            return None
+            
+        except Exception as e:
+            logger.error(f"❌ Semantic Routing error: {e}")
+            return None
+
+try:
+    semantic_classifier = SemanticIntentClassifier()
+    logger.info("✅ Semantic classifier ready")
+except Exception as e:
+    logger.error(f"❌ Failed to init semantic classifier: {e}")
+    semantic_classifier = None
+
+# =====================================
+# ✨ UNIFIED CLASSIFIER (Greeting + Intent in ONE!)
+# =====================================
+async def classify_intent_unified(
+    question: str, 
+    history: List[Dict[str, Any]] = None
+) -> Literal["greeting", "casual_chat", "A", "B"]:
+    """
+    ✨ UNIFIED: Greeting detection + Intent classification in ONE LLM call!
+    Saves 1 LLM call compared to separate greeting + intent detection.
+    
+    Returns:
+        "greeting" - Simple greetings/tests (halo, hi, test)
+        "casual_chat" - Non-HR casual talk (presiden, cuaca)
+        "A" - SOP/Policy questions
+        "B" - HR Database queries
+    """
+    
+    # Try Semantic Router first (free, no LLM call!)
+    if semantic_classifier:
+        intent = await asyncio.to_thread(semantic_classifier.classify, question)
+        if intent:
+            # Semantic Router only returns A or B
+            logger.info(f"⚡ Semantic Router Result: {intent}")
+            return intent
+    
+    # Fallback to Unified LLM Classifier
+    try:
+        context_text = ""
+        if history and len(history) > 0:
+            last_msgs = [f"{h.get('role')}: {h.get('message', h.get('content', ''))}" 
+                        for h in history[-4:]]
+            context_text = "=== CHAT CONTEXT ===\n" + "\n".join(last_msgs) + "\n\n"
+
+        prompt = f"""You are an elite intent classifier for an Enterprise HR Chatbot.
+Classify the user's query into EXACTLY one: 'greeting', 'casual_chat', 'A', or 'B'.
+
+{context_text}
+=== CATEGORY DEFINITIONS ===
+
+greeting:
+- Simple greetings, salutations, system tests
+- Very short (1-5 words), clearly greetings
+- Examples: "halo", "hi", "good morning", "test", "apa kabar"
+
+casual_chat:
+- Casual talk NOT related to HR/company  
+- World events, weather, recipes, celebrities
+- Examples: "siapa presiden", "cuaca hari ini", "resep nasi goreng"
+
+A (SOP_DOCUMENTS):
+- Rules, policies, guidelines, procedures
+- Keywords: "aturan", "syarat", "cara", "kebijakan", "boleh"
+- Example: "Cara mengajukan cuti?" → A
+
+B (HR_DATABASE):
+- Data, numbers, statistics, lists
+- Keywords: "berapa", "siapa saja", "daftar", "total"
+- Example: "Berapa total karyawan?" → B
+
+RULES:
+1. Clear greeting → "greeting"
+2. Casual/unrelated → "casual_chat"
+3. Policy question → "A"
+4. Data query → "B"
+5. Unsure A/B → default "A"
+6. Unsure casual → treat as HR (A or B)
+
+Respond ONLY: greeting, casual_chat, A, or B
+
+User: "{question}"
+"""
+        
+        response = await asyncio.to_thread(
+            client.chat.completions.create,
+            model=INTENT_CLASSIFIER_MODEL,
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.0,
+            max_tokens=10
+        )
+        
+        result = response.choices[0].message.content.strip().lower()
+        
+        if result in ["greeting", "casual_chat", "a", "b"]:
+            result_mapped = result.upper() if result in ["a", "b"] else result
+            logger.info(f"🎯 Unified Classifier: '{question[:50]}...' → {result_mapped}")
+            return result_mapped
+        
+        logger.warning(f"⚠️ Invalid result: '{result}', default to A")
+        return "A"
+        
     except Exception as e:
-        # Fallback to A on any error
-        logger.error(f"❌ LLM classification error: {e}, defaulting to A")
+        logger.error(f"❌ Unified classifier error: {e}, default to A")
         return "A"
 
 
+# Safe template responses for greeting/casual_chat
+GREETING_RESPONSE = "Halo! Saya DEN.AI, asisten HR digital. Ada yang bisa saya bantu?"
+
+CASUAL_CHAT_RESPONSE = """Maaf, saya adalah asisten khusus untuk informasi HR dan kebijakan perusahaan.
+
+Saya bisa membantu dengan:
+• Kebijakan dan prosedur (SOP)
+• Data karyawan dan analytics
+• Informasi terkait HR lainnya
+
+Silakan ajukan pertanyaan terkait topik di atas! 😊"""
+
+
+# =====================================
+# CORE CHAT SERVICE
+# =====================================
 class ChatService:
-    """Core AI chat orchestration service with universal analytics support"""
-    
     def __init__(self):
         self.client = client
         self.model = LLM_MODEL
-        self.default_temperature = LLM_TEMPERATURE
         self.tools_available = TOOLS_AVAILABLE
-    
-    async def process_question(
-        self,
-        question: str,
-        user_role: str,
-        session_id: str,
-        history: List[Dict[str, Any]] = None,
-        mode: str = "chat"
-    ) -> Dict[str, Any]:
-        """Process user question with LLM intent classification and universal analytics"""
+
+    async def _smart_contextualize(
+        self, 
+        current_question: str, 
+        history: List[Dict[str, Any]] = None
+    ) -> str:
+        """
+        ✨ SMART PARAPHRASE: Skip if question already clear!
+        Saves 1 LLM call for clear questions.
+        """
+        
+        # No history = no need to paraphrase
+        if not history or len(history) == 0:
+            logger.info(f"⚡ SKIP paraphrase: No history")
+            return current_question
+        
+        # Check for ambiguous patterns
+        ambiguous_patterns = [
+            'itu', 'nya', 'dia', 'mereka', 'tersebut', 'yang tadi',
+            'it', 'that', 'this', 'they', 'he', 'she', 'them'
+        ]
+        
+        question_lower = current_question.lower()
+        has_ambiguity = any(pattern in question_lower for pattern in ambiguous_patterns)
+        
+        # If question is long (>6 words) and has no ambiguous references → skip!
+        word_count = len(current_question.split())
+        if not has_ambiguity and word_count > 6:
+            logger.info(f"⚡ SKIP paraphrase: Question clear ({word_count} words, no ambiguity)")
+            return current_question
+        
+        # Otherwise, paraphrase
+        logger.info(f"🔄 NEED paraphrase: Ambiguous or short ({word_count} words)")
+        return await self._contextualize_query(current_question, history)
+
+    async def _contextualize_query(
+        self, 
+        current_question: str, 
+        history: List[Dict[str, Any]] = None
+    ) -> str:
+        """
+        ✨ STANDALONE QUERY GENERATOR ✨
+        Mengubah pertanyaan ambigu (karena obrolan lanjutan) menjadi pertanyaan utuh/jelas.
+        """
+        if not history or len(history) == 0:
+            return current_question
+
+        context_text = "\n".join([
+            f"{h.get('role', 'user')}: {h.get('message', h.get('content', ''))}" 
+            for h in history[-4:]
+        ])
+
+        prompt = f"""Diberikan riwayat percakapan berikut dan pertanyaan lanjutan dari pengguna.
+Formulasikan ulang pertanyaan lanjutan tersebut menjadi satu pertanyaan mandiri (standalone query) yang komprehensif tanpa perlu membaca riwayat lagi.
+JANGAN menjawab pertanyaannya, cukup tulis ulang pertanyaannya agar jelas maksud subjeknya. 
+Jika pertanyaan lanjutan sudah sangat jelas dengan sendirinya tanpa perlu history, kembalikan persis seperti aslinya.
+
+Riwayat Percakapan:
+{context_text}
+
+Pertanyaan Lanjutan: {current_question}
+
+Pertanyaan Mandiri:"""
+
         try:
-            # 1. LLM INTENT CLASSIFICATION (DUAL-STAGE CLASSIFIER)
-            intent = classify_intent_llm(question)
+            response = await asyncio.to_thread(
+                self.client.chat.completions.create,
+                model=INTENT_CLASSIFIER_MODEL,
+                messages=[{"role": "user", "content": prompt}],
+                temperature=0.0,
+                max_tokens=150
+            )
+            standalone_query = response.choices[0].message.content.strip()
             
-            # 2. HARD SECURITY GATE (role-based)
-            if intent == "B" and user_role.lower() not in ['hr', 'admin', 'manager']:
-                # HR DATA request from non-HR user = ACCESS DENIED
-                logger.warning(f"🔒 HR DATA ACCESS DENIED: role={user_role}, intent={intent}")
-                return {
-                    "answer": f"""
-🔒 <strong>Akses Dibatasi</strong>
+            logger.info(f"🔄 [PARAPHRASE] '{current_question}' -> '{standalone_query}'")
+            return standalone_query
+        except Exception as e:
+            logger.error(f"⚠️ Contextualize error: {e}")
+            return current_question
 
-Permintaan data karyawan hanya dapat diakses oleh:
-• Tim HR
-• Admin
-• Manager
+    def _is_failure(self, result: Dict[str, Any]) -> bool:
+        if not result or not isinstance(result, dict):
+            return True
+            
+        if result.get("authorized") is False:
+            return False
+            
+        if "error" in result:
+            return True
+            
+        answer = str(result.get("answer", "")).lower()
+        
+        failure_keywords = [
+            "[data_tidak_ditemukan_di_sop]",
+            "data tidak tersedia",
+            "no data found",
+            "maaf, terjadi gangguan",
+            "maaf, terjadi kesalahan",
+            "tidak ditemukan",
+            "failed to generate sql",
+            "window function over clause",
+            "informasi tidak tersedia atau anda tidak memiliki otorisasi" 
+        ]
+        
+        return any(keyword in answer for keyword in failure_keywords)
 
-Role Anda saat ini: <strong>{user_role}</strong>
-
-Untuk pertanyaan tentang prosedur dan kebijakan perusahaan, silakan ajukan pertanyaan yang berbeda.
-""",
-                    "authorized": False,
-                    "tool_called": "security_gate",
-                    "intent": intent,
-                    "user_role": user_role
-                }
+    async def _execute_intent_flow(
+        self, intent: str, question: str, user_role: str, session_id: str, 
+        history: List[Dict[str, Any]], mode: str, cancellation_check: Optional[Callable]
+    ) -> Dict[str, Any]:
+        
+        if intent == "B" and user_role.lower() not in ['hr', 'admin', 'manager']:
+            logger.warning(f"🔒 HR DATA ACCESS DENIED: role={user_role}")
+            return {
+                "answer": f"🔒 <strong>Akses Dibatasi</strong>\n\nRole Anda (<strong>{user_role}</strong>) tidak memiliki otorisasi untuk mengakses database spesifik karyawan.",
+                "authorized": False,
+                "intent": intent
+            }
+        
+        tools = get_current_tools_schema(user_role, intent) if self.tools_available else []
+        messages = self._prepare_messages(question, history, mode)
+        
+        completion = await self._run_completion(messages, tools, mode)
+        
+        if completion.choices[0].message.tool_calls:
+            tool_call = completion.choices[0].message.tool_calls[0]
+            function_name = tool_call.function.name
             
-            # 3. GET TOOLS FOR INTENT
-            if self.tools_available:
-                tools = get_current_tools_schema(user_role, intent)
-                logger.debug(f"🔧 Available tools for intent {intent}: {[t['function']['name'] for t in tools]}")
-            else:
-                tools = []
-                logger.warning("⚠️ Tools not available - using LLM-only mode")
-            
-            # 4. LLM COMPLETION WITH TOOLS
-            messages = self._prepare_messages(question, history, mode)
-            
-            completion = await self._run_completion(
-                messages=messages,
-                tools=tools,
-                intent=intent,
-                mode=mode
+            result = await self._execute_tool(
+                tool_call, session_id, user_role, question, mode,
+                cancellation_check=cancellation_check
             )
             
-            # 5. PROCESS RESPONSE
-            if completion.choices[0].message.tool_calls:
-                # Tool execution path
-                tool_call = completion.choices[0].message.tool_calls[0]
-                function_name = tool_call.function.name
-                
-                logger.info(f"🔧 Executing tool: {function_name}")
-                
-                result = await self._execute_tool(
-                    tool_call, 
-                    session_id, 
-                    user_role, 
-                    question,
-                    mode
-                )
-                logger.error(f"🔧 PROCESS DEBUG: result type={type(result)}, has data={result.get('data') if isinstance(result, dict) else False}")
-                logger.error(f"🔧 PROCESS DEBUG: result keys={list(result.keys()) if isinstance(result, dict) else 'Not dict'}")
-                
-                # ✅ CRITICAL FIX: Handle analytics responses from ANY domain
-                if isinstance(result, dict) and result.get("data"):
-
-                    # Universal analytics response - works for HR, Finance, Sales, etc.
-                    logger.info(f"✅ Returning universal analytics response: {result.get('domain')} domain")
-                    
-                    # 🔧 CRITICAL FIX: Include ALL required fields for frontend contract
-                    api_response = {
-                        "answer": result.get("text", "Analytics result completed"),
-                        "authorized": True,
-                        "tool_called": function_name,
-                        # ✅ CRITICAL: Include message_type for frontend detection
-                        "message_type": "analytics_result",
-                        # Frontend contract fields - ALL variants for maximum compatibility
-                        "data": result["data"],              # Universal field (NEW)
-                        "analytics_data": result["data"],   # Alternative field name
-                        "hr_analytics": result["data"],     # Backward compatibility
-                        "visualization_available": result["visualization_available"],
-                        "conversation_id": result["conversation_id"],
-                        "turn_id": result["turn_id"],
-                        # Additional metadata
-                        "domain": result["domain"],
-                        "chart_hints": result.get("chart_hints"),
-                        "intent": intent
-                    }
-                    
-                    logger.info(f"🎉 FIXED API RESPONSE with all required fields")
-                    return api_response
-                
-                elif isinstance(result, dict) and result.get("type") == "structured_response":
-                    # Other structured responses (legacy format)
-                    return {
-                        "answer": result["answer"],
-                        "authorized": True,
-                        "tool_called": function_name,
-                        "data_type": result["data_type"],
-                        "structured_data": result["structured_data"],
-                        "visualization_available": result.get("visualization_available", False),
-                        "metadata": result.get("metadata"),
-                        "intent": intent
-                    }
-                
-                else:
-                    # Simple string response (SOP, errors, etc.)
-                    return {
-                        "answer": str(result),
-                        "authorized": True,
-                        "tool_called": function_name,
-                        "intent": intent
-                    }
-                    
-            else:
-                # Direct LLM response (no tools)
-                final_answer = completion.choices[0].message.content
-                
+            if isinstance(result, dict) and result.get("data"):
                 return {
-                    "answer": final_answer,
+                    "answer": result.get("answer", result.get("text", "Analytics completed")),
                     "authorized": True,
-                    "tool_called": None,
+                    "tool_called": function_name,
+                    "message_type": "analytics_result",
+                    "data": result["data"],
+                    "visualization_available": result["visualization_available"],
+                    "conversation_id": result["conversation_id"],
+                    "turn_id": result["turn_id"],
+                    "domain": result["domain"],
+                    "chart_hints": result.get("chart_hints"),
+                    "intent": intent,
+                    "sql_query": result.get("sql_query"),
+                    "sql_explanation": result.get("sql_explanation")
+                }
+            
+            elif isinstance(result, dict) and result.get("type") == "structured_response":
+                return {
+                    "answer": result["answer"],
+                    "authorized": True,
+                    "tool_called": function_name,
+                    "data_type": result["data_type"],
+                    "structured_data": result["structured_data"],
+                    "visualization_available": result.get("visualization_available", False),
+                    "metadata": result.get("metadata"),
                     "intent": intent
                 }
+            
+            return {
+                "answer": str(result),
+                "authorized": True,
+                "tool_called": function_name,
+                "intent": intent
+            }
+                
+        return {
+            "answer": completion.choices[0].message.content,
+            "authorized": True,
+            "tool_called": None,
+            "intent": intent
+        }
+    
+    async def process_question(
+        self, 
+        question: str, 
+        user_role: str, 
+        session_id: str, 
+        history: List[Dict[str, Any]] = None, 
+        mode: str = "chat",
+        cancellation_check: Optional[Callable] = None
+    ) -> Dict[str, Any]:
+        try:
+            # ✨ STEP 1: UNIFIED Classification (Greeting + Intent in ONE!)
+            classification = await classify_intent_unified(question, history)
+            
+            # Handle greeting
+            if classification == "greeting":
+                logger.info(f"👋 Greeting detected: '{question}'")
+                return {
+                    "answer": GREETING_RESPONSE,
+                    "authorized": True,
+                    "intent": "greeting",
+                    "tool_called": None,
+                    "is_greeting": True
+                }
+            
+            # Handle casual chat
+            if classification == "casual_chat":
+                logger.info(f"💬 Casual chat detected: '{question}'")
+                return {
+                    "answer": CASUAL_CHAT_RESPONSE,
+                    "authorized": True,
+                    "intent": "casual_chat",
+                    "tool_called": None,
+                    "is_casual_chat": True
+                }
+            
+            # classification is now "A" or "B"
+            original_intent = classification
+            
+            # ✨ STEP 2: Smart Paraphrase (SKIP if clear!)
+            standalone_question = await self._smart_contextualize(question, history)
+
+            # ✨ STEP 3: Execute with intent
+            result = await self._execute_intent_flow(
+                intent=original_intent, 
+                question=standalone_question, 
+                user_role=user_role, 
+                session_id=session_id, 
+                history=history, 
+                mode=mode, 
+                cancellation_check=cancellation_check
+            )
+            
+            # 4. SISTEM FALLBACK NINJA (B -> A)
+            if original_intent == "B" and self._is_failure(result):
+                logger.warning("🔄 Rute B (Database) Gagal. Fallback ke SOP (Ninja Mode)...")
+                
+                fallback_result = await self._execute_intent_flow(
+                    intent="A",
+                    question=standalone_question, 
+                    user_role=user_role, 
+                    session_id=session_id, 
+                    history=history, 
+                    mode=mode, 
+                    cancellation_check=cancellation_check
+                )
+                
+                if not self._is_failure(fallback_result):
+                    fallback_result["is_fallback"] = True
+                    return fallback_result
+                else:
+                    result = fallback_result 
+            
+            # 5. ERROR HTML DOUBLE FAILURE
+            if self._is_failure(result):
+                error_html = """
+                <div style="background-color: #fdfafb; border-left: 4px solid #c81e1e; padding: 16px; border-radius: 6px; font-family: sans-serif; margin-top: 8px;">
+                    <div style="display: flex; align-items: center; margin-bottom: 8px;">
+                        <strong style="color: #c81e1e; font-size: 15px;">⚠️ Informasi Tidak Ditemukan</strong>
+                    </div>
+                    <p style="color: #4b5563; margin: 0; font-size: 14px; line-height: 1.5;">
+                        Maaf, data spesifik atau panduan aturan yang Anda tanyakan tidak tersedia di <b>Sistem Database</b> maupun <b>Buku Panduan (SOP)</b> kami saat ini. <br><br>Silakan periksa kembali kata kunci Anda atau hubungi <b>Departemen HR</b> untuk mendapatkan bantuan lebih lanjut.
+                    </p>
+                </div>
+                """
+                result["answer"] = error_html
+
+            return result
+            
+        except asyncio.CancelledError:
+            logger.warning(f"🛑 Chat processing cancelled for session {session_id}")
+            raise
                 
         except Exception as e:
-            logger.error(f"❌ Chat processing error: {e}")
-            return {
-                "error": f"Maaf, terjadi gangguan sistem: {str(e)}",
-                "authorized": True,
-                "tool_called": None
-            }
+            logger.error(f"❌ Chat processing error: {e}", exc_info=True)
+            return {"error": f"Maaf, terjadi gangguan: {str(e)}", "authorized": True}
     
-    async def _run_completion(
-        self,
-        messages: List[Dict[str, str]],
-        tools: List[Dict[str, Any]] = None,
-        intent: str = "A",
-        mode: str = "chat"
-    ):
-        """Execute LLM completion with appropriate parameters"""
+    async def _run_completion(self, messages: List[Dict[str, str]], tools: List[Dict[str, Any]] = None, mode: str = "chat"):
         try:
-            # Dynamic parameters based on mode
-            if mode == "call":
-                temperature = CALL_MODE_TEMPERATURE
-                max_tokens = CALL_MODE_MAX_TOKENS
-                timeout = API_TIMEOUT_CALL_MODE
-            else:
-                temperature = CHAT_MODE_TEMPERATURE
-                max_tokens = CHAT_MODE_MAX_TOKENS
-                timeout = API_TIMEOUT_DEFAULT
+            temperature = CALL_MODE_TEMPERATURE if mode == "call" else CHAT_MODE_TEMPERATURE
+            max_tokens = CALL_MODE_MAX_TOKENS if mode == "call" else CHAT_MODE_MAX_TOKENS
+            timeout = API_TIMEOUT_CALL_MODE if mode == "call" else API_TIMEOUT_DEFAULT
             
-            # Enhanced tool choice logic
             tool_choice = "auto"
             if tools:
-                has_sop_tool = any(t['function']['name'] == 'search_sop' for t in tools)
-                has_hr_tool = any(t['function']['name'] == 'query_hr_database' for t in tools)
+                has_sop = any(t['function']['name'] == 'search_sop' for t in tools)
+                has_hr = any(t['function']['name'] == 'query_hr_database' for t in tools)
                 
-                if has_sop_tool and not has_hr_tool:
-                    # ✅ FORCE SOP tool - prevent LLM from answering directly
-                    tool_choice = {
-                        "type": "function", 
-                        "function": {"name": "search_sop"}
-                    }
-                    logger.debug("🔥 FORCING SOP tool to prevent RAG bypass")
-                elif has_hr_tool:
-                    # HR tool - let LLM choose (auto)
-                    tool_choice = "auto"
-                    logger.debug("📊 HR tool available - using auto choice")
-                else:
-                    tool_choice = "auto"
-            
-            logger.debug(f"LLM completion: mode={mode}, tokens={max_tokens}, tools={len(tools) if tools else 0}, choice={tool_choice}")
+                if has_sop and not has_hr:
+                    tool_choice = {"type": "function", "function": {"name": "search_sop"}}
+                elif has_hr:
+                    tool_choice = {"type": "function", "function": {"name": "query_hr_database"}}
             
             return await asyncio.wait_for(
                 asyncio.to_thread(
                     self.client.chat.completions.create,
-                    model=self.model,
-                    messages=messages,
-                    tools=tools if tools else None,
-                    tool_choice=tool_choice,
-                    temperature=temperature,
-                    max_tokens=max_tokens
-                ),
-                timeout=timeout
+                    model=self.model, messages=messages, tools=tools or None,
+                    tool_choice=tool_choice, temperature=temperature, max_tokens=max_tokens
+                ), timeout=timeout
             )
             
-        except asyncio.TimeoutError:
-            logger.error(f"LLM timeout after {timeout}s")
-            raise Exception("Request timeout")
         except Exception as e:
             logger.error(f"LLM completion error: {e}")
             raise
     
     async def _execute_tool(
-        self,
-        tool_call: Any,
-        session_id: str,
-        user_role: str,
-        original_question: str,
-        mode: str = "chat"
+        self, 
+        tool_call: Any, 
+        session_id: str, 
+        user_role: str, 
+        original_question: str, 
+        mode: str = "chat",
+        cancellation_check: Optional[Callable] = None
     ) -> Union[str, Dict[str, Any]]:
-        """Execute tool function - UNIVERSAL structured response handler"""
-        if not self.tools_available:
-            return "Maaf, tools tidak tersedia."
+        if not self.tools_available: return "Maaf, tools tidak tersedia."
         
         function_name = tool_call.function.name
-        
         try:
             function_args = json.loads(tool_call.function.arguments)
-        except json.JSONDecodeError as e:
-            logger.error(f"Invalid tool arguments: {e}")
+        except json.JSONDecodeError:
             return "Maaf, terjadi kesalahan parsing argumen."
         
-        # Check if function exists
         if function_name not in TOOL_FUNCTIONS:
-            logger.error(f"Unknown function: {function_name}")
             return "Maaf, fungsi tidak tersedia."
         
         try:
             tool_function = TOOL_FUNCTIONS[function_name]
+                
+            function_args["session_id"] = session_id
             
-            # Add session_id for SOP search (compatibility)
-            if function_name == "search_sop":
-                function_args["session_id"] = session_id
+            if "question" in function_args:
+                function_args["question"] = original_question
+                logger.info(f"🛡️ OVERRIDE: Mengirim teks mentah ke {function_name}")
             
-            # EXECUTE TOOL - all business logic in engines/
-            tool_result = tool_function(**function_args)
+            if cancellation_check and "cancellation_check" in tool_function.__code__.co_varnames:
+                function_args["cancellation_check"] = cancellation_check
+                logger.info(f"🔥 Threading cancellation check to {function_name}")
             
-            # 🐛 DEBUG: Critical debugging to trace the issue
-            logger.info(f"🔍 CRITICAL DEBUG - Tool result type: {type(tool_result)}")
-            logger.info(f"🔍 CRITICAL DEBUG - Tool result value: {str(tool_result)[:200]}...")
+            tool_result = await tool_function(**function_args) if asyncio.iscoroutinefunction(tool_function) else tool_function(**function_args)
             
-            if hasattr(tool_result, 'data_type'):
-                logger.info(f"🔍 CRITICAL DEBUG - Data type: {tool_result.data_type}")
-            
-            if hasattr(tool_result, 'structured_data'):
-                logger.info(f"🔍 CRITICAL DEBUG - Structured data: {tool_result.structured_data}")
-            
-            # ✅ UNIVERSAL ANALYTICS RESPONSE HANDLING
             if isinstance(tool_result, StructuredResponse):
-                logger.info(f"✅ FOUND StructuredResponse from {function_name}: {tool_result.data_type}")
                 
-                # For call mode, use shorter text
-                if mode == "call" and hasattr(tool_result, 'text_content') and len(tool_result.text_content) > 150:
-                    tool_result.text_content = tool_result.text_content[:130] + "... Butuh detail lengkap?"
-                
-                # ✅ UNIVERSAL: Convert ANY analytics to canonical format
                 if tool_result.data_type == "analytics":
-                    logger.error("🔥🔥🔥 ANALYTICS RESPONSE PATH TAKEN 🔥🔥🔥")
-                    logger.info(f"🎯 CONVERTING ANALYTICS to universal format")
-                    
-                    # Extract data from structured response
                     structured_data = tool_result.structured_data or {}
                     columns = structured_data.get("columns", [])
                     rows = structured_data.get("rows", [])
                     
-                    logger.info(f"🔍 Analytics data - Columns: {columns}, Rows count: {len(rows) if rows else 0}")
-                    logger.error(f"🔧 DEBUG: columns exists: {bool(columns)}, rows exists: {bool(rows)}")
-                    logger.error(f"🔧 DEBUG: columns content: {columns}")
-                    logger.error(f"🔧 DEBUG: rows sample: {rows[:2] if rows else 'None'}")
+                    columns = ["category" if col == "Undefined" else col for col in columns]
                     
-                    # 🔧 FORCE ANALYTICS FOR HR QUERIES - NO FALLBACK ALLOWED
-                    if function_name == "query_hr_database":
-                        logger.error("📊 FORCING ANALYTICS RESPONSE FOR HR QUERY - NO FALLBACK")
-                        
-                        # Extract data from structured response
-                        structured_data = tool_result.structured_data or {}
-                        columns = structured_data.get("columns", [])
-                        rows = structured_data.get("rows", [])
-                        
-                        logger.error(f"🔧 HR DEBUG: Original columns={columns}")
-                        logger.error(f"🔧 HR DEBUG: Original rows_count={len(rows) if rows else 0}")
-                        
-                        # Clean and fix data issues
-                        if not columns or not rows:
-                            logger.error("🔧 HR DEBUG: Missing data - using fallback structure")
-                            columns = ["metric", "value"]
-                            rows = [["Total Employees", "Data being processed"]]
-                        else:
-                            # Clean up "Undefined" columns
-                            if "Undefined" in columns:
-                                logger.error("🔧 HR DEBUG: Found 'Undefined' column - cleaning")
-                                # Replace "Undefined" with meaningful names
-                                clean_columns = []
-                                for col in columns:
-                                    if col == "Undefined":
-                                        clean_columns.append("category")
-                                    else:
-                                        clean_columns.append(col)
-                                columns = clean_columns
-                        
-                        # Extract meaningful text summary
-                        text_content = getattr(tool_result, 'text_content', 'HR Analytics Result')
-                        brief_text = self._extract_brief_summary(text_content)
-                        
-                        if not brief_text or brief_text == "Analisis data berhasil":
-                            brief_text = f"Analisis distribusi karyawan: {len(rows)} kategori data"
-                            
-                        logger.error(f"🔍 HR DEBUGGING: tool_result type = {type(tool_result)}")
-                        logger.error(f"🔍 HR DEBUGGING: tool_result dir = {[attr for attr in dir(tool_result) if not attr.startswith('_')]}")
-                        logger.error(f"🔍 HR DEBUGGING: hasattr sql_query = {hasattr(tool_result, 'sql_query')}")
-                        logger.error(f"🔍 HR DEBUGGING: hasattr sql_explanation = {hasattr(tool_result, 'sql_explanation')}")
-                        
-                        
-                        # ✅ CRITICAL FIX: Extract SQL fields from tool_result
-                        sql_query = getattr(tool_result, 'sql_query', None)
-                        sql_explanation = getattr(tool_result, 'sql_explanation', None)
-                        
-                        logger.error(f"🔍 HR DEBUGGING: sql_query value = {repr(sql_query)}")
-                        logger.error(f"🔍 HR DEBUGGING: sql_explanation value = {repr(sql_explanation)}")
-                        # Use the CORRECT build_analytics_response function
-                        result = build_analytics_response(
-                            domain="hr",
-                            text=brief_text,
-                            columns=columns,
-                            rows=rows,
-                            session_id=session_id,
-                            visualization_available=True,
-                            chart_hints=None,
-                            sql_query=sql_query,
-                            sql_explanation=sql_explanation
-                        )
-                        
-                        # Add answer field for compatibility
-                        result["answer"] = brief_text
-                        
-                        logger.error(f"🎉 FORCED HR ANALYTICS RESULT: message_type={result['message_type']}")
-                        logger.error(f"🎉 Data structure: columns={len(columns)}, rows={len(rows)}")
-                        return result
+                    domain_map = {"query_hr_database": "hr", "finance_analysis": "finance"}
+                    domain = domain_map.get(function_name, "general")
                     
-                    if columns and rows:
-                        # Determine domain from function name
-                        domain_map = {
-                            "query_hr_database": "hr",
-                            "finance_analysis": "finance", 
-                            "sales_report": "sales",
-                            "operations_query": "operations"
-                        }
-                        domain = domain_map.get(function_name, "general")
-                        
-                        # Extract brief summary (no markdown tables)
-                        brief_text = self._extract_brief_summary(getattr(tool_result, 'text_content', ''))
-                        
-                        # Check if visualization makes sense for this data
-                        viz_available = (
-                            tool_result.visualization_available and 
-                            len(rows) >= 2 and 
-                            len(columns) >= 2 and
-                            len(rows) <= 500  # Reasonable size limit
-                        )
-                        
-                        # Generate chart hints (future-proof)
-                        chart_hints = generate_chart_hints(domain, columns, rows) if viz_available else None
-                        # 🔍 DEBUG: Check tool_result attributes
-                        logger.error(f"🔍 DEBUGGING: tool_result type = {type(tool_result)}")
-                        logger.error(f"🔍 DEBUGGING: tool_result attributes = {[attr for attr in dir(tool_result) if not attr.startswith('_')]}")
-                        logger.error(f"🔍 DEBUGGING: hasattr sql_query = {hasattr(tool_result, 'sql_query')}")
-
-                        if hasattr(tool_result, 'sql_query'):
-                            logger.error(f"🔍 DEBUGGING: sql_query value = {getattr(tool_result, 'sql_query')}")
-                        else:
-                            logger.error(f"🔍 DEBUGGING: sql_query NOT FOUND in tool_result")
-
-                        if hasattr(tool_result, 'sql_explanation'):  
-                            logger.error(f"🔍 DEBUGGING: sql_explanation value = {getattr(tool_result, 'sql_explanation')}")
-                        else:
-                            logger.error(f"🔍 DEBUGGING: sql_explanation NOT FOUND in tool_result")
-                        sql_query = getattr(tool_result, 'sql_query', None)
-                        sql_explanation = getattr(tool_result, 'sql_explanation', None)
-                        # Return universal analytics format
-                        logger.info(f"🔧 SUCCESSFULLY converting to universal analytics format: {domain} domain, {len(rows)} rows")
-                        
-                        result = build_analytics_response(
-                            domain=domain,
-                            text=brief_text,
-                            columns=columns,
-                            rows=rows,
-                            session_id=session_id,
-                            visualization_available=viz_available,
-                            chart_hints=chart_hints,
-                            sql_query=sql_query,  # ✅ FIXED: Pass SQL query
-                            sql_explanation=sql_explanation  # ✅ FIXED: Pass SQL explanation
-                        )
+                    brief_text = self._extract_brief_summary(getattr(tool_result, 'text_content', ''))
+                    
+                    viz_available = (tool_result.visualization_available and len(rows) >= 2 and len(columns) >= 2 and len(rows) <= 500)
+                    chart_hints = generate_chart_hints(domain, columns, rows) if viz_available else None
+                    
+                    result = build_analytics_response(
+                        domain=domain, text=brief_text, columns=columns, rows=rows,
+                        session_id=session_id, visualization_available=viz_available, chart_hints=chart_hints,
+                        sql_query=getattr(tool_result, 'sql_query', None),
+                        sql_explanation=getattr(tool_result, 'sql_explanation', None)
+                    )
+                    result["answer"] = getattr(tool_result, 'text_content', brief_text)
+                    return result
                 
-                        
-                        logger.info(f"🎉 ANALYTICS RESULT: {result}")
-                        return result
-                
-                # Return original structured response for other types
-                logger.error("❌❌❌ FALLBACK TEXT RESPONSE PATH TAKEN ❌❌❌")
-                logger.info(f"📦 Returning legacy structured response format")
                 return {
-                    "type": "structured_response",
-                    "data_type": tool_result.data_type,
+                    "type": "structured_response", "data_type": tool_result.data_type,
                     "answer": getattr(tool_result, 'text_content', ''),
                     "structured_data": tool_result.structured_data,
                     "visualization_available": tool_result.visualization_available,
                     "metadata": getattr(tool_result, 'metadata', None)
                 }
             
-            # Handle legacy string responses (SOP, errors, etc.)
             elif isinstance(tool_result, str):
-                logger.info(f"📝 String response from {function_name}")
-                # Direct string result (e.g., SOP search) - CLEAN
-                if mode == "call" and len(tool_result) > 150:
-                    return tool_result[:130] + "... Butuh detail lengkap?"
                 return tool_result
             
-            # Handle legacy dict responses with LLM interpretation
             elif isinstance(tool_result, dict):
-                logger.info(f"📊 Dict response from {function_name} - delegating to LLM")
-                # Get AI interpretation of structured result
                 final_response = await self._run_completion(
                     messages=[
                         {"role": "user", "content": original_question},
-                        {"role": "assistant", "content": f"Used {function_name} to get data"},
-                        {
-                            "role": "user",
-                            "content": f"Based on this data: {json.dumps(tool_result, ensure_ascii=False)[:500 if mode == 'call' else 2000]}, please provide a helpful response."
-                        }
-                    ],
-                    mode=mode
+                        {"role": "assistant", "content": f"Used {function_name}"},
+                        {"role": "user", "content": f"Data: {json.dumps(tool_result)[:500 if mode == 'call' else 2000]}"}
+                    ], mode=mode
                 )
-                
                 return final_response.choices[0].message.content
             
-            else:
-                logger.info(f"🤔 Unknown type response from {function_name}: {type(tool_result)}")
-                # Fallback for other result types
-                return str(tool_result)
+            return str(tool_result)
+            
+        except asyncio.CancelledError:
+            logger.warning(f"🛑 Tool {function_name} cancelled")
+            raise
             
         except Exception as e:
-            logger.error(f"Tool execution error ({function_name}): {e}")
-            import traceback
-            logger.error(f"Tool execution traceback: {traceback.format_exc()}")
+            logger.error(f"Tool execution error ({function_name}): {e}", exc_info=True)
             return "Maaf, terjadi gangguan sistem."
     
     def _extract_brief_summary(self, text_content: str) -> str:
-        """Extract brief summary from tool result text, removing markdown tables."""
-        if not text_content:
-            return "Analisis data berhasil"
-        
-        # Split by lines and find first meaningful line
-        lines = text_content.split('\n')
-        
-        for line in lines:
+        if not text_content: return "Analisis data berhasil"
+        for line in text_content.split('\n'):
             line = line.strip()
-            # Skip empty lines, headers, tables
-            if (line and 
-                not line.startswith('#') and 
-                not line.startswith('|') and 
-                not line.startswith('---') and
-                not line.startswith('*') and
-                len(line) > 10):
+            if line and not any(line.startswith(c) for c in ('#', '|', '---', '*')) and len(line) > 10:
                 return line
-        
-        # Fallback: use first line with cleanup
-        if lines:
-            first_line = lines[0].strip()
-            if first_line.startswith('#'):
-                first_line = first_line.lstrip('# ')
-            return first_line if first_line else "Analisis data berhasil"
-        
-        return "Analisis data berhasil"
+        return text_content.split('\n')[0].strip().lstrip('# ') if text_content.split('\n') else "Analisis data berhasil"
     
-    def _build_system_prompt(self, mode: str = "chat") -> str:
-        """Build system prompt based on mode"""
+    def _prepare_messages(self, current_question: str, history: List[Dict[str, Any]] = None, mode: str = "chat") -> List[Dict[str, str]]:
+        system_prompt = "DENAI, asisten AI perusahaan. Jawab dalam bahasa Indonesia."
+        
         if mode == "call":
-            return """DENAI, asisten AI perusahaan. Mode panggilan.
-
-Jawaban: RINGKAS, SOPAN, NATURAL (max 2 kalimat)."""
-        else:
-            return """DENAI, asisten AI perusahaan. Jawab dalam bahasa Indonesia yang jelas dan membantu."""
-    
-    def _prepare_messages(
-        self,
-        current_question: str,
-        history: List[Dict[str, Any]] = None,
-        mode: str = "chat"
-    ) -> List[Dict[str, str]]:
-        """Prepare conversation messages with history"""
-        messages = [{"role": "system", "content": self._build_system_prompt(mode)}]
+            system_prompt = "DENAI, asisten AI. Mode panggilan: Jawab dengan ramah, natural, dan JABARKAN SEMUA POIN PENTING secara lengkap tanpa ada yang tertinggal."
         
-        # Add history (limited for different modes)
+        messages = [{"role": "system", "content": system_prompt}]
         if history:
-            limit = 1 if mode == "call" else 3
+            limit = 2 if mode == "call" else 3
             for h in history[-limit:]:
                 content = h.get("message", "") or h.get("content", "")
                 if content and str(content).strip():
                     role = h["role"] if h["role"] in ["user", "assistant"] else "user"
-                    content_limit = 100 if mode == "call" else 300
-                    messages.append({"role": role, "content": str(content)[:content_limit]})
+                    messages.append({"role": role, "content": str(content)[:500 if mode == "call" else 300]})
         
-        # Add current question
         messages.append({"role": "user", "content": current_question})
-        
         return messages
-    
-    def get_tools_info(self) -> Dict[str, Any]:
-        """Get information about available tools"""
-        return {
-            "tools_available": self.tools_available,
-            "routing": "LLM-based intent classifier + tools.py routing",
-            "intent_classifier": "A=SOP_EXPLANATION, B=HR_DATA_REQUEST",
-            "security_gate": "Role-based access control for HR data",
-            "analytics_support": "Universal analytics for HR, Finance, Sales, Operations",
-            "architecture": "LLM classifier → Security gate → Dynamic tools → Universal analytics",
-            "visualization": "Chart hints generation for optimal UX"
-        }

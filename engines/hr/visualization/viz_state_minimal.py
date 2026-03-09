@@ -416,7 +416,6 @@ class VizStateManager:
         """Generate Redis/memory key for turn state"""
         return f"viz_state:turn:{turn_id}"
 
-
 # Global instance for application use
 # In production, initialize with Redis URL
 _viz_state_manager = None
@@ -439,31 +438,6 @@ def get_viz_state_manager(redis_url: str = None) -> VizStateManager:
     return _viz_state_manager
 
 
-# Export main classes
-__all__ = ['VizTurnState', 'VizStateManager', 'get_viz_state_manager']
-
-
-# Global instance for application use
-# In production, initialize with Redis URL
-_viz_state_manager = None
-
-def get_viz_state_manager(redis_url: str = None) -> VizStateManager:
-    """
-    Get global VizStateManager instance
-    
-    Args:
-        redis_url: Redis connection URL (for production)
-        
-    Returns:
-        VizStateManager instance
-    """
-    global _viz_state_manager
-    
-    if _viz_state_manager is None:
-        _viz_state_manager = VizStateManager(redis_url=redis_url)
-    
-    return _viz_state_manager
-
-
+# ✅ FIX: Blok kode duplikat yang ada di bawah baris ini sudah disapu bersih!
 # Export main classes
 __all__ = ['VizTurnState', 'VizStateManager', 'get_viz_state_manager']

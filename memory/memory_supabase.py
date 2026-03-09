@@ -1,160 +1,135 @@
-from dotenv import load_dotenv
-load_dotenv()
+"""
+DENAI Memory Management (Supabase)
+Handles chat history, sessions, and memory persistence safely.
+"""
 
-from supabase import create_client
-from datetime import datetime, timedelta  # ✅ ADDED
-import os
+import logging
+import asyncio
+from datetime import datetime, timedelta
+from supabase import create_client, Client
 
-from app.config import SESSION_CLEANUP_DAYS  # ✅ ADDED
+from app.config import (
+    SUPABASE_URL, 
+    SUPABASE_ANON_KEY, 
+    SESSION_CLEANUP_DAYS
+)
 
-SUPABASE_URL = os.getenv("SUPABASE_URL")
-SUPABASE_KEY = os.getenv("SUPABASE_ANON_KEY")
+logger = logging.getLogger(__name__)
 
-supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
+if SUPABASE_URL and SUPABASE_ANON_KEY:
+    supabase: Client = create_client(SUPABASE_URL, SUPABASE_ANON_KEY)
+else:
+    supabase = None
+    logger.error("❌ SUPABASE_URL or SUPABASE_ANON_KEY is missing! Memory system will fail gracefully.")
 
 # =====================
 # CHAT MEMORY (MESSAGE)
 # =====================
-def save_message(session_id: str, role: str, message: str):
-    supabase.table("chat_memory").insert({
-        "session_id": session_id,
-        "role": role,
-        "message": message
-    }).execute()
+def save_message(session_id: str, role: str, message: str, **kwargs):
+    if not supabase: return
+    try:
+        data = {
+            "session_id": session_id,
+            "role": role,
+            "message": message
+        }
+        
+        # Ekstrak field tambahan secara dinamis jika ada (misal dari visualisasi HR)
+        for key in ["sql_query", "sql_explanation", "last_query"]:
+            if key in kwargs and kwargs[key]:
+                data[key] = kwargs[key]
 
+        supabase.table("chat_memory").insert(data).execute()
+    except Exception as e:
+        logger.error(f"❌ Failed to save message: {e}")
 
 def get_recent_history(session_id: str, limit: int = 6):
-    res = (
-        supabase
-        .table("chat_memory")
-        .select("role,message")
-        .eq("session_id", session_id)
-        .order("created_at", desc=True)
-        .limit(limit)
-        .execute()
-    )
-    return list(reversed(res.data))
-
+    if not supabase: return []
+    try:
+        # Menarik kolom tambahan agar RAG engine & UI Frontend bisa memulihkan dashboard
+        res = (
+            supabase
+            .table("chat_memory")
+            .select("role, message, sql_query, sql_explanation, last_query, created_at")
+            .eq("session_id", session_id)
+            .order("created_at", desc=True)
+            .limit(limit)
+            .execute()
+        )
+        # Supabase mengembalikan data dari terbaru ke terlama, kita balik agar kronologis
+        return list(reversed(res.data))
+    except Exception as e:
+        logger.error(f"❌ Failed to get history: {e}")
+        return []
 
 # =====================
-# CHAT SESSIONS (SIDEBAR)
+# CHAT SESSIONS & CLEANUP
 # =====================
 def save_session(session_id: str, title: str):
-    supabase.table("chat_sessions").upsert({
-        "session_id": session_id,
-        "title": title
-    }).execute()
-
+    if not supabase: return
+    try:
+        supabase.table("chat_sessions").upsert({
+            "session_id": session_id,
+            "title": title
+        }).execute()
+    except Exception as e:
+        logger.error(f"❌ Failed to save session: {e}")
 
 def get_sessions(limit: int = 30):
-    """Get sessions - pinned first, then by date"""
-    res = (
-        supabase
-        .table("chat_sessions")
-        .select("session_id,title,pinned,created_at")
-        .order("pinned", desc=True)  # 🔥 Pinned sessions first!
-        .order("created_at", desc=True)
-        .limit(limit)
-        .execute()
-    )
-    return res.data
-
-
-def pin_session(session_id: str, pinned: bool):
-    supabase.table("chat_sessions").update({
-        "pinned": pinned
-    }).eq("session_id", session_id).execute()
-
-
-def delete_session(session_id: str):
-    supabase.table("chat_memory") \
-        .delete() \
-        .eq("session_id", session_id) \
-        .execute()
-
-    supabase.table("chat_sessions") \
-        .delete() \
-        .eq("session_id", session_id) \
-        .execute()
-
-
-# =====================
-# 🔥 NEW: SESSION MANAGEMENT (Pin & Delete)
-# =====================
-def toggle_pin_session(session_id: str) -> bool:
-    """Toggle pin status for a session"""
+    if not supabase: return []
     try:
-        # Get current status
-        response = supabase.table("chat_sessions")\
-            .select("pinned")\
-            .eq("session_id", session_id)\
+        res = (
+            supabase
+            .table("chat_sessions")
+            .select("session_id,title,pinned,created_at")
+            .order("pinned", desc=True)
+            .order("created_at", desc=True)
+            .limit(limit)
             .execute()
-        
+        )
+        return res.data
+    except Exception as e:
+        logger.error(f"❌ Failed to get sessions: {e}")
+        return []
+
+def toggle_pin_session(session_id: str) -> bool:
+    if not supabase: return False
+    try:
+        response = supabase.table("chat_sessions").select("pinned").eq("session_id", session_id).execute()
         if response.data:
-            current_pinned = response.data[0].get("pinned", False)
-            new_pinned = not current_pinned
-            
-            # Update pin status
-            supabase.table("chat_sessions")\
-                .update({"pinned": new_pinned})\
-                .eq("session_id", session_id)\
-                .execute()
-            
-            print(f"✅ Session {session_id[:8]}... pinned={new_pinned}")
+            new_pinned = not response.data[0].get("pinned", False)
+            supabase.table("chat_sessions").update({"pinned": new_pinned}).eq("session_id", session_id).execute()
             return new_pinned
-        
         return False
     except Exception as e:
-        print(f"❌ Error toggling pin: {e}")
+        logger.error(f"❌ Error toggling pin: {e}")
         return False
-
 
 def delete_session_and_messages(session_id: str):
-    """Delete session and all its messages (used by API endpoint)"""
+    if not supabase: return
     try:
-        # Delete messages first
-        supabase.table("chat_memory")\
-            .delete()\
-            .eq("session_id", session_id)\
-            .execute()
-        
-        # Delete session
-        supabase.table("chat_sessions")\
-            .delete()\
-            .eq("session_id", session_id)\
-            .execute()
-        
-        print(f"✅ Session {session_id[:8]}... deleted successfully")
+        supabase.table("chat_memory").delete().eq("session_id", session_id).execute()
+        supabase.table("chat_sessions").delete().eq("session_id", session_id).execute()
     except Exception as e:
-        print(f"❌ Error deleting session: {e}")
+        logger.error(f"❌ Error deleting session: {e}")
         raise
 
-
-# =====================
-# CLEANUP OLD SESSIONS
-# =====================
 def cleanup_old_sessions(days: int = None):
-    """Delete sessions older than N days"""
-    
-    if days is None:
-        days = SESSION_CLEANUP_DAYS
-    
+    if not supabase: return
+    days = days if days is not None else SESSION_CLEANUP_DAYS
     try:
         cutoff_date = datetime.now() - timedelta(days=days)
-        
-        # Delete old sessions
-        result_sessions = supabase.table("chat_sessions")\
-            .delete()\
-            .lt("created_at", cutoff_date.isoformat())\
-            .execute()
-        
-        # Delete old messages
-        result_memory = supabase.table("chat_memory")\
-            .delete()\
-            .lt("created_at", cutoff_date.isoformat())\
-            .execute()
-        
-        print(f"✅ Cleaned up sessions older than {days} days")
-        
+        iso_cutoff = cutoff_date.isoformat()
+        supabase.table("chat_sessions").delete().lt("created_at", iso_cutoff).execute()
+        supabase.table("chat_memory").delete().lt("created_at", iso_cutoff).execute()
     except Exception as e:
-        print(f"❌ Error cleaning up sessions: {e}")
+        logger.error(f"❌ Error cleaning up sessions: {e}")
+
+# =========================================================
+# 🚀 ASYNC WRAPPERS
+# =========================================================
+async def save_message_async(session_id: str, role: str, message: str, **kwargs):
+    await asyncio.to_thread(save_message, session_id, role, message, **kwargs)
+
+async def get_recent_history_async(session_id: str, limit: int = 6):
+    return await asyncio.to_thread(get_recent_history, session_id, limit)

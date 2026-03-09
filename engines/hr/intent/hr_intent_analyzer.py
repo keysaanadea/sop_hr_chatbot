@@ -1,173 +1,120 @@
 """
-HR Intent Analyzer
-Mendeteksi dua intent berbeda:
-1. Apakah ini query DATA HR? (untuk routing tools.py)
-2. Apakah user MAU grafik sekarang? (untuk visualization flow)
+Hybrid HR Intent Analyzer (Regex + LLM Fallback)
+================================================
+Mendeteksi intent dengan 2 layer:
+1. Fast Track (Regex): Super cepat & Gratis
+2. Fallback (LLM): Paham Konteks & Kebal Typo
 """
 
 import re
-from typing import Dict
+import json
+import logging
+from typing import Dict, Optional
 
+logger = logging.getLogger(__name__)
 
 class HRIntentAnalyzer:
     """
-    Menganalisis dua niat yang berbeda:
-    1. is_hr_data_query: Apakah ini query tentang data HR/karyawan?
-    2. wants_visualization: Apakah user eksplisit minta grafik/chart?
+    Smart Hybrid Analyzer untuk merutekan pertanyaan HR Analytics vs SOP.
     """
     
-    def __init__(self):
-        # Keywords yang mengindikasikan query tentang DATA HR/karyawan
+    def __init__(self, llm_client=None):
+        """
+        Inisialisasi Analyzer.
+        Args:
+            llm_client: LangChain ChatOpenAI instance (opsional, untuk fallback)
+        """
+        self.llm_client = llm_client
+        
+        # === LAYER 1: KEYWORDS & REGEX (PRE-COMPILED) ===
         self.hr_data_keywords = [
-            'karyawan', 'employee', 'pegawai', 'staff',
-            'gaji', 'salary', 'payroll', 
-            'department', 'departemen', 'divisi',
-            'jumlah karyawan', 'employee count',
-            'data karyawan', 'employee data',
-            'statistik hr', 'hr statistics',
-            'performa karyawan', 'employee performance',
-            'database karyawan', 'employee database',
-            'rekrutmen', 'recruitment', 'hiring',
-            'turnover', 'resign', 'attrition',
-            'absensi', 'attendance', 'kehadiran'
+            'karyawan', 'employee', 'pegawai', 'staff', 'gaji', 'salary', 'payroll', 
+            'department', 'departemen', 'divisi', 'jumlah', 'count', 'total',
+            'rekrutmen', 'recruitment', 'hiring', 'turnover', 'resign', 'attrition', 
+            'absensi', 'attendance', 'kehadiran', 'database'
         ]
         
-        # Keywords yang mengindikasikan user MAU visualisasi
         self.viz_keywords = [
             'grafik', 'chart', 'graph', 'plot', 'visualisasi', 'visual',
             'diagram', 'bar', 'pie', 'line', 'scatter', 'histogram',
-            'tampilkan dalam', 'buatkan grafik', 'lihat dalam bentuk',
-            'dashboard', 'summary visual', 'buatkan chart'
+            'dashboard', 'trend', 'tren', 'bandingkan'
         ]
         
-        # Keywords yang mengindikasikan user hanya mau data
         self.data_only_keywords = [
             'data saja', 'tanpa grafik', 'raw data', 'tabel saja',
             'list', 'daftar', 'export data', 'unduh data'
         ]
-    
-    def analyze(self, question: str) -> Dict[str, bool]:
-        """
-        Analisis dua intent berbeda untuk HR query
         
-        Args:
-            question: Pertanyaan user dalam bahasa natural
-            
-        Returns:
-            Dict dengan keys:
-            - 'is_hr_data_query': Apakah ini tentang data HR?
-            - 'wants_visualization': Apakah user mau grafik?
-        """
-        question_lower = question.lower()
-        
-        # 1. Deteksi apakah ini HR data query
-        is_hr_query = self._is_hr_data_query(question_lower)
-        
-        # 2. Deteksi apakah user wants visualization
-        wants_viz = self._wants_visualization(question_lower)
-        
-        return {
-            "is_hr_data_query": is_hr_query,
-            "wants_visualization": wants_viz
-        }
-    
-    def _is_hr_data_query(self, question_lower: str) -> bool:
-        """
-        Deteksi apakah ini query tentang data HR/karyawan
-        Untuk routing di tools.py
-        """
-        # Check explicit HR data keywords
-        for keyword in self.hr_data_keywords:
-            if keyword in question_lower:
-                return True
-        
-        # Check for patterns yang biasanya HR-related
-        hr_patterns = [
-            r'berapa\s+.*?(karyawan|employee|pegawai)',
-            r'jumlah\s+.*?(karyawan|employee|staff)',
+        self.hr_patterns = [re.compile(p) for p in [
+            r'berapa\s+.*?(karyawan|employee|pegawai|orang)',
+            r'siapa\s+.*?(manager|karyawan|staff|direktur)',
             r'distribusi\s+.*?(gaji|salary|department)',
-            r'rata-rata\s+.*?(gaji|performa|score)',
-            r'total\s+.*?(karyawan|employee|pegawai)'
-        ]
+            r'rata-rata\s+.*?(gaji|performa|score)'
+        ]]
         
-        for pattern in hr_patterns:
-            if re.search(pattern, question_lower):
-                return True
+        logger.info("✅ Hybrid HRIntentAnalyzer initialized")
         
-        return False
-    
-    def _wants_visualization(self, question_lower: str) -> bool:
+    async def analyze_async(self, question: str) -> Dict[str, bool]:
         """
-        Deteksi apakah user eksplisit minta visualisasi
-        Untuk visualization flow di hr_service.py
+        Main routing function. Eksekusi Regex dulu, kalau gagal baru panggil LLM.
         """
-        # Check explicit data-only request
-        for keyword in self.data_only_keywords:
-            if keyword in question_lower:
-                return False
-        
-        # Check visualization keywords
-        viz_score = 0
-        for keyword in self.viz_keywords:
-            if keyword in question_lower:
-                viz_score += 1
-        
-        # Simple rule: jika ada viz keywords, assume mau visualisasi
-        wants_viz = viz_score > 0
-        
-        # Additional heuristics untuk visualization
-        if not wants_viz:
-            # Check for question patterns yang usually need visualization
-            viz_patterns = [
-                r'tren\s+\w+',  # "tren penjualan", "tren karyawan"
-                r'perbandingan\s+\w+',  # "perbandingan department"
-                r'distribusi\s+\w+',  # "distribusi gaji"
-                r'bagaimana\s+\w+.*naik|turun',  # "bagaimana performa naik"
-            ]
-            
-            for pattern in viz_patterns:
-                if re.search(pattern, question_lower):
-                    wants_viz = True
-                    break
-        
-        return wants_viz
-    
-    
-    def get_confidence_reason(self, question: str) -> Dict[str, str]:
-        """
-        Memberikan alasan untuk kedua keputusan intent
-        Untuk debugging dan transparency
-        """
-        result = self.analyze(question)
         question_lower = question.lower()
         
-        reasons = {}
+        # --- LAYER 1: FAST TRACK (REGEX) ---
+        is_hr = self._regex_is_hr(question_lower)
+        wants_viz = self._regex_wants_viz(question_lower)
         
-        # Reason for HR data query detection
-        if result["is_hr_data_query"]:
-            for keyword in self.hr_data_keywords:
-                if keyword in question_lower:
-                    reasons["hr_query_reason"] = f"HR data keyword detected: '{keyword}'"
-                    break
-            else:
-                reasons["hr_query_reason"] = "HR data pattern detected"
-        else:
-            reasons["hr_query_reason"] = "No HR data indicators found"
+        # Jika Regex sudah sangat yakin (True), langsung kembalikan hasilnya! Menghemat API!
+        if is_hr:
+            logger.info("⚡ Fast Track Intent: HR Data Query (Detected via Regex)")
+            return {"is_hr_data_query": True, "wants_visualization": wants_viz}
+            
+        # --- LAYER 2: LLM FALLBACK ---
+        # Jika Regex gagal mendeteksi HR (False), tapi kita punya LLM, tanyakan ke LLM!
+        if self.llm_client:
+            logger.info("🧠 Fallback Intent: Regex ragu, meminta deteksi semantik dari LLM...")
+            return await self._llm_detect_intent(question, wants_viz)
+            
+        # Jika tidak ada LLM yang di-*passing*, kembalikan hasil mentah Regex (False)
+        return {"is_hr_data_query": False, "wants_visualization": wants_viz}
+
+    def _regex_is_hr(self, question_lower: str) -> bool:
+        if any(kw in question_lower for kw in self.hr_data_keywords): return True
+        if any(p.search(question_lower) for p in self.hr_patterns): return True
+        return False
         
-        # Reason for visualization intent detection
-        if not result["wants_visualization"]:
-            for keyword in self.data_only_keywords:
-                if keyword in question_lower:
-                    reasons["viz_reason"] = f"Data-only explicitly requested: '{keyword}'"
-                    break
-            else:
-                reasons["viz_reason"] = "No visualization indicators detected"
-        else:
-            for keyword in self.viz_keywords:
-                if keyword in question_lower:
-                    reasons["viz_reason"] = f"Visualization keyword detected: '{keyword}'"
-                    break
-            else:
-                reasons["viz_reason"] = "Question pattern suggests visualization"
-        
-        return reasons
+    def _regex_wants_viz(self, question_lower: str) -> bool:
+        if any(kw in question_lower for kw in self.data_only_keywords): return False
+        if any(kw in question_lower for kw in self.viz_keywords): return True
+        return False
+
+    async def _llm_detect_intent(self, question: str, fallback_viz: bool) -> Dict[str, bool]:
+        """Layer cerdas menggunakan LLM untuk membaca niat tersembunyi/typo"""
+        prompt = f"""Analyze the user question and output a JSON response.
+Task: Determine if the question is asking to query/analyze HR Database records (e.g., employee stats, salary, headcount, demographics).
+
+Question: "{question}"
+
+Reply ONLY with a valid JSON matching this exact schema:
+{{
+    "is_hr_data_query": boolean,
+    "wants_visualization": boolean
+}}"""
+        try:
+            # Gunakan ainvoke agar server tidak macet
+            response = await self.llm_client.ainvoke(prompt)
+            
+            # Bersihkan markdown (```json ... ```) dari output AI
+            content = response.content.replace('```json', '').replace('```', '').strip()
+            result = json.loads(content)
+            
+            logger.info(f"🤖 LLM Intent Result: {result}")
+            return {
+                "is_hr_data_query": bool(result.get("is_hr_data_query", False)),
+                # Kita percayai LLM, tapi jika LLM False dan Regex True, kita ambil True
+                "wants_visualization": bool(result.get("wants_visualization", fallback_viz)) or fallback_viz
+            }
+        except Exception as e:
+            logger.error(f"❌ LLM Intent Detection failed: {e}")
+            # Jika LLM OpenAI sedang down/timeout, kembalikan aman (bukan HR)
+            return {"is_hr_data_query": False, "wants_visualization": fallback_viz}

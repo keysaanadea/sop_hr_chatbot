@@ -1,7 +1,9 @@
-/* ================= CORE APP MODULE - ENHANCED WITH HR ANALYTICS ================= */
+/* ================= CORE APP MODULE - ENHANCED WITH CANCEL & THINKING ================= */
 /**
  * 🎯 CORE: Main application state and initialization
- * 🔥 FIXED: Robust HR Analytics detection and rendering pipeline
+ * 🔥 NEW: Cancel request capability + Gemini-style thinking animation
+ * ⚡ OPTIMIZED: Memory efficient & DRY principles applied
+ * 📋 NEW: Schema Explorer integration
  * File: js/core-app.js
  */
 
@@ -16,6 +18,20 @@ let isHR = false;
 let isTextOnlyMode = false;
 let isVoiceToTextMode = false;
 
+// 🔥 NEW: Request cancellation control
+let currentRequestController = null;
+let currentThinkingMessage = null;
+
+// ⚡ OPTIMIZED: Pre-allocate static arrays to save memory on every keystroke
+const VIZ_KEYWORDS = [
+  'distribusi', 'distribution', 'breakdown', 'sebaran',
+  'berapa per', 'jumlah per', 'count per',
+  'perbandingan', 'compare', 'vs',
+  'trend', 'perkembangan', 'over time',
+  'chart', 'grafik', 'diagram', 'visualisasi',
+  'analisis', 'analysis', 'analytics'
+];
+
 /* ================= DOM CACHE ================= */
 const landing = document.getElementById("landing");
 const chat = document.getElementById("chat");
@@ -29,7 +45,9 @@ const userRoleText = document.getElementById("userRole");
 /* ================= USER ROLE & SESSION MANAGEMENT ================= */
 async function getUserRole() {
   try {
-    const response = await fetch('http://127.0.0.1:8000/user/role', {
+    const baseUrl = window.API_URL || 'http://127.0.0.1:8000';
+    
+    const response = await fetch(`${baseUrl}/user/role`, {
       headers: { "Accept": "application/json" }
     });
     
@@ -61,7 +79,256 @@ function updateUserInterface() {
     userRoleText.textContent = "Employee";
   }
   
-  loadSessions();
+  if (window.SessionModule && window.SessionModule.loadSessions) {
+    window.SessionModule.loadSessions();
+  }
+}
+
+/* ================= 🔥 NEW: HIDE OLD REGENERATE BUTTONS ================= */
+
+/**
+ * Remove all old "stopped response" messages except the newest one
+ * Prevents clutter when user cancels multiple times or regenerates
+ */
+function hideOldRegenerateButtons() {
+  const allStoppedMessages = messages.querySelectorAll('.stopped-response-msg');
+  
+  if (allStoppedMessages.length <= 1) {
+    // 0 or 1 message - nothing to clean up
+    return;
+  }
+  
+  // 🔥 KEY FIX: Keep ONLY the most recent, remove all others
+  console.log(`🧹 Cleaning up: Found ${allStoppedMessages.length} stopped messages`);
+  console.log(`   → Keeping the newest one`);
+  console.log(`   → Removing ${allStoppedMessages.length - 1} old ones`);
+  
+  const messagesArray = Array.from(allStoppedMessages);
+  const messagesToRemove = messagesArray.slice(0, -1); // All except last
+  
+  messagesToRemove.forEach((msg, index) => {
+    msg.style.transition = 'opacity 0.3s ease-out';
+    msg.style.opacity = '0';
+    
+    setTimeout(() => {
+      if (msg.parentNode) {
+        msg.remove();
+        console.log(`   ✅ Removed old stopped message #${index + 1}`);
+      }
+    }, 300);
+  });
+}
+
+/* ================= 🔥 NEW: CANCEL REQUEST FUNCTIONALITY ================= */
+function cancelCurrentRequest() {
+  if (currentRequestController) {
+    console.log('🛑 User cancelled request');
+    currentRequestController.abort();
+    currentRequestController = null;
+  }
+  
+  // Remove thinking message
+  if (currentThinkingMessage && currentThinkingMessage.parentNode) {
+    currentThinkingMessage.remove();
+    currentThinkingMessage = null;
+  }
+  
+  // Reset UI state
+  setInputState(false);
+  
+  // 🔥 SMART CLEANUP: Keep old stopped messages, remove only their regenerate buttons
+  messages.querySelectorAll('.stopped-response-msg').forEach(msg => {
+    // Remove the action buttons div (Regenerate + X buttons)
+    const actionsDiv = msg.querySelector('.stopped-actions');
+    if (actionsDiv) {
+      actionsDiv.remove();
+    }
+    
+    // Add "(earlier)" indicator if not already present
+    const headerDiv = msg.querySelector('.stopped-header');
+    if (headerDiv && !headerDiv.querySelector('.history-badge')) {
+      const badge = document.createElement('span');
+      badge.className = 'history-badge';
+      badge.style.cssText = 'font-size: 11px; color: #9ca3af; margin-left: 8px; font-style: italic;';
+      badge.textContent = '(earlier)';
+      headerDiv.appendChild(badge);
+    }
+  });
+  
+  // 🔥 NEW: Add Gemini-style "You stopped this response" message
+  const cancelNotice = document.createElement("div");
+  cancelNotice.className = "msg bot stopped-response-msg";
+  cancelNotice.setAttribute('data-stopped-id', Date.now()); // Unique ID
+  
+  // FIX UI: Tambahkan "this" ke parameter onclick
+  cancelNotice.innerHTML = `
+    <div class="avatar">AI</div>
+    <div class="bubble stopped-response-bubble">
+      <div class="stopped-header">
+        <span class="stopped-text">You stopped this response</span>
+      </div>
+      <div class="stopped-actions">
+        <button class="regenerate-btn" onclick="window.CoreApp.regenerateLastQuery(this)">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polyline points="23 4 23 10 17 10"></polyline>
+            <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path>
+          </svg>
+          Regenerate
+        </button>
+        <button class="dismiss-btn" onclick="this.closest('.stopped-response-msg').remove()">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <line x1="18" y1="6" x2="6" y2="18"></line>
+            <line x1="6" y1="6" x2="18" y2="18"></line>
+          </svg>
+        </button>
+      </div>
+    </div>
+  `;
+  messages.appendChild(cancelNotice);
+  messages.scrollTop = messages.scrollHeight;
+  
+  // Store last query for regenerate feature
+  if (!window.CoreApp._lastUserQuery && conversationHistory.length > 0) {
+    const lastUserMsg = conversationHistory.filter(msg => msg.role === 'user').pop();
+    if (lastUserMsg) {
+      window.CoreApp._lastUserQuery = lastUserMsg.message;
+    }
+  }
+  
+  // 🔥 FIX DATABASE: Kirim state stopped ke Backend agar tidak hilang saat di-refresh
+  if (activeChatId && window.CoreApp._lastUserQuery) {
+    conversationHistory.push({
+      role: "stopped",
+      message: "__STOPPED_RESPONSE__",
+      timestamp: new Date().toISOString(),
+      last_query: window.CoreApp._lastUserQuery
+    });
+    
+    try {
+      const url = `${window.API_URL}/history/${activeChatId}/stopped`;
+      const payload = JSON.stringify({ last_query: window.CoreApp._lastUserQuery });
+      
+      // Gunakan beacon agar request tetap jalan meskipun user merefresh halaman
+      navigator.sendBeacon(url, new Blob([payload], { type: 'application/json' }));
+      console.log('📝 Stopped state dikirim ke Backend DB!');
+    } catch (e) {
+      console.error('Gagal mengirim state stopped ke backend:', e);
+    }
+  }
+}
+
+/* ================= 🔥 NEW: GEMINI-STYLE THINKING ANIMATION ================= */
+function showThinkingAnimation() {
+  // Remove old thinking message if exists
+  if (currentThinkingMessage && currentThinkingMessage.parentNode) {
+    currentThinkingMessage.remove();
+  }
+  
+  const thinkingDiv = document.createElement("div");
+  thinkingDiv.className = "msg bot thinking-msg";
+  thinkingDiv.innerHTML = `
+    <div class="avatar">AI</div>
+    <div class="bubble thinking-bubble">
+      <div class="thinking-header">
+        <div class="thinking-icon">
+          <svg viewBox="0 0 24 24" fill="none">
+            <path d="M12 2L2 7L12 12L22 7L12 2Z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+            <path d="M2 17L12 22L22 17" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+            <path d="M2 12L12 17L22 12" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+        </div>
+        <span class="thinking-text">Thinking</span>
+        <div class="thinking-dots">
+          <span></span>
+          <span></span>
+          <span></span>
+        </div>
+      </div>
+      <div class="thinking-steps">
+        <div class="thinking-step active" data-step="1">
+          <div class="step-icon">🔍</div>
+          <span>Analyzing your question...</span>
+        </div>
+        <div class="thinking-step" data-step="2">
+          <div class="step-icon">📚</div>
+          <span>Searching knowledge base...</span>
+        </div>
+        <div class="thinking-step" data-step="3">
+          <div class="step-icon">🧮</div>
+          <span>Processing business rules...</span>
+        </div>
+        <div class="thinking-step" data-step="4">
+          <div class="step-icon">✨</div>
+          <span>Generating response...</span>
+        </div>
+      </div>
+      <button class="cancel-btn" onclick="window.CoreApp.cancelCurrentRequest()">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="12" cy="12" r="10"></circle>
+          <line x1="15" y1="9" x2="9" y2="15"></line>
+          <line x1="9" y1="9" x2="15" y2="15"></line>
+        </svg>
+        Cancel
+      </button>
+    </div>
+  `;
+  
+  messages.appendChild(thinkingDiv);
+  messages.scrollTop = messages.scrollHeight;
+  
+  // Animate steps progressively
+  let currentStep = 1;
+  const stepInterval = setInterval(() => {
+    if (!thinkingDiv.parentNode) {
+      clearInterval(stepInterval);
+      return;
+    }
+    
+    // Deactivate previous step
+    const prevStep = thinkingDiv.querySelector(`.thinking-step[data-step="${currentStep}"]`);
+    if (prevStep) {
+      prevStep.classList.remove('active');
+      prevStep.classList.add('completed');
+    }
+    
+    // Activate next step
+    currentStep++;
+    if (currentStep <= 4) {
+      const nextStep = thinkingDiv.querySelector(`.thinking-step[data-step="${currentStep}"]`);
+      if (nextStep) {
+        nextStep.classList.add('active');
+      }
+    } else {
+      // Loop back to step 1
+      thinkingDiv.querySelectorAll('.thinking-step').forEach(step => {
+        step.classList.remove('active', 'completed');
+      });
+      currentStep = 1;
+      const firstStep = thinkingDiv.querySelector(`.thinking-step[data-step="1"]`);
+      if (firstStep) {
+        firstStep.classList.add('active');
+      }
+    }
+  }, 2000); // Change step every 2 seconds
+  
+  // Store interval ID to clear it later
+  thinkingDiv.dataset.intervalId = stepInterval;
+  
+  currentThinkingMessage = thinkingDiv;
+  return thinkingDiv;
+}
+
+function removeThinkingAnimation() {
+  if (currentThinkingMessage && currentThinkingMessage.parentNode) {
+    // Clear interval
+    const intervalId = currentThinkingMessage.dataset.intervalId;
+    if (intervalId) {
+      clearInterval(parseInt(intervalId));
+    }
+    
+    currentThinkingMessage.remove();
+    currentThinkingMessage = null;
+  }
 }
 
 /* ================= ENHANCED CHAT FUNCTIONS ================= */
@@ -77,6 +344,48 @@ function newChat() {
   }
 }
 
+// 🔥 FIX UI: Tambahkan parameter "btnElement" untuk mendeteksi tombol yang ditekan
+function regenerateLastQuery(btnElement) {
+  const lastQuery = window.CoreApp._lastUserQuery;
+  if (!lastQuery) {
+    console.warn('No last query to regenerate');
+    return;
+  }
+  
+  // Hapus BUBBLE INI SEBELUM memunculkan animasi thinking
+  if (btnElement) {
+    const parentBubble = btnElement.closest('.stopped-response-msg');
+    if (parentBubble) {
+      parentBubble.remove();
+    }
+  } else {
+    // Fallback: hapus semua pesan stopped jika btnElement tidak ada
+    messages.querySelectorAll('.stopped-response-msg').forEach(msg => msg.remove());
+  }
+  
+  // Resend the query
+  if (window.askBackend) {
+    askBackend(lastQuery);
+  }
+}
+
+// 🔥 NEW: Regenerate with specific query (for history restoration)
+function regenerateQuery(query) {
+  if (!query || !query.trim()) {
+    console.warn('No query provided to regenerate');
+    return;
+  }
+  
+  // Remove all stopped messages
+  messages.querySelectorAll('.stopped-response-msg').forEach(msg => msg.remove());
+  
+  // Store and send
+  window.CoreApp._lastUserQuery = query;
+  if (window.askBackend) {
+    askBackend(query);
+  }
+}
+
 function startFromLanding() {
   const text = landingInput.value.trim();
   if (!text || isWaitingForResponse) return;
@@ -87,70 +396,30 @@ function startFromLanding() {
   setInputState(true);
   newChat();
   addMessage("user", text);
-  askBackend(text);
+  if (window.askBackend) askBackend(text);
   landingInput.value = "";
-  setInputState(false);
 }
 
 /**
- * 🔥 CRITICAL FIX: Enhanced message rendering with robust HR Analytics support
- * FIXED: Consistent HR Analytics detection and rendering pipeline
- */
-/**
  * 🔥 ENHANCED: Complete addMessage function with Rich Dashboard UI
- * READY TO COPY-PASTE: Replace your existing addMessage function with this
- * 
- * FEATURES:
- * ✅ Rich Dashboard UI for HR Analytics (like photos 3 & 4)
- * ✅ Full dashboard rendering (not chat bubble) 
- * ✅ Backward compatible with all existing functionality
- * ✅ Pure presentation - no business logic changes
- * ✅ Error handling and fallback mechanisms
  */
 function addMessage(role, text, shouldSave = true, responseData = null) {
-  console.log("🎯 Enhanced CoreApp.addMessage called:", {
-    role,
-    textLength: text ? text.length : 0,
-    hasResponseData: !!responseData,
-    responseDataType: responseData ? typeof responseData : 'none',
-    isHRAnalytics: isHRAnalyticsResponse(responseData)
-  });
-
-  // 🔍 Check if this is HR Analytics response
   const isHRData = isHRAnalyticsResponse(responseData);
-  // 🎯 CRITICAL FIX: Pass REAL HR analytics data to visualization module
-  if (role === "bot" && responseData && isHRAnalyticsResponse(responseData)) {
-    console.log("🎯 CRITICAL: HR Analytics detected - passing REAL data to VisualizationModule");
-    
-    // Extract the real analytics data from response
+  
+  // Pass REAL HR analytics data to visualization module
+  if (role === "bot" && isHRData) {
     const analyticsData = extractAnalyticsData(responseData);
     
     if (analyticsData && responseData.turn_id) {
-      console.log("🎯 PASSING REAL HR DATA to VisualizationModule:", {
-        turnId: responseData.turn_id,
-        analyticsData: analyticsData
-      });
-      
-      // 🚨 CRITICAL FIX: This was MISSING! Pass real data to visualization module
       if (window.VisualizationModule && window.VisualizationModule.setAnalyticsData) {
         window.VisualizationModule.setAnalyticsData(responseData.turn_id, analyticsData);
-        console.log("✅ REAL HR analytics data successfully passed to VisualizationModule");
-      } else {
-        console.error("❌ VisualizationModule.setAnalyticsData not available!");
       }
-    } else {
-      console.error("❌ Missing analytics data or turn_id:", {
-        hasAnalyticsData: !!analyticsData,
-        hasTurnId: !!responseData.turn_id
-      });
     }
   }
-  // 🎨 FOR HR ANALYTICS: Create FULL DASHBOARD (not chat bubble)
+
+  // 🎨 FOR HR ANALYTICS: Create FULL DASHBOARD
   if (role === "bot" && isHRData && window.HRAnalyticsRenderer) {
-    console.log("🎨 Rendering HR Analytics as FULL RICH DASHBOARD (not chat bubble)");
-    
     try {
-      // Create dedicated full-width HR analytics dashboard container
       const hrDashboardContainer = document.createElement("div");
       hrDashboardContainer.className = "hr-analytics-full-dashboard-wrapper";
       hrDashboardContainer.style.cssText = `
@@ -162,57 +431,41 @@ function addMessage(role, text, shouldSave = true, responseData = null) {
         box-shadow: none;
       `;
       
-      // Generate unique message ID
       const messageId = Date.now();
-      
-      // 🎯 ENHANCED: Use the rich dashboard renderer
       const renderSuccess = window.HRAnalyticsRenderer.render(responseData, messageId, hrDashboardContainer);
       
       if (renderSuccess) {
-        // Add to messages container - FULL DASHBOARD, not bubble
         if (messages) {
           messages.appendChild(hrDashboardContainer);
           messages.scrollTop = messages.scrollHeight;
         }
         
-        console.log("✅ HR Analytics RICH DASHBOARD rendered successfully");
-        
-        // Save to conversation history (text summary for history)
         if (shouldSave) {
-          const textForHistory = stripHtml(text);
           conversationHistory.push({
             role: role,
-            message: textForHistory,
+            message: stripHtml(text),
             timestamp: new Date().toISOString(),
             hasHRAnalytics: true,
             messageType: responseData?.message_type,
-            domain: responseData?.domain
+            domain: responseData?.domain,
+            sql_query: responseData?.sql_query,
+            sql_explanation: responseData?.sql_explanation
           });
         }
-        
         return hrDashboardContainer;
-        
-      } else {
-        console.warn("⚠️ HR Analytics rendering failed, falling back to regular message");
-        // Fallback to regular message if rendering fails
-        return createRegularMessage(role, text, shouldSave, responseData);
       }
-      
     } catch (error) {
       console.error("❌ Error rendering HR Analytics dashboard:", error);
-      // Fallback to regular message if error occurs
-      return createRegularMessage(role, text, shouldSave, responseData);
+      // Fallback below
     }
-    
-  } else {
-    // 📝 FOR NON-HR MESSAGES: Use regular chat bubble (unchanged)
-    return createRegularMessage(role, text, shouldSave, responseData);
   }
+  
+  // 📝 FOR NON-HR MESSAGES OR FALLBACK: Use regular chat bubble
+  return createRegularMessage(role, text, shouldSave, responseData);
 }
 
 /**
- * 🔄 REGULAR MESSAGE RENDERING - Your existing logic preserved
- * Handles all non-HR messages exactly as before
+ * 🔄 REGULAR MESSAGE RENDERING
  */
 function createRegularMessage(role, text, shouldSave = true, responseData = null) {
   const div = document.createElement("div");
@@ -226,11 +479,9 @@ function createRegularMessage(role, text, shouldSave = true, responseData = null
   if (role === "user") {
     bubble.textContent = text;
   } else {
-    // Regular HTML content (SOP, regular chat, etc.)
     bubble.innerHTML = text;
   }
   
-  // Create avatar element
   const avatar = document.createElement("div");
   avatar.className = "avatar";
   avatar.textContent = avatarText;
@@ -238,17 +489,16 @@ function createRegularMessage(role, text, shouldSave = true, responseData = null
   div.appendChild(avatar);
   div.appendChild(bubble);
   
-  // Only show TTS controls for bot messages and when not in text-only mode
   if (role === "bot" && !isTextOnlyMode && !window.isCallModeActive) {
     const actions = document.createElement("div");
     actions.className = "message-actions";
     actions.innerHTML = `
-      <button class="action-btn" onclick="window.SpeechModule.speakMessage(this)" title="Read aloud">
+      <button class="action-btn" onclick="window.SpeechModule?.speakMessage(this)" title="Read aloud">
         <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 14.142M8.364 18.364L7 17l6-6-6-6 1.364-1.364L14.727 10l-6.363 6.364z"></path>
         </svg>
       </button>
-      <button class="action-btn" onclick="window.SpeechModule.stopTextToSpeech()" title="Stop speaking">
+      <button class="action-btn" onclick="window.SpeechModule?.stopTextToSpeech()" title="Stop speaking">
         <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
         </svg>
@@ -263,10 +513,9 @@ function createRegularMessage(role, text, shouldSave = true, responseData = null
   }
   
   if (shouldSave) {
-    const textForHistory = role === "user" ? text : stripHtml(text);
     conversationHistory.push({
       role: role,
-      message: textForHistory,
+      message: role === "user" ? text : stripHtml(text),
       timestamp: new Date().toISOString()
     });
   }
@@ -274,10 +523,6 @@ function createRegularMessage(role, text, shouldSave = true, responseData = null
   return div;
 }
 
-/**
- * 🔧 Buat bubble sistem untuk visualization
- * Struktur sama persis: .msg -> .avatar + .bubble
- */
 function createSystemBubble(text = "", className = "") {
   const div = document.createElement("div");
   div.className = `msg bot`;
@@ -302,106 +547,38 @@ function createSystemBubble(text = "", className = "") {
 }
 
 /**
- * 🔥 ENHANCED: More robust HR Analytics response detection
- * FIXED: Multiple validation strategies for consistent detection
+ * 🔥 ENHANCED: Streamlined HR Analytics detection
  */
 function isHRAnalyticsResponse(responseData) {
-  if (!responseData) {
-    return false;
-  }
+  if (!responseData || typeof responseData !== 'object') return false;
   
-  console.log("🔍 UNIVERSAL HR Analytics Detection - Input:", {
-    type: typeof responseData,
-    keys: Object.keys(responseData),
-    hasColumns: !!(responseData.columns),
-    hasRows: !!(responseData.rows),
-    columnsType: responseData.columns ? typeof responseData.columns : 'none',
-    rowsType: responseData.rows ? typeof responseData.rows : 'none',
-    rowsCount: responseData.rows ? responseData.rows.length : 0
-  });
+  if (responseData.message_type === 'analytics_result') return true;
   
-  // 🎯 UNIVERSAL CONTRACT: Check for direct analytics data structure
-  // This handles the new backend contract where analytics data is passed directly
-  if (responseData.columns && 
-      responseData.rows &&
-      Array.isArray(responseData.columns) && 
-      Array.isArray(responseData.rows) &&
-      responseData.rows.length > 0) {
-    console.log("✅ UNIVERSAL: HR Analytics detected via direct data structure (NEW CONTRACT)");
-    return true;
-  }
+  if (responseData.data && responseData.data.columns && responseData.data.rows) return true;
   
-  // Legacy Strategy 1: Check explicit type marker (backward compatibility)
-  if (responseData.type === 'hr_analytics') {
-    console.log("✅ LEGACY: HR Analytics detected via type marker");
-    return true;
-  }
-  
-  // Legacy Strategy 2: Check for nested data structure (backward compatibility)
-  if (responseData.data && 
-      responseData.data.columns && 
-      responseData.data.rows &&
-      Array.isArray(responseData.data.columns) && 
-      Array.isArray(responseData.data.rows) &&
-      responseData.data.rows.length > 0) {
-    console.log("✅ LEGACY: HR Analytics detected via data.rows structure");
-    return true;
-  }
-  
-  // Legacy Strategy 3: Check for analysis structure (backward compatibility)
-  if (responseData.analysis || responseData.narrative) {
-    console.log("✅ LEGACY: HR Analytics detected via analysis/narrative structure");
-    return true;
-  }
-  
-  // Legacy Strategy 4: Check for direct structured data patterns (backward compatibility)
-  if (typeof responseData === 'object') {
-    const hasHRPattern = 
-      responseData.highest || 
-      responseData.lowest || 
-      responseData.total ||
-      (responseData.rows && Array.isArray(responseData.rows));
-      
-    if (hasHRPattern) {
-      console.log("✅ LEGACY: HR Analytics detected via data patterns");
-      return true;
-    }
-  }
-  
-  console.log("❌ No HR Analytics pattern detected");
   return false;
 }
 
+/**
+ * ⚡ OPTIMIZED: Menangkap SEMUA data penting secara DRY
+ */
 function extractAnalyticsData(responseData) {
-  if (!responseData) return null;
+  if (!responseData || typeof responseData !== 'object') return null;
   
-  console.log("🎯 Extracting analytics data from response:", responseData);
-  
-  // Strategy 1: Direct data structure (new backend format)
-  if (responseData.data && responseData.data.columns && responseData.data.rows) {
-    console.log("✅ Found analytics data in responseData.data");
+  // Tentukan sumber data (data nested atau langsung di root)
+  const source = (responseData.data && responseData.data.columns) ? responseData.data : responseData;
+
+  if (source.columns && source.rows) {
     return {
-      columns: responseData.data.columns,
-      rows: responseData.data.rows
+      columns: source.columns,
+      rows: source.rows,
+      sql_query: responseData.sql_query || null,
+      sql_explanation: responseData.sql_explanation || null,
+      visualization_available: responseData.visualization_available || false,
+      turn_id: responseData.turn_id
     };
   }
   
-  // Strategy 2: Direct columns + rows (alternative format)
-  if (responseData.columns && responseData.rows) {
-    console.log("✅ Found analytics data in responseData root");
-    return {
-      columns: responseData.columns,
-      rows: responseData.rows
-    };
-  }
-  
-  // Strategy 3: Legacy analytics structure
-  if (responseData.analytics_data) {
-    console.log("✅ Found analytics data in analytics_data field");
-    return responseData.analytics_data;
-  }
-  
-  console.warn("⚠️ No recognizable analytics data structure found");
   return null;
 }
 
@@ -414,7 +591,6 @@ function stripHtml(html) {
 function setInputState(disabled) {
   if (!window.isCallModeActive) {
     chatInput.disabled = disabled;
-    sendButton.disabled = disabled;
     landingInput.disabled = disabled;
     
     document.querySelectorAll('.speech-btn').forEach(btn => {
@@ -422,9 +598,19 @@ function setInputState(disabled) {
     });
     
     if (disabled) {
-      sendButton.innerHTML = '<div class="loading-indicator"></div>';
+      sendButton.innerHTML = `
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width: 20px; height: 20px;">
+          <rect x="6" y="6" width="12" height="12" rx="2"></rect>
+        </svg>
+      `;
+      sendButton.classList.add('stop-btn');
+      sendButton.onclick = cancelCurrentRequest;
+      sendButton.title = "Cancel request";
     } else {
       sendButton.innerHTML = 'Send';
+      sendButton.classList.remove('stop-btn');
+      sendButton.onclick = sendMessage;
+      sendButton.title = "Send message";
     }
   }
   
@@ -438,72 +624,35 @@ function sendMessage() {
   isTextOnlyMode = true;
   isVoiceToTextMode = false;
 
+  // 🔥 NEW: Store last query for regenerate feature
+  window.CoreApp._lastUserQuery = text;
+  
+  // 🔥 NEW: Hide old stopped messages when sending new message
+  hideOldRegenerateButtons();
+
   addMessage("user", text);
-  askBackend(text);
+  if (window.askBackend) askBackend(text);
   chatInput.value = "";
 }
 
 /* ================= ENHANCED UI UTILITIES ================= */
 function showProcessingMessage() {
-  const processingDiv = document.createElement("div");
-  processingDiv.className = "msg bot";
-  processingDiv.innerHTML = `
-    <div class="avatar">AI</div>
-    <div class="bubble processing-message">
-      <div class="processing-spinner"></div>
-      <div class="message-text">
-        <div class="main-text">Processing your request...</div>
-        <div class="sub-text">Please wait a moment</div>
-      </div>
-    </div>
-  `;
-  messages.appendChild(processingDiv);
-  messages.scrollTop = messages.scrollHeight;
-  
-  // Force repaint to ensure animation is visible
-  processingDiv.offsetHeight;
-  
-  return processingDiv;
+  // Use new thinking animation instead
+  return showThinkingAnimation();
 }
 
 function showTypingIndicator() {
-  const typingDiv = document.createElement("div");
-  typingDiv.className = "msg bot typing-msg";
-  typingDiv.innerHTML = `
-    <div class="avatar">AI</div>
-    <div class="bubble processing-bubble">
-      <div class="typing-indicator">
-        <div class="typing-dot"></div>
-        <div class="typing-dot"></div>
-        <div class="typing-dot"></div>
-      </div>
-    </div>
-  `;
-  messages.appendChild(typingDiv);
-  messages.scrollTop = messages.scrollHeight;
-  return typingDiv;
+  // Deprecated - use showThinkingAnimation instead
+  return showThinkingAnimation();
 }
 
 /* ================= SMART QUERY DETECTION ================= */
 function detectVisualizationQuery(text) {
-  /**
-   * Smart detection of queries that might benefit from visualization
-   */
-  const vizKeywords = [
-    'distribusi', 'distribution', 'breakdown', 'sebaran',
-    'berapa per', 'jumlah per', 'count per',
-    'perbandingan', 'compare', 'vs',
-    'trend', 'perkembangan', 'over time',
-    'chart', 'grafik', 'diagram', 'visualisasi',
-    'analisis', 'analysis', 'analytics'
-  ];
-  
   const textLower = text.toLowerCase();
   
-  // Check for visualization keywords
-  const hasVizKeyword = vizKeywords.some(keyword => textLower.includes(keyword));
+  // ⚡ OPTIMIZED: Gunakan pre-allocated array VIZ_KEYWORDS
+  const hasVizKeyword = VIZ_KEYWORDS.some(keyword => textLower.includes(keyword));
   
-  // Check for HR data patterns
   const hasHRPattern = textLower.includes('karyawan') || textLower.includes('employee') || 
                       textLower.includes('band') || textLower.includes('pendidikan') ||
                       textLower.includes('lokasi') || textLower.includes('status');
@@ -511,68 +660,35 @@ function detectVisualizationQuery(text) {
   return hasVizKeyword && hasHRPattern;
 }
 
-/* ================= DEBUGGING UTILITIES ================= */
-function debugHRAnalytics(responseData) {
-  /**
-   * 🔧 DEBUG: Helper function for HR Analytics troubleshooting
-   */
-  console.group("🔧 HR Analytics Debug");
-  console.log("Response Data:", responseData);
-  console.log("Is HR Analytics:", isHRAnalyticsResponse(responseData));
-  console.log("HRRenderer Available:", !!window.HRRenderer);
-  
-  if (responseData) {
-    console.log("Data Structure:", {
-      type: typeof responseData,
-      keys: Object.keys(responseData),
-      hasData: !!responseData.data,
-      hasRows: !!(responseData.data && responseData.data.rows),
-      rowCount: responseData.data && responseData.data.rows ? responseData.data.rows.length : 0
-    });
-  }
-  
-  console.groupEnd();
-}
-
 /* ================= INITIALIZATION ================= */
 async function initializeApp() {
   console.log("🚀 Initializing DEN·AI Application...");
   
   try {
-    // Initialize modules
     await getUserRole();
     
-    if (window.SpeechModule) {
-      window.SpeechModule.initialize();
+    if (window.SpeechModule) window.SpeechModule.initialize();
+    if (window.CallModeModule) window.CallModeModule.initialize();
+    if (window.VisualizationModule) await window.VisualizationModule.initialize();
+    if (window.SessionModule) window.SessionModule.initialize();
+    
+    // ✅ NEW: Initialize Schema Explorer
+    if (window.SchemaExplorerModule) {
+      window.SchemaExplorerModule.initialize();
+      console.log("✅ Schema Explorer Module initialized");
     }
     
-    if (window.CallModeModule) {
-      window.CallModeModule.initialize();
-    }
-    
-    if (window.VisualizationModule) {
-      await window.VisualizationModule.initialize();
-    }
-    
-    if (window.SessionModule) {
-      window.SessionModule.initialize();
-    }
-    
-    // 🔥 ENHANCED: HR Analytics Renderer initialization check
     if (window.HRAnalyticsRenderer) {
       console.log("✅ HR Analytics Renderer detected and ready");
-      console.log("   • Available methods:", Object.keys(window.HRAnalyticsRenderer));
     } else {
-      console.warn("⚠️ HR Analytics Renderer not found - HR data will display as text");
+      console.warn("⚠️ HR Analytics Renderer not found");
     }
     
-    // Focus on landing input if not in call mode
     if (!window.isCallModeActive) {
       landingInput.focus();
     }
     
     console.log("✅ DEN·AI Application initialized successfully!");
-    console.log(`👤 User: ${userRole} | 📋 HR Access: ${isHR ? 'ENABLED' : 'DISABLED'}`);
     
   } catch (error) {
     console.error("❌ Application initialization failed:", error);
@@ -581,7 +697,6 @@ async function initializeApp() {
 
 /* ================= EVENT LISTENERS ================= */
 function setupEventListeners() {
-  // Regular input events
   chatInput.addEventListener("keypress", (e) => {
     if (e.key === "Enter" && !isWaitingForResponse && !e.shiftKey && !window.isCallModeActive) {
       e.preventDefault();
@@ -596,44 +711,39 @@ function setupEventListeners() {
     }
   });
 
-  // Stop typing when speaking
   chatInput.addEventListener("input", () => {
-    if (window.SpeechModule && window.SpeechModule.isListening && !window.isCallModeActive) {
+    if (window.SpeechModule?.isListening && !window.isCallModeActive) {
       window.SpeechModule.stopRecognition();
     }
   });
 
   landingInput.addEventListener("input", () => {
-    if (window.SpeechModule && window.SpeechModule.isListening && !window.isCallModeActive) {
+    if (window.SpeechModule?.isListening && !window.isCallModeActive) {
       window.SpeechModule.stopRecognition();
     }
   });
 
-  // Global keyboard shortcuts
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape' && window.isCallModeActive) {
-      if (window.CallModeModule) {
-        window.CallModeModule.endCallMode();
-      }
+      if (window.CallModeModule) window.CallModeModule.endCallMode();
+    }
+    
+    // 🔥 NEW: Escape to cancel request
+    if (e.key === 'Escape' && isWaitingForResponse) {
+      cancelCurrentRequest();
     }
     
     if ((e.ctrlKey || e.metaKey) && e.key === '/') {
       e.preventDefault();
       if (window.CallModeModule) {
-        if (window.isCallModeActive) {
-          window.CallModeModule.endCallMode();
-        } else {
-          window.CallModeModule.startCallMode();
-        }
+        window.isCallModeActive ? window.CallModeModule.endCallMode() : window.CallModeModule.startCallMode();
       }
     }
   });
 }
 
 /* ================= GLOBAL EXPORTS ================= */
-// Export essential functions for other modules
 window.CoreApp = {
-  // State
   get activeChatId() { return activeChatId; },
   set activeChatId(value) { activeChatId = value; },
   get userRole() { return userRole; },
@@ -644,29 +754,36 @@ window.CoreApp = {
   get isVoiceToTextMode() { return isVoiceToTextMode; },
   set isVoiceToTextMode(value) { isVoiceToTextMode = value; },
   
-  // Functions
   addMessage,
   setInputState,
   showProcessingMessage,
   showTypingIndicator,
+  showThinkingAnimation,
+  removeThinkingAnimation,
+  cancelCurrentRequest,
+  regenerateLastQuery,
+  regenerateQuery, // 🔥 NEW
   stripHtml,
   newChat,
   createSystemBubble,
   detectVisualizationQuery,
-  isHRAnalyticsResponse, // 🔥 Enhanced detection function
+  isHRAnalyticsResponse,
   extractAnalyticsData,
-  debugHRAnalytics,      // 🔧 Debug utility
-
   
-  // DOM elements
   get messages() { return messages; },
   get chatInput() { return chatInput; },
   get landingInput() { return landingInput; },
   get landing() { return landing; },
-  get chat() { return chat; }
+  get chat() { return chat; },
+  
+  // 🔥 NEW: Expose controller for API module
+  get currentRequestController() { return currentRequestController; },
+  set currentRequestController(value) { currentRequestController = value; },
+  
+  // 🔥 NEW: Store last query for regenerate
+  _lastUserQuery: null
 };
 
-/* ================= DOM READY ================= */
 document.addEventListener("DOMContentLoaded", async () => {
   setupEventListeners();
   await initializeApp();

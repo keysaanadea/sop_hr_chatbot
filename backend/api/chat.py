@@ -1,16 +1,18 @@
 """
-DENAI Chat API Routes
-Pure FastAPI endpoints - minimal logic, delegates to chat_service
+DENAI Chat API Routes - ULTIMATE CANCELLATION (DELAYED INSERTION)
+Integration with existing chat_service.py and memory system
 """
 
 import logging
 import uuid
 import io
-from fastapi import APIRouter, HTTPException, Request, UploadFile, File
-from fastapi.responses import StreamingResponse
+import json
+import urllib.parse
+import asyncio
+from fastapi import APIRouter, Request, UploadFile, File
+from fastapi.responses import StreamingResponse, JSONResponse
 from typing import Optional
-
-logger = logging.getLogger(__name__)
+from pydantic import BaseModel
 
 from backend.models.requests import QuestionRequest, QuestionResponse
 from backend.services.chat_service import ChatService
@@ -18,16 +20,15 @@ from backend.services.tts_service import TTSService
 from backend.services.stt_service import STTService
 from backend.utils.text_utils import clean_text_for_tts
 
-# Import session management
-try:
-    from memory.memory_supabase import (
-        get_recent_history, save_message, save_session
-    )
-    MEMORY_AVAILABLE = True
-except ImportError:
-    MEMORY_AVAILABLE = False
-    logger.warning("⚠️ Memory system not available")
+from memory.memory_hybrid import (
+    get_hybrid_history, 
+    save_hybrid_message, 
+    setup_hybrid_session,
+    MEMORY_AVAILABLE,
+    REDIS_AVAILABLE
+)
 
+logger = logging.getLogger(__name__)
 router = APIRouter()
 
 # Initialize services
@@ -35,70 +36,138 @@ chat_service = ChatService()
 tts_service = TTSService()
 stt_service = STTService()
 
+# Track active requests for cancellation
+active_requests = {}
 
-@router.post("/ask")  # Removed response_model to allow dynamic response types
+class StoppedRequest(BaseModel):
+    last_query: str
+
+
+@router.post("/ask", response_model=QuestionResponse)
 async def ask_question(request: Request, req: QuestionRequest):
     """
-    Text-based question answering endpoint
-    PURE ORCHESTRATION - delegates to chat_service
-    Preserves ChatService response format for analytics and other special responses
+    Enhanced endpoint with proper cancellation handling.
     """
     try:
-        # Setup session
-        if not req.session_id:
-            req.session_id = str(uuid.uuid4())
-        
+        req.session_id = req.session_id or str(uuid.uuid4())
         user_role = req.user_role or "Employee"
         logger.info(f"🔍 Question: {req.question[:50]}...")
         
-        # Handle session management
-        if MEMORY_AVAILABLE:
-            existing = get_recent_history(req.session_id, limit=1)
-            if not existing:
-                title = req.question[:50] + "..."
-                save_session(req.session_id, title)
+        # Cancel previous request for this session
+        if req.session_id in active_requests:
+            old_task = active_requests[req.session_id]
+            if not old_task.done():
+                logger.warning(f"🛑 Cancelling previous request for session {req.session_id}")
+                old_task.cancel()
+                try:
+                    await old_task
+                except asyncio.CancelledError:
+                    logger.info(f"✅ Previous request cancelled successfully")
+        
+        # Create new task with cancellation support
+        task = asyncio.create_task(
+            process_question_with_cancellation(
+                question=req.question,
+                session_id=req.session_id,
+                user_role=user_role,
+                request=request
+            )
+        )
+        
+        active_requests[req.session_id] = task
+        
+        try:
+            result = await task
+            return QuestionResponse(**result)
             
-            save_message(req.session_id, "user", req.question)
-            history = get_recent_history(req.session_id, limit=4)
-        else:
-            history = []
-        
-        # DELEGATE to chat service - all logic there
-        result = await chat_service.process_question(
-            question=req.question,
-            user_role=user_role,
-            session_id=req.session_id,
-            history=history,
-            mode="chat"
-        )
-        
-        # Save assistant response
-        if MEMORY_AVAILABLE and result.get("answer"):
-            save_message(req.session_id, "assistant", result["answer"])
-        
-        # Check if this is a special response type (analytics, etc.)
-        if result.get("message_type") == "analytics_result":
-            # Pass-through analytics response with all fields intact
-            logger.info(f"🎯 Analytics response passed through: visualization_available={result.get('visualization_available')}")
-            return result
-        
-        # For regular responses, format as QuestionResponse
-        return QuestionResponse(
-            answer=result.get("answer", "Server error."),
-            session_id=req.session_id,
-            tool_called=result.get("tool_called"),
-            authorized=result.get("authorized", True),
-            error=result.get("error")
-        )
+        except asyncio.CancelledError:
+            logger.warning(f"🛑 Request cancelled by client: {req.session_id}")
+            return QuestionResponse(
+                answer="Request was cancelled",
+                session_id=req.session_id,
+                cancelled=True,
+                authorized=True
+            )
         
     except Exception as e:
-        logger.error(f"Ask endpoint error: {e}")
+        logger.error(f"❌ Ask endpoint error: {e}", exc_info=True)
         return QuestionResponse(
             answer="Server error. Silakan coba lagi.",
             session_id=req.session_id or str(uuid.uuid4()),
             error=str(e),
             authorized=True
         )
+    
+    finally:
+        if req.session_id and req.session_id in active_requests:
+            del active_requests[req.session_id]
+
+
+async def process_question_with_cancellation(
+    question: str,
+    session_id: str,
+    user_role: str,
+    request: Request
+) -> dict:
+    """
+    Core processing logic with DELAYED DB INSERTION.
+    Pertanyaan user tidak akan dimasukkan ke DB sampai AI benar-benar selesai menjawab!
+    """
+    
+    # Checkpoint 1: Before starting
+    if await request.is_disconnected():
+        logger.info("🛑 Client disconnected before processing started")
+        raise asyncio.CancelledError()
+    
+    # Get history (✅ FIX: Use await)
+    history = await get_hybrid_history(session_id, limit=4)
+    
+    # Setup session (✅ FIX: Use await)
+    await setup_hybrid_session(session_id, question)
+    
+    # Checkpoint 2: Before AI processing
+    if await request.is_disconnected():
+        logger.info("🛑 Client disconnected before AI processing")
+        raise asyncio.CancelledError()
+    
+    # Pass cancellation callback to chat_service
+    result = await chat_service.process_question(
+        question=question,
+        user_role=user_role,
+        session_id=session_id,
+        history=history,
+        mode="chat",
+        cancellation_check=lambda: request.is_disconnected()
+    )
+    
+    # Checkpoint 3: After processing
+    if await request.is_disconnected():
+        logger.info("🛑 Client disconnected after processing")
+        raise asyncio.CancelledError()
+    
+    # 🔥 JIKA SUKSES & TIDAK DIBATALKAN, BARU KITA SAVE KEDUANYA!
+    # Simpan pertanyaan user (✅ FIX: Use await)
+    await save_hybrid_message(session_id, "user", question)
+    
+    # Simpan jawaban AI
+    if result.get("answer"):
+        text_to_save = result["answer"]
+        
+        if result.get("data"):
+            try:
+                json_str = json.dumps(result["data"])
+                safe_json = urllib.parse.quote(json_str)
+                text_to_save += f'\n\n<span class="denai-hidden-payload" data-payload="{safe_json}" style="display:none;"></span>'
+            except Exception as e:
+                logger.error(f"❌ JSON parse error: {e}")
+
+        # (✅ FIX: Use await)
+        await save_hybrid_message(session_id, "assistant", text_to_save)
+    
+    if "session_id" not in result:
+        result["session_id"] = session_id
+    
+    return result
 
 
 @router.post("/call/process")
@@ -108,40 +177,26 @@ async def call_mode_natural(
     session_id: Optional[str] = None,
     user_role: Optional[str] = None
 ):
-    """
-    Voice call mode endpoint
-    PURE ORCHESTRATION - handles I/O, delegates processing to services
-    """
     try:
         logger.info("📞 Call mode processing...")
+        if await request.is_disconnected():
+            return await _generate_call_audio_response("Request cancelled", None)
         
-        # Process audio input via STT service
         audio_content = await audio_file.read()
-        transcript = await stt_service.transcribe_file_upload(
-            audio_content, 
-            "call.wav"
-        )
-        
-        logger.info(f"📞 User: {transcript}")
+        transcript = await stt_service.transcribe_file_upload(audio_content, "call.wav")
         
         if not transcript:
-            error_response = "Maaf, saya tidak mendengar dengan jelas. Bisa diulangi?"
-            return await _generate_call_audio_response(error_response, session_id)
+            return await _generate_call_audio_response("Maaf, saya tidak mendengar dengan jelas.", session_id)
         
-        # Setup session
-        if not session_id:
-            session_id = str(uuid.uuid4())
-            if MEMORY_AVAILABLE:
-                save_session(session_id, "📞 Call")
+        session_id = session_id or str(uuid.uuid4())
         
-        # Handle session management
-        if MEMORY_AVAILABLE:
-            save_message(session_id, "user", transcript)
-            history = get_recent_history(session_id, limit=1)
-        else:
-            history = []
+        if await request.is_disconnected():
+            raise asyncio.CancelledError()
         
-        # DELEGATE to chat service - all logic there
+        # (✅ FIX: Use await)
+        history = await get_hybrid_history(session_id, limit=1)
+        await setup_hybrid_session(session_id, "📞 Call")
+        
         result = await chat_service.process_question(
             question=transcript,
             user_role=user_role or "Employee",
@@ -150,41 +205,28 @@ async def call_mode_natural(
             mode="call"
         )
         
+        if await request.is_disconnected():
+            raise asyncio.CancelledError()
+        
+        # Delayed insertion untuk call mode juga (✅ FIX: Use await)
+        await save_hybrid_message(session_id, "user", transcript)
         answer = result.get("answer", "Maaf, tidak bisa memproses permintaan.")
+        await save_hybrid_message(session_id, "assistant", answer)
         
-        # Save assistant response
-        if MEMORY_AVAILABLE:
-            save_message(session_id, "assistant", answer)
-        
-        # Generate audio response via TTS service
         return await _generate_call_audio_response(answer, session_id)
         
+    except asyncio.CancelledError:
+        logger.warning("🛑 Call mode cancelled")
+        return await _generate_call_audio_response("Request cancelled", None)
     except Exception as e:
-        logger.error(f"📞 Call endpoint error: {e}")
-        error_msg = "Maaf, terjadi gangguan."
-        return await _generate_call_audio_response(error_msg, None)
+        logger.error(f"❌ Call endpoint error: {e}", exc_info=True)
+        return await _generate_call_audio_response("Maaf, terjadi gangguan.", None)
 
 
-async def _generate_call_audio_response(
-    text: str, 
-    session_id: Optional[str] = None
-) -> StreamingResponse:
-    """
-    Generate audio response for call mode
-    PURE I/O PROCESSING - delegates to TTS service
-    """
+async def _generate_call_audio_response(text: str, session_id: Optional[str] = None) -> StreamingResponse:
     try:
-        # Clean text and generate TTS with ElevenLabs priority
         clean_text = clean_text_for_tts(text)
-        audio_content, engine = await tts_service.generate_audio(
-            clean_text, 
-            force_elevenlabs=True
-        )
-        
-        logger.info(f"📞 DENAI: {text[:50]}... (engine: {engine})")
-        
-        def generate():
-            yield audio_content
+        audio_content, engine = await tts_service.generate_audio(clean_text, force_elevenlabs=True)
         
         headers = {
             "Cache-Control": "no-cache",
@@ -192,44 +234,46 @@ async def _generate_call_audio_response(
             "X-Engine": engine,
             "X-Natural-TTS": "true"
         }
-        
         if session_id:
             headers["X-Session-ID"] = session_id
         
-        return StreamingResponse(
-            generate(),
-            media_type="audio/mpeg",
-            headers=headers
-        )
+        return StreamingResponse(iter([audio_content]), media_type="audio/mpeg", headers=headers)
         
     except Exception as e:
-        logger.error(f"Call audio generation error: {e}")
-        # Return silent audio on error
-        silence = b'\x00' * 1024
-        return StreamingResponse(
-            io.BytesIO(silence),
-            media_type="audio/mpeg"
-        )
+        logger.error(f"❌ Call audio generation error: {e}")
+        return StreamingResponse(io.BytesIO(b'\x00' * 1024), media_type="audio/mpeg")
 
 
 @router.get("/tools")
 async def list_available_tools():
-    """
-    List available chat tools and capabilities
-    DELEGATES to chat service
-    """
     return chat_service.get_tools_info()
 
 
 @router.get("/status")
 async def chat_system_status():
-    """
-    Get chat system status and configuration
-    DELEGATES to chat service
-    """
     return {
         "service": "chat",
         "status": "active",
-        "memory_available": MEMORY_AVAILABLE,
-        **chat_service.get_service_info()
+        "supabase_memory_available": MEMORY_AVAILABLE,
+        "redis_memory_available": REDIS_AVAILABLE,
+        "cancellation_support": True
     }
+
+
+@router.get("/debug/active-requests")
+async def debug_active_requests():
+    return {
+        "active_sessions": list(active_requests.keys()),
+        "count": len(active_requests)
+    }
+
+
+@router.post("/history/{session_id}/stopped")
+async def save_stopped_state(session_id: str, req: StoppedRequest):
+    """
+    🔥 REVISI: Karena kita pakai sistem "Delayed Insertion", kita TIDAK BOLEH menyimpan
+    pesan batal ini ke DB agar riwayat tetap bersih saat di-refresh.
+    Kita hanya merespons status sukses untuk menyenangkan Frontend.
+    """
+    logger.info(f"📝 User membatalkan request. DB dibiarkan bersih (No Trace).")
+    return {"status": "success", "message": "Ignored in DB by design"}

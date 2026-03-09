@@ -3,8 +3,17 @@ HR Analytics Engine
 Complete HR data analytics solution dengan role-based access control
 """
 
-from .hr_service import HRService, create_hr_service
-from .models import HRResponse, ChartRecommendation
+# ✅ FIX: Gunakan Absolute Imports
+from engines.hr.hr_service import HRService, create_hr_service
+from engines.hr.models.hr_response import HRResponse, ChartRecommendation
+
+import logging
+
+# ✅ FIX: Cukup deklarasikan logger untuk modul ini, 
+# JANGAN gunakan basicConfig() di sini. Biarkan main.py yang mengatur format log-nya.
+logger = logging.getLogger(__name__)
+# NullHandler mencegah warning jika main app belum men-setup logging
+logger.addHandler(logging.NullHandler())
 
 # Version information
 __version__ = "1.0.0"
@@ -18,25 +27,4 @@ __all__ = [
     'ChartRecommendation'
 ]
 
-# Package-level configuration
-import logging
-
-# Setup basic logging untuk HR engine
-def setup_logging(level=logging.INFO):
-    """
-    Setup logging untuk HR engine
-    
-    Args:
-        level: Logging level (default: INFO)
-    """
-    logging.basicConfig(
-        level=level,
-        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-        datefmt='%Y-%m-%d %H:%M:%S'
-    )
-    
-    # Set specific loggers
-    logging.getLogger('engines.hr').setLevel(level)
-
-# Initialize logging with default level
-setup_logging()
+logger.info("✅ HR Analytics Engine package initialized")

@@ -10,6 +10,7 @@
 csv/
 db/
 documents/
+documents_global/
 
 # ======================
 # RUNTIME OUTPUT
@@ -41,24 +42,13 @@ venv-camelot/
 rag_engine.py.backup.*
 testing/
 
+evaluation/
+scripts/
 # ======================
 # DEBUG FILES
 # ======================
-debug_input.html
-debug_voice.html
-macos_chrome_speech_fix.html
-debug_visualization.html
-debug_speech.html
-hr_analytics_test.html
-scripts/
-index.html
-app.js
-test
+
 test_db.py
-test.py
-test.wav
-
-debug_analysis_routing.py
-debug_backend.py
-
-integration_example.html
+test_network.py
+thinking-demo.html
+zilliz-cloud-Free-01-username-password.txt

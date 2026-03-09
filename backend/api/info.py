@@ -2,19 +2,14 @@
 DENAI Info API Routes - CLEAN SYSTEM INFORMATION
 ===============================================
 Pure system information endpoint - NO business logic
-NO engine probing, NO HR availability checks
 """
 
 import logging
 import os
 from fastapi import APIRouter
-import sys
 
-# Add project root to path
-project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-sys.path.insert(0, project_root)
-
-from models.requests import (
+# ✅ Menggunakan Absolute Import standar (bebas Path Hack)
+from backend.models.requests import (
     HealthResponse, SpeechStatusResponse, UserRoleResponse,
     ConfigResponse, ModelConfig, SpeechConfig, TimeoutConfig,
     ModeConfig, FeatureFlags
@@ -34,18 +29,9 @@ from app.config import (
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
-# =====================
-# SYSTEM INFORMATION ENDPOINTS
-# =====================
-
 @router.get("/", response_model=HealthResponse)
 async def system_info():
-    """
-    Get general system information and status
-    
-    Returns:
-        HealthResponse: System status and capabilities
-    """
+    """Get general system information and status"""
     features = [
         "🎤 Natural conversational TTS",
         "📱 HTML text output preserved", 
@@ -77,22 +63,12 @@ async def system_info():
 
 @router.get("/health", response_model=HealthResponse)
 async def health_check():
-    """
-    Detailed health check endpoint
-    
-    Returns:
-        HealthResponse: Comprehensive health status
-    """
+    """Detailed health check endpoint"""
     return await system_info()
 
 @router.get("/user/role", response_model=UserRoleResponse)
 async def get_user_role():
-    """
-    Get user role and permissions
-    
-    Returns:
-        UserRoleResponse: User role information
-    """
+    """Get user role and permissions"""
     role = os.getenv("USER_ROLE", "Employee")
     is_hr = role.upper() == "HR"
     
@@ -103,18 +79,13 @@ async def get_user_role():
             "access_sop": True,
             "speech_features": True,
             "natural_tts": FEATURE_NATURAL_TTS,
-            "hr_access_via_chat": is_hr  # HR functionality via chat tools routing
+            "hr_access_via_chat": is_hr
         }
     )
 
 @router.get("/speech/status", response_model=SpeechStatusResponse)
 async def speech_system_status():
-    """
-    Get speech system status and configuration
-    
-    Returns:
-        SpeechStatusResponse: Speech system information
-    """
+    """Get speech system status and configuration"""
     return SpeechStatusResponse(
         speech_recognition={
             "available": True,
@@ -143,17 +114,12 @@ async def speech_system_status():
 
 @router.get("/services/status")
 async def all_services_status():
-    """
-    Get status of all system services
-    
-    Returns:
-        dict: Status of all services
-    """
+    """Get status of all system services"""
     try:
-        # Import services to check their status
-        from services.chat_service import ChatService
-        from services.tts_service import TTSService
-        from services.stt_service import STTService
+        # ✅ Perbaikan Absolute Import agar tidak meledak
+        from backend.services.chat_service import ChatService
+        from backend.services.tts_service import TTSService
+        from backend.services.stt_service import STTService
         
         chat_service = ChatService()
         tts_service = TTSService()
@@ -163,45 +129,26 @@ async def all_services_status():
             "overall_status": "healthy",
             "architecture": "API → ChatService → tools.py → engines/",
             "services": {
-                "chat": {
-                    "status": "active",
-                    "service": "ChatService",
-                    "description": "Core AI conversation orchestration"
-                },
-                "tts": {
-                    "status": "active", 
-                    "service": "TTSService",
-                    "engines": [TTS_PRIMARY_ENGINE, TTS_FALLBACK_ENGINE]
-                },
-                "stt": {
-                    "status": "active",
-                    "service": "STTService", 
-                    "engine": "OpenAI Whisper"
-                }
+                "chat": {"status": "active", "service": "ChatService", "description": "Core AI conversation orchestration"},
+                "tts": {"status": "active", "service": "TTSService", "engines": [TTS_PRIMARY_ENGINE, TTS_FALLBACK_ENGINE]},
+                "stt": {"status": "active", "service": "STTService", "engine": "OpenAI Whisper"}
             },
             "note": "HR and SOP functionality accessed via unified chat interface with dynamic tools routing"
         }
         
     except Exception as e:
-        logger.error(f"Services status error: {e}")
+        logger.error(f"❌ Services status error: {e}")
         return {
             "overall_status": "degraded",
             "error": str(e),
             "services": {
-                "chat": {"status": "unknown"},
-                "tts": {"status": "unknown"},
-                "stt": {"status": "unknown"}
+                "chat": {"status": "unknown"}, "tts": {"status": "unknown"}, "stt": {"status": "unknown"}
             }
         }
 
 @router.get("/version")
 async def version_info():
-    """
-    Get version and build information
-    
-    Returns:
-        dict: Version information
-    """
+    """Get version and build information"""
     return {
         "version": "8.0.0",
         "architecture": "clean_layered",
@@ -235,12 +182,7 @@ async def version_info():
 
 @router.get("/endpoints")
 async def list_api_endpoints():
-    """
-    List all available API endpoints
-    
-    Returns:
-        dict: Available API endpoints by category
-    """
+    """List all available API endpoints"""
     return {
         "chat_endpoints": [
             "POST /ask - Unified conversation interface (SOP + HR via dynamic routing)",
@@ -280,77 +222,32 @@ async def list_api_endpoints():
 # =====================
 # DEVELOPMENT ENDPOINTS
 # =====================
-
 if ENVIRONMENT == "development":
-    
     @router.get("/config", response_model=ConfigResponse)
     async def get_current_config():
-        """
-        Development-only endpoint to inspect configuration
-        
-        Returns:
-            ConfigResponse: Complete system configuration
-        """
+        """Development-only endpoint to inspect configuration"""
         return ConfigResponse(
-            model_config=ModelConfig(
-                llm_model=LLM_MODEL,
-                temperature=LLM_TEMPERATURE,
-                max_tokens=LLM_MAX_TOKENS
-            ),
+            ai_model_config=ModelConfig(llm_model=LLM_MODEL, temperature=LLM_TEMPERATURE, max_tokens=LLM_MAX_TOKENS),
             speech_config=SpeechConfig(
-                language=SPEECH_LANGUAGE_DEFAULT,
-                primary_tts=TTS_PRIMARY_ENGINE,
-                fallback_tts=TTS_FALLBACK_ENGINE,
-                elevenlabs_settings=ELEVENLABS_SETTINGS,
-                openai_settings=OPENAI_TTS_SETTINGS
+                language=SPEECH_LANGUAGE_DEFAULT, primary_tts=TTS_PRIMARY_ENGINE, fallback_tts=TTS_FALLBACK_ENGINE,
+                elevenlabs_settings=ELEVENLABS_SETTINGS, openai_settings=OPENAI_TTS_SETTINGS
             ),
-            timeout_config=TimeoutConfig(
-                default=API_TIMEOUT_DEFAULT,
-                call_mode=API_TIMEOUT_CALL_MODE,
-                tts=API_TIMEOUT_TTS
-            ),
+            timeout_config=TimeoutConfig(default=API_TIMEOUT_DEFAULT, call_mode=API_TIMEOUT_CALL_MODE, tts=API_TIMEOUT_TTS),
             mode_config=ModeConfig(
-                call_temperature=CALL_MODE_TEMPERATURE,
-                chat_temperature=CHAT_MODE_TEMPERATURE,
-                call_max_tokens=CALL_MODE_MAX_TOKENS,
-                chat_max_tokens=CHAT_MODE_MAX_TOKENS
+                call_temperature=CALL_MODE_TEMPERATURE, chat_temperature=CHAT_MODE_TEMPERATURE,
+                call_max_tokens=CALL_MODE_MAX_TOKENS, chat_max_tokens=CHAT_MODE_MAX_TOKENS
             ),
-            feature_flags=FeatureFlags(
-                natural_tts=FEATURE_NATURAL_TTS,
-                verbose_logging=FEATURE_VERBOSE_LOGGING
-            ),
+            feature_flags=FeatureFlags(natural_tts=FEATURE_NATURAL_TTS, verbose_logging=FEATURE_VERBOSE_LOGGING),
             environment=ENVIRONMENT
         )
     
     @router.get("/debug/logs")
     async def get_recent_logs():
-        """
-        Development-only endpoint to get recent log entries
-        
-        Returns:
-            dict: Recent log information
-        """
+        """Development-only endpoint to get recent log entries"""
         return {
             "note": "Log retrieval not implemented",
             "logging_level": "DEBUG" if FEATURE_VERBOSE_LOGGING else "INFO",
-            "loggers": [
-                "main",
-                "services.chat_service", 
-                "services.tts_service",
-                "services.stt_service",
-                "api.chat",
-                "api.speech",
-                "api.sessions",
-                "api.info"
-            ]
+            "loggers": ["main", "services.chat_service", "services.tts_service", "services.stt_service", "api.chat", "api.speech", "api.sessions", "api.info"]
         }
 
-# =====================
-# CLEAN STARTUP LOGGING
-# =====================
-
-logger.info("📋 Info API routes loaded - Clean System Information:")
-logger.info(f"   - Architecture: Clean Layered (API → ChatService → tools.py → engines/)")
-logger.info(f"   - Environment: {ENVIRONMENT}")
-logger.info(f"   - Version: 8.0.0")
-logger.info(f"   - Routing: Dynamic tools routing based on role + query")
+logger.info("📋 Info API routes loaded - Clean System Information")

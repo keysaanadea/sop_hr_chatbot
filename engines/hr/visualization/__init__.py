@@ -1,4 +1,3 @@
-from .viz_recommender import VizRecommender
-from .viz_renderer import VizRenderer
-
-__all__ = ['VizRecommender', 'VizRenderer']
+from .viz_recommender import UniversalVizRecommender
+from .viz_renderer import UniversalVizRenderer
+from .chart_exporter import ChartExporter

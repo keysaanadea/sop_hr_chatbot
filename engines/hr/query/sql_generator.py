@@ -1,33 +1,25 @@
 """
-SQL Generator - Enhanced Natural Language Understanding for Indonesian HR Queries
+SQL Generator - Enhanced Natural Language Understanding
 Generates SQL ONLY untuk Supabase PostgreSQL
-ENHANCED dengan natural language flexibility untuk bahasa casual dan formal
-TIDAK ADA SQLite syntax atau logic
 """
 
 import logging
-from typing import Dict, Any, Optional
-import openai
-import os
+from typing import Dict, Any
+from openai import OpenAI
 
+# ✅ FIX: Mengambil Key dan Model dari sumber yang benar (config.py)
+from app.config import OPENAI_API_KEY, LLM_MODEL
 
 class SQLGenerator:
-    """
-    Enhanced PostgreSQL SQL generator untuk Supabase
-    HANYA menggunakan PostgreSQL syntax dan hr schema
-    ENHANCED dengan natural Indonesian language understanding
-    """
+    """Enhanced PostgreSQL SQL generator untuk Supabase"""
     
     def __init__(self):
         self.logger = logging.getLogger(__name__)
-        
-        # Initialize OpenAI client
-        openai_api_key = os.getenv("OPENAI_API_KEY")
-        if not openai_api_key:
-            raise ValueError("OPENAI_API_KEY environment variable required")
-        
-        self.client = openai.OpenAI(api_key=openai_api_key)
-        self.model = os.getenv("LLM_MODEL", "gpt-4o-mini")
+        if not OPENAI_API_KEY:
+            raise ValueError("OPENAI_API_KEY is missing!")
+            
+        self.client = OpenAI(api_key=OPENAI_API_KEY)
+        self.model = LLM_MODEL
         
         # Enhanced natural Indonesian language prompt template
         self.sql_prompt_template = """
@@ -49,6 +41,46 @@ SPECIFIC/FORMAL QUERIES:
 • "berikan data persentase karyawan per departemen" → percentage calculation dengan window functions
 • "hitung rata-rata masa kerja per divisi" → AVG() calculation dengan proper grouping
 • "tampilkan ranking gaji tertinggi per band" → RANK() OVER dengan proper ordering
+
+- PENCARIAN KATEGORI (SEMEN vs NON-SEMEN): Jika user meminta total seluruh "Perusahaan Semen" atau "Perusahaan Non Semen", Anda WAJIB menjabarkannya menggunakan klausa IN (...) secara EKSPLISIT berdasarkan daftar di atas! 
+  -> Contoh Non-Semen: WHERE company_home IN ('IKSG', 'KIG', 'SIB', 'SII', 'SILOG', 'SISI', 'SKI', 'SMI', 'UTSG', 'SID', 'VUDS', 'VULS', 'SIIB', 'VUBA', 'VUB')
+  -> DILARANG KERAS MENGGUNAKAN JALAN PINTAS 'NOT IN'! Anda wajib menuliskan semua anggotanya satu per satu agar data tidak bocor.
+  
+GLOSARIUM SINGKATAN PERUSAHAAN SIG (KNOWLEDGE BASE):
+Anda WAJIB memetakan input/pertanyaan user ke singkatan resmi kolom 'company_home' (atau 'company_host') berikut:
+
+1. PERUSAHAAN SEMEN (CORE BUSINESS):
+• Group Head Office / Holding Office = 'GHoPo'
+• Pemasaran Lintas Pulau = 'PLP'
+• Readymix / Beton Jadi = 'Readymix'
+• Semen Bangun Andalas / Lhoknga / SBA = 'SBA'
+• Selo Bangun Banua / SBB = 'SBB'
+• Solusi Bangun Indonesia / SBI / Holcim / Cilacap / Narogong = 'SBI'
+• Solusi Bangun Nusantara / SBN = 'SBN'
+• Semen Gresik / Gresik / Rembang = 'SG'
+• SIA = 'SIA'
+• Holding / Semen Indonesia / SIG / Kantor Pusat = 'SIG'
+• Semen Baturaja / Baturaja / Palembang = 'SMBR'
+• Semen Padang / Padang = 'SP'
+• Semen Tonasa / Tonasa / Makassar = 'ST'
+• Thang Long Cement / Vietnam / TLCC = 'TLCC'
+
+2. PERUSAHAAN NON-SEMEN (LOGISTIK, AFILIASI, VENTURE, DLL):
+• Industri Kemasan Semen Gresik / IKSG = 'IKSG'
+• Kawasan Industri Gresik / KIG = 'KIG'
+• Semen Indonesia Beton / SIB = 'SIB'
+• Semen Indonesia Internasional / SII = 'SII'
+• Semen Indonesia Logistik / SILOG = 'SILOG'
+• Sinergi Informatika Semen Indonesia / SISI = 'SISI'
+• Semen Kupang Indonesia / SKI = 'SKI'
+• SMI = 'SMI'
+• United Tractors Semen Gresik / UTSG = 'UTSG'
+• Semen Indonesia Distributor / SID = 'SID'
+• Varia Usaha Dharma Segara / VUDS = 'VUDS'
+• Varia Usaha Lintas Segara / VULS = 'VULS'
+• Semen Indonesia Industri Bangunan / SIIB = 'SIIB'
+• Varia Usaha Bahari / VUBA = 'VUBA'
+• Varia Usaha Beton / VUB = 'VUB'
 
 POLA DETEKSI INTENT:
 
@@ -224,6 +256,60 @@ PENTING: Generate HANYA SQL PostgreSQL yang valid untuk hr schema di Supabase, t
         except Exception as e:
             self.logger.error(f"Indonesian natural language SQL generation failed: {str(e)}")
             raise Exception(f"Failed to generate SQL: {str(e)}")
+        
+    def generate_sql_explanation(self, sql: str, question: str) -> str:
+        """Menerjemahkan SQL menjadi 3 bagian: Bisnis, Logika Non-Teknis, & Teknis"""
+        try:
+            prompt = f"""Anda adalah Senior HR Data Analyst. 
+Tugas Anda adalah menjelaskan cara kerja query SQL ke dalam TIGA bagian terstruktur.
+
+ATURAN MUTLAK:
+1. WAJIB menggunakan format tag HTML (<b>, <ul>, <li>, <br>) agar rapi saat dirender di website.
+2. DILARANG menggunakan format markdown seperti bintang ganda (**).
+3. Tampilkan secara profesional dan bersih. DILARANG KERAS menggunakan emoji di dalam isi list/bullet points.
+4. Langsung berikan output HTML-nya, tanpa kalimat pengantar atau penutup.
+
+FORMAT YANG DIHARAPKAN:
+<b>Tujuan Bisnis (Untuk HR):</b>
+<ul>
+  <li>(Jelaskan fungsi/tujuan dari pencarian data ini untuk keputusan manajemen HR.)</li>
+</ul>
+<br>
+<b>Langkah Logika Query (Non-Teknis):</b>
+<ul>
+  <li>(Jelaskan step-by-step bagaimana data difilter/dihitung tanpa bahasa SQL sama sekali. Gunakan bahasa profesional dan rapi.)</li>
+</ul>
+<br>
+<b>Langkah Teknis SQL:</b>
+<ul>
+  <li>(WAJIB dipecah pembahasannya per klausa/fungsi. Contoh penulisan: <code>SELECT band</code> digunakan untuk menarik..., <code>COUNT(*)</code> digunakan untuk menghitung..., <code>SUM(...) OVER()</code> digunakan untuk mencari persentase, <code>GROUP BY</code> digunakan untuk...)</li>
+  <li>(DILARANG KERAS hanya mem-paste ulang seluruh query SQL di satu poin!)</li>
+</ul>
+
+Pertanyaan User: "{question}"
+Query SQL yang dieksekusi: {sql}
+
+Berikan penjelasan logikanya dalam format HTML tersebut:"""
+
+            response = self.client.chat.completions.create(
+                model=self.model,
+                messages=[
+                    {"role": "system", "content": "Anda adalah asisten data analyst yang ahli membuat dokumentasi profesional berformat HTML."},
+                    {"role": "user", "content": prompt}
+                ],
+                temperature=0.1, # Dikecilkan jadi 0.1 agar AI sangat patuh pada format dan tidak kreatif berlebihan
+                max_tokens=600 
+            )
+            
+            explanation = response.choices[0].message.content.strip()
+            # Pembersih jika AI masih membandel memberikan markdown block
+            explanation = explanation.replace("```html", "").replace("```", "").strip()
+            
+            return explanation
+            
+        except Exception as e:
+            self.logger.error(f"❌ Gagal membuat penjelasan SQL: {e}")
+            return "<b>Status:</b><br>Query berhasil dijalankan untuk menarik data sesuai permintaan Anda."
     
     def _clean_sql(self, sql: str) -> str:
         """

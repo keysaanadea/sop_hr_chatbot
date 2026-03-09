@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DENAI - Digital Employee assistaNce</title>
+    
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+    
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@3.9.1/dist/chart.min.js"></script>
+    
+    <link rel="stylesheet" href="styles/main.css">
+    <!-- ✅ NEW: Schema Explorer CSS -->
+    <link rel="stylesheet" href="styles/schema.css">
+    <!-- 🔥 NEW: Thinking Animation + Stopped Response CSS -->
+    <link rel="stylesheet" href="styles/thinking-animation.css">
+    <!-- ✨ NEW: Call Status Animations CSS -->
+    <link rel="stylesheet" href="styles/call-status-animations.css">
+    <!-- ✨ NEW: Call Button Enhancements CSS -->
+    <link rel="stylesheet" href="styles/call-button-enhancements.css">
+</head>
+<body>
+    <!-- ================= CALL MODE OVERLAY (FIXED ICONS) ================= -->
+    <div class="call-mode-overlay" id="callModeOverlay">
+        <div class="call-interface">
+            <div class="call-avatar">AI</div>
+            
+            <!-- ✨ Status will be dynamically updated by JS -->
+            <div class="call-status" id="callStatus">
+                READY
+            </div>
+            
+            <div class="call-transcript" id="callTranscript">
+                Bicara sekarang... DENAI sedang mendengarkan
+            </div>
+            
+            <div class="audio-visualizer" id="audioVisualizer">
+                <div class="audio-bar"></div>
+                <div class="audio-bar"></div>
+                <div class="audio-bar"></div>
+                <div class="audio-bar"></div>
+                <div class="audio-bar"></div>
+                <div class="audio-bar"></div>
+                <div class="audio-bar"></div>
+            </div>
+            
+            <!-- ✨ FIXED: Professional Call Control Buttons -->
+            <div class="call-controls">
+                <!-- MUTE BUTTON -->
+                <button class="call-control-btn mute" id="muteBtn" title="Mute/Unmute">
+                    <svg class="icon-unmuted" xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon>
+                        <path d="M15.54 8.46a5 5 0 0 1 0 7.07"></path>
+                        <path d="M19.07 4.93a10 10 0 0 1 0 14.14"></path>
+                    </svg>
+                    <svg class="icon-muted" xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display: none;">
+                        <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon>
+                        <line x1="23" y1="9" x2="17" y2="15"></line>
+                        <line x1="17" y1="9" x2="23" y2="15"></line>
+                    </svg>
+                </button>
+                
+                <!-- ✨ NEW: SKIP BUTTON (shown only when AI is speaking) -->
+                <button class="call-control-btn skip" id="skipBtn" title="Skip AI Speech" style="display: none;">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="currentColor">
+                        <!-- Double arrow forward icon -->
+                        <path d="M4 18l8.5-6L4 6v12zm9-12v12l8.5-6L13 6z"/>
+                    </svg>
+                </button>
+                
+                <!-- END CALL BUTTON -->
+                <button class="call-control-btn end-call" id="endCallBtn" title="End Call">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="0.5">
+                        <path d="M20 15.5c-1.25 0-2.45-.2-3.57-.57-.35-.11-.74-.03-1.02.24l-2.2 2.2c-2.83-1.44-5.15-3.75-6.59-6.59l2.2-2.21c.28-.26.36-.65.25-1C8.7 6.45 8.5 5.25 8.5 4c0-.55-.45-1-1-1H4c-.55 0-1 .45-1 1 0 9.39 7.61 17 17 17 .55 0 1-.45 1-1v-3.5c0-.55-.45-1-1-1z"/>
+                        <line x1="3" y1="3" x2="21" y2="21" stroke="currentColor" stroke-width="3" stroke-linecap="round"/>
+                    </svg>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <div class="volume-indicator" id="volumeIndicator">
+        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" style="width: 16px; height: 16px; display: inline-block; margin-right: 8px;">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M6 10H4a1 1 0 00-1 1v2a1 1 0 001 1h2l4.707 4.707C11.337 19.337 12 18.891 12 18V6c0-.891-.663-1.337-1.293-.707L6 10z"></path>
+        </svg>
+        Volume: <span id="volumeLevel">100</span>%
+    </div>
+
+    <div class="sidebar" id="sidebar">
+        <div class="sidebar-header">
+            <div class="logo">AI</div>
+            <span class="title">DENAI</span>
+        </div>
+        
+        <button class="new-chat" onclick="newChat()">
+            <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path>
+            </svg>
+            <span>New Conversation</span>
+        </button>
+        
+        <div class="history" id="sessionList"></div>
+    </div>
+
+    <div class="main">
+        <div class="header">
+            <div class="header-left">
+                <span id="appTitle">
+                    <div class="logo-icon">AI</div>
+                    <span>DENAI</span>
+                </span>
+                <p class="denai-explanation">Digital Employee assistaNce - Artifical Intelligence</p>
+            </div>
+            <div class="header-right">
+                <div class="speech-controls">
+                    <button class="speech-btn" id="callModeBtn" title="Real-time Call Mode">
+                        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z"></path>
+                        </svg>
+                    </button>
+                    <!-- ✅ NEW: Schema Explorer Button -->
+                    <button class="schema-btn" id="schemaBtn" title="Database Schema">
+                        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" 
+                                  d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4m0 5c0 2.21-3.582 4-8 4s-8-1.79-8-4"></path>
+                        </svg>
+                        <span>Schema</span>
+                    </button>
+                </div>
+                <div class="user-badge" id="userBadge">
+                    <div class="badge-icon"></div>
+                    <span id="userRole">Loading...</span>
+                </div>
+            </div>
+        </div>
+
+        <div id="landing">
+            <div class="hero-content">
+                <h1>DENAI</h1>
+                <p class="subtitle">Your intelligent AI assistant for company procedures, policies, and data. Experience natural conversations with voice support.</p>
+                
+                <div class="search-box">
+                    <input id="landingInput" placeholder="Type your question or use voice input..." />
+                    <button class="speech-btn" id="landingSpeechBtn" title="Voice Input">
+                        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z"></path>
+                        </svg>
+                    </button>
+                    <button onclick="startFromLanding()">Submit</button>
+                </div>
+            </div>
+        </div>
+
+        <div id="chat">
+            <div class="messages" id="messages"></div>
+            <div id="hr-analytics-container"></div>
+            <div class="input-box">
+                <div class="input-container">
+                    <input id="chatInput" placeholder="Type your question or use voice input..." />
+                    <button class="speech-btn" id="chatSpeechBtn" title="Voice Input">
+                        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z"></path>
+                        </svg>
+                    </button>
+                </div>
+                <button id="sendButton" onclick="sendMessage()">Send</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ✅ NEW: Schema Explorer Modal -->
+    <div class="schema-modal" id="schemaModal">
+        <div class="schema-modal-container">
+            <div class="schema-modal-header">
+                <div class="schema-modal-title">
+                    🗄️ Database Schema
+                </div>
+                <div class="schema-modal-actions">
+                    <button class="schema-action-btn" id="refreshSchemaBtn">
+                        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" style="width:16px;height:16px">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" 
+                                  d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
+                        </svg>
+                        Refresh
+                    </button>
+                    <button class="schema-action-btn close-schema-btn" id="closeSchemaBtn">
+                        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" style="width:16px;height:16px">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" 
+                                  d="M6 18L18 6M6 6l12 12"></path>
+                        </svg>
+                        Close
+                    </button>
+                </div>
+            </div>
+            
+            <div class="schema-modal-body" id="schemaContent">
+                <!-- Content will be dynamically generated here -->
+            </div>
+        </div>
+    </div>
+
+    <script src="js/config.js"></script>
+
+    <!-- 🔥 ENHANCED: With Cancel + Thinking Animation -->
+    <script src="js/api.js"></script> 
+    <script src="js/session-module.js"></script>
+    <script src="js/speech-module.js"></script>
+    <script src="js/call-mode-module.js"></script>
+    
+    <script src="js/visualization-allin.js"></script>
+    <script src="js/hr_analytics_renderer.js"></script>
+    
+    <!-- ✅ NEW: Schema Explorer Module -->
+    <script src="js/schema-explorer.js"></script>
+    
+    <!-- 🔥 ENHANCED: With Cancel + Thinking + Stopped Response -->
+    <script src="js/core-app.js"></script>
+</body>
+</html>

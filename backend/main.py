@@ -1,30 +1,44 @@
 """
 DENAI API - Main Application Setup
-Production-ready modular FastAPI application with clean architecture
+Production-ready modular FastAPI application with clean architecture.
+(UNIVERSAL ANALYTICS EDITION + SCHEMA EXPLORER)
 """
 
-from fastapi import FastAPI, Request
-from fastapi.middleware.cors import CORSMiddleware
+import socket
 import logging
-import sys
-import os
 
-# Add project root to path
-project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-sys.path.insert(0, project_root)
+# =========================================================================
+# 🚀 MAGIC FIX: OBAT ANTI-HANG OPENAI API (KASUS MAC/IPV6)
+# Memaksa seluruh koneksi Python keluar menggunakan IPv4.
+# Menghilangkan delay 15 detik di setiap pemanggilan LLM.
+# =========================================================================
+old_getaddrinfo = socket.getaddrinfo
+def new_getaddrinfo(*args, **kwargs):
+    responses = old_getaddrinfo(*args, **kwargs)
+    # Filter hanya jalur IPv4 (AF_INET)
+    return [response for response in responses if response[0] == socket.AF_INET]
+socket.getaddrinfo = new_getaddrinfo
+# =========================================================================
 
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+
+# ✅ FIX BUG: Import dari config tanpa sys.path hack
 from app.config import (
     ENVIRONMENT,
     FEATURE_VERBOSE_LOGGING,
     ELEVENLABS_API_KEY,
 )
 
+# Absolute Imports untuk semua router
 from backend.api.chat import router as chat_router
 from backend.api.speech import router as speech_router  
 from backend.api.sessions import router as sessions_router
 from backend.api.info import router as info_router
-# FIXED: Correct import path for visualization router
-from backend.api.visualization import router as visualization_router
+from backend.api.schema import router as schema_router  # ✅ NEW: Schema Explorer
+
+# ✅ FIX KUNCI: Import Recommender untuk melayani Endpoint Katalog Chart!
+from engines.hr.visualization.viz_recommender import UniversalVizRecommender
 
 # Setup logging
 logging.basicConfig(
@@ -36,8 +50,8 @@ logger = logging.getLogger(__name__)
 # Initialize FastAPI app
 app = FastAPI(
     title="DENAI - AI Assistant API", 
-    version="7.0.0",
-    description="Modular FastAPI application with clean architecture"
+    version="8.1.0",  # ✅ BUMPED: Added Schema Explorer feature
+    description="Modular FastAPI application with Universal Analytics Architecture + Schema Explorer"
 )
 
 # Add CORS middleware
@@ -49,15 +63,42 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Include routers - CLEAN ARCHITECTURE
+# ✅ CLEAN ARCHITECTURE ROUTING
 app.include_router(chat_router, prefix="", tags=["Chat"])
 app.include_router(speech_router, prefix="/speech", tags=["Speech"])
 app.include_router(sessions_router, prefix="/sessions", tags=["Sessions"])
 app.include_router(info_router, prefix="", tags=["Info"])
-# FIXED: Visualization router now properly imported and registered
-app.include_router(visualization_router, prefix="/api/viz", tags=["Visualization"])
-# NOTE: HR functionality is accessed via chat router with dynamic tools routing
-app.include_router(chat_router, prefix="/api/chat", tags=["Chat-API"])
+app.include_router(schema_router)  # ✅ NEW: Schema Explorer routes (/api/schema/)
+
+# ==============================================================================
+# 🎯 ENDPOINT VISUALISASI KEMBALI DIBUKA (Hanya untuk Katalog)
+# ==============================================================================
+@app.get("/api/viz/chart-types", tags=["Visualization"])
+async def get_chart_types():
+    """
+    Endpoint untuk melayani request pilihan/katalog chart dari Frontend.
+    Tidak melakukan rendering, hanya memberikan metadata.
+    """
+    try:
+        recommender = UniversalVizRecommender()
+        raw_charts = recommender.get_all_chart_types()
+        
+        formatted_charts = []
+        for chart in raw_charts:
+            formatted_charts.append({
+                "chart_type": chart["chart_type"],
+                "display_name": chart["title"],  # 🎯 FIX: Frontend JS mencari 'display_name', bukan 'title'
+                "description": chart["description"],
+                "icon": chart.get("icon", "📊")
+            })
+            
+        logger.info(f"Returning ALL {len(formatted_charts)} chart types (no filtering)")
+        return {"chart_types": formatted_charts}
+        
+    except Exception as e:
+        logger.error(f"Error fetching chart types: {e}")
+        return {"error": str(e), "chart_types": []}
+# ==============================================================================
 
 
 @app.on_event("startup")
@@ -66,7 +107,8 @@ async def startup_event():
     logger.info("🚀 DENAI API Starting...")
     logger.info(f"✅ Environment: {ENVIRONMENT}")
     logger.info(f"✅ ElevenLabs TTS: {'CONFIGURED' if ELEVENLABS_API_KEY else 'NOT CONFIGURED'}")
-    logger.info("🎯 Clean architecture: API → ChatService → tools.py → engines/")
+    logger.info("🎯 Architecture: API → ChatService → Universal Analytics")
+    logger.info("📋 Schema Explorer: ENABLED (/api/schema/)")
 
 
 @app.on_event("shutdown")
@@ -75,51 +117,42 @@ async def shutdown_event():
     logger.info("👋 DENAI API Shutting down...")
 
 
-# History endpoint (session management utility)
+# ✅ FIX: Mengembalikan endpoint alias untuk Frontend lama
 @app.get("/history/{session_id}")
-async def get_history_endpoint(session_id: str):
-    """Get conversation history for session"""
+async def get_history_alias(session_id: str, limit: int = 50):
+    """Alias endpoint for older frontend compatibility"""
     from backend.api.sessions import get_session_history
-    return await get_session_history(session_id)
+    return await get_session_history(session_id, limit)
 
 
-# Root endpoint
+# Root endpoint (untuk ngecek apakah server nyala)
 @app.get("/")
 def read_root():
     """Root endpoint with API information"""
     return {
         "status": "active",
         "service": "DENAI - Modular AI Assistant API",
-        "version": "7.0.0",
-        "architecture": "clean_layered",
+        "version": "8.1.0",
+        "architecture": "universal_analytics",
         "flow": "API → ChatService → tools.py → engines/",
         "improvements": [
             "✅ Clean layered architecture",
-            "✅ Dynamic tools routing via tools.py",
             "✅ Proper separation of concerns",
-            "✅ SOP RAG protection maintained",
-            "✅ HR analytics via unified chat interface"
-        ],
-        "endpoints": [
-            "💬 Chat API (/ask) - Main conversation interface",
-            "🎤 Speech API (/speech/*) - Voice interaction",
-            "💾 Session Management (/sessions/*) - Conversation history",
-            "📊 Visualization API (/api/viz/*) - Chart generation",
-            "ℹ️ System Info (/*) - API information"
-        ],
-        "note": "HR analytics accessed via /ask endpoint with role-based routing"
+            "✅ Universal Analytics JSON payload",
+            "✅ Visualization logic moved to Frontend!",
+            "✅ Schema Explorer for database documentation"
+        ]
     }
 
 
 if __name__ == "__main__":
     import uvicorn
     
-    print("🚀 Starting DENAI API (Clean Architecture)...")
+    print("🚀 Starting DENAI API (Universal Analytics + Schema Explorer)...")
     print(f"✅ Environment: {ENVIRONMENT}")
-    print("🎯 Flow: API → ChatService → tools.py → engines/")
     
     uvicorn.run(
-        "main:app", 
+        "backend.main:app", # Gunakan format module path
         host="0.0.0.0", 
         port=8000, 
         reload=True if ENVIRONMENT == "development" else False

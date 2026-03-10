@@ -5,6 +5,7 @@
 ✅ NEW: Full cancellation support with 8 checkpoints throughout pipeline
 ✅ Saves ~99% cost on cancelled requests
 ✅ Production-ready with proper error handling
+🔥 FIXED: Eligibility Check (Band 5 Only) & Smart Anti-Hallucination
 """
 
 import os
@@ -352,21 +353,25 @@ async def answer_question_async(
         # KEMBALIKAN KEKUATAN DETAIL
         detail_enforcer = ""
         if "singkat" not in question.lower():
-            detail_enforcer = "5. 📝 KEDALAMAN JAWABAN: Anda WAJIB menjabarkan aturan, nominal, rincian, dan tata cara secara SANGAT DETAIL, TERSTRUKTUR, dan LENGKAP. Jangan ada poin penting dari KNOWLEDGE BASE yang disembunyikan!"
+            detail_enforcer = "8. 📝 KEDALAMAN JAWABAN: Anda WAJIB menjabarkan aturan, nominal, rincian, dan tata cara secara SANGAT DETAIL, TERSTRUKTUR, dan LENGKAP. Jangan ada poin penting dari KNOWLEDGE BASE yang disembunyikan!"
 
+        # 🔥 PERUBAHAN KRUSIAL ADA DI SINI 🔥
         prompt = f"""=== SYSTEM ROLE ===
 Anda adalah Asisten Profesional HRD PT Semen Indonesia.
 
 === CRITICAL RULES ===
 1. Jawab HANYA menggunakan informasi dari [KNOWLEDGE BASE].
-2. 🚨 KESEIMBANGAN ANTI-HALUSINASI & KELENTURAN (SANGAT KRITIS):
-   - CEK TOPIK ALIEN: Coba lihat [KNOWLEDGE BASE]. Apakah topik yang ditanyakan (misal: Pensiun, Cuti Melahirkan, Resign) SAMA SEKALI TIDAK DITULIS di sana? JIKA YA (Topik Alien), Anda WAJIB BERHENTI dan HANYA MENGELUARKAN KODE INI:
+2. 🚨 CEK KELAYAKAN (ELIGIBILITY) SEBELUM MENGHITUNG: Anda WAJIB memeriksa apakah user berhak atas fasilitas tersebut berdasarkan aturan di [KNOWLEDGE BASE]. 
+   - Contoh: Upah Kerja Lembur HANYA diberikan untuk karyawan Job Grade 10 ke bawah atau Band 5. 
+   - JIKA user menyebutkan ia adalah Band 1, 2, 3, atau 4 dan meminta hitungan lembur, Anda DILARANG KERAS memberikan hitungan/rumus. Anda WAJIB menolak dengan sopan dan menjelaskan bahwa sesuai aturan, Band tersebut tidak mendapatkan upah lembur.
+3. 🚨 KESEIMBANGAN ANTI-HALUSINASI & KELENTURAN (SANGAT KRITIS):
+   - CEK TOPIK ALIEN: Coba lihat [KNOWLEDGE BASE]. Apakah topik yang ditanyakan (misal: Pensiun, Cuti Melahirkan, Resign) SAMA SEKALI TIDAK DITULIS di sana? JIKA YA (Topik Alien), Anda WAJIB BERHENTI dan HANYA MENGELUARKAN KODE INI TANPA TAMBAHAN TEKS LAIN:
 [DATA_TIDAK_DITEMUKAN_DI_SOP]
    - CEK TOPIK RELEVAN TAPI KURANG DATA: JIKA topik yang ditanyakan ADA (misal: Lembur, Perjalanan Dinas, Hari Libur), tetapi Anda merasa data di [KNOWLEDGE BASE] tidak cukup detail untuk melakukan hitungan matematika/angka pasti yang diminta user, JANGAN GUNAKAN KODE ERROR! Anda WAJIB tetap menjawab dengan ramah berdasarkan aturan/definisi yang tersedia, dan sampaikan secara profesional bahwa Anda membutuhkan data tambahan (seperti gaji pokok, dsb) untuk menghitung angka pastinya.
-3. DILARANG KERAS merangkai atau memaksakan aturan dari topik A untuk menjawab topik B (Topik harus match!).
-4. Angka tarif, jarak, dan durasi HARUS persis sama dengan dokumen.
-5. 🔥 TUGAS KALKULASI: JIKA ADA angka jarak (km) atau durasi (jam) dari [INFO SISTEM & INSTRUKSI MUTLAK], WAJIB gunakan angka tersebut.
-6. 🚨 KEPATUHAN FORMAT: WAJIB MEMATUHI SEMUA PERINTAH di dalam [INFO SISTEM & INSTRUKSI MUTLAK] TANPA TERKECUALI!
+4. DILARANG KERAS merangkai atau memaksakan aturan dari topik A untuk menjawab topik B (Topik harus match!).
+5. Angka tarif, jarak, dan durasi HARUS persis sama dengan dokumen.
+6. 🔥 TUGAS KALKULASI: JIKA ADA angka jarak (km) atau durasi (jam) dari [INFO SISTEM & INSTRUKSI MUTLAK], WAJIB gunakan angka tersebut.
+7. 🚨 KEPATUHAN FORMAT: WAJIB MEMATUHI SEMUA PERINTAH di dalam [INFO SISTEM & INSTRUKSI MUTLAK] TANPA TERKECUALI!
 {detail_enforcer}
 
 {enforcement_instructions}

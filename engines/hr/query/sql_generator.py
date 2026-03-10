@@ -184,13 +184,15 @@ PERTANYAAN USER (dalam bahasa natural Indonesia):
 "{question}"
 
 LANGKAH ANALYSIS:
-1. Deteksi apakah ini casual/formal language
-2. Identifikasi key words untuk analytical intent
-3. Tentukan pattern yang tepat (distribusi/ranking/statistik)
-4. Pilih tabel dan kolom yang relevan dari schema
-5. Generate SQL dengan formula yang mathematically correct
+1. Deteksi apakah pertanyaan berhubungan dengan data HR di database.
+2. 🚨 FILTER SIMULASI PRIBADI (KRITIS): JIKA pertanyaan bersifat pengandaian, simulasi hitungan pribadi, atau tidak menanyakan data faktual agregat perusahaan (contoh: "kalau gaji saya X", "misal saya lembur", "berapa upah lembur saya"), ANDA WAJIB MEMBALAS HANYA DENGAN: INVALID_QUERY
+3. 🚨 FILTER TABEL HALUSINASI (KRITIS): Anda HANYA BOLEH menggunakan tabel yang tertera persis di DATABASE SCHEMA. DILARANG KERAS mengarang nama tabel (seperti menambah nama orang/tanggal di nama tabel). JIKA tidak ada tabel di schema yang cocok untuk menjawab pertanyaan, ANDA WAJIB MEMBALAS HANYA DENGAN: INVALID_QUERY
+4. Jika lolos filter, identifikasi key words untuk analytical intent.
+5. Tentukan pattern yang tepat (distribusi/ranking/statistik).
+6. Pilih tabel dan kolom yang relevan dari schema.
+7. Generate SQL dengan formula yang mathematically correct.
 
-GENERATE SQL PostgreSQL yang akurat:
+GENERATE SQL PostgreSQL yang akurat (ATAU KETIK INVALID_QUERY):
 """
 
         # Enhanced system message untuk Indonesian natural language

@@ -248,21 +248,25 @@ casual_chat:
 - World events, weather, recipes, celebrities
 - Examples: "siapa presiden", "cuaca hari ini", "resep nasi goreng"
 
-A (SOP_DOCUMENTS):
-- Rules, policies, guidelines, procedures
-- Keywords: "aturan", "syarat", "cara", "kebijakan", "boleh"
-- Example: "Cara mengajukan cuti?" → A
+A (SOP_DOCUMENTS / RAG POLICY):
+- User asks for rules, policies, guidelines, requirements, or procedures.
+- User asks for a PERSONAL CALCULATION or SIMULATION using hypothetical numbers (e.g., "Kalau gaji saya 10 juta", "Jika saya lembur 5 jam").
+- Keywords: "Bagaimana aturan", "Apa syarat", "Cara mengajukan", "Boleh atau tidak", "Coba hitungkan upah saya".
+- Example: "Bagaimana aturan lembur di hari libur?" -> A
+- Example: "Kalau gaji saya 5 juta dan saya lembur, dapat berapa?" -> A
 
-B (HR_DATABASE):
-- Data, numbers, statistics, lists
-- Keywords: "berapa", "siapa saja", "daftar", "total"
-- Example: "Berapa total karyawan?" → B
+B (EMPLOYEE_DATA / SQL DATABASE):
+- User asks for FACTUAL COMPANY DATA, aggregation, statistics, lists of names, or data filtering from the database.
+- MUST NOT be used for personal/hypothetical simulations.
+- Keywords: "Berapa total jumlah", "Siapa saja nama", "Tampilkan daftar", "Penyebaran".
+- Example: "Siapa saja karyawan yang akan pensiun tahun depan?" -> B
+- Example: "Berapa total biaya lembur divisi IT bulan lalu?" -> B
 
 RULES:
 1. Clear greeting → "greeting"
 2. Casual/unrelated → "casual_chat"
-3. Policy question → "A"
-4. Data query → "B"
+3. Policy question or personal simulation → "A"
+4. Factual company data query → "B"
 5. Unsure A/B → default "A"
 6. Unsure casual → treat as HR (A or B)
 

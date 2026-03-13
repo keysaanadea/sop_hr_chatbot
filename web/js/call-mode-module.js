@@ -1,9 +1,7 @@
-/* ================= CALL MODE MODULE (FIXED - NO EMOJI + ANIMATIONS) ================= */
+/* ================= CALL MODE MODULE ================= */
 /**
  * 📞 CALL MODE: Real-time voice conversation system
- * ⚡ OPTIMIZED: Streamlined logic with Optional Chaining, Anti-crash
- * ✨ ENHANCED: Professional animations for listening/processing states
- * File: js/call-mode-module.js
+ * ✨ ENHANCED: Modern Apple Siri / ChatGPT Voice layout with Timers & UI States
  */
 
 // Call mode state
@@ -12,14 +10,21 @@ let continuousListening = false;
 let callSession = null;
 let isProcessingCall = false;
 
+// Timer State
+let callTimerInterval = null;
+let callSeconds = 0;
+
 // DOM elements
 const callModeOverlay = document.getElementById("callModeOverlay");
 const callStatus = document.getElementById("callStatus");
-const callTranscript = document.getElementById("callTranscript");
-const callModeBtn = document.getElementById("callModeBtn");
+const callAvatar = document.getElementById("callAvatar");
+const callTranscriptLog = document.getElementById("callTranscriptLog");
+const callModeBtn = document.getElementById("chatCallBtn") || document.getElementById("headerCallBtn");
 const endCallBtn = document.getElementById("endCallBtn");
 const muteBtn = document.getElementById("muteBtn");
+const speakerBtn = document.getElementById("speakerBtn");
 const audioVisualizer = document.getElementById("audioVisualizer");
+const callTimerDisplay = document.getElementById("callTimer");
 
 /* ================= CALL MODE MANAGEMENT ================= */
 async function startCallMode() {
@@ -51,14 +56,20 @@ async function startCallMode() {
       }
     }
     
+    // UI Resets
     callModeOverlay?.classList.add('active');
-    callModeBtn?.classList.add('call-mode');
+    if (callTranscriptLog) {
+      callTranscriptLog.innerHTML = '<p class="call-transcript-hint">Bicara sekarang... DENAI sedang mendengarkan</p>';
+    }
     
-    // ✨ FIXED: No emoji, with animation
-    setCallStatus('connected', 'CALL CONNECTED');
-    if (callTranscript) callTranscript.textContent = 'DEN.AI sedang mendengarkan';
+    startTimer();
+    setCallStatus('connected');
     
-    window.SpeechModule?.restartCallListening();
+    setTimeout(() => {
+        setCallStatus('listening');
+        window.SpeechModule?.restartCallListening();
+    }, 1000);
+
     console.log('🔥 CALL MODE: Activated - Natural speech-to-speech ready!');
     
   } catch (error) {
@@ -76,8 +87,8 @@ function endCallMode() {
   if (window.SpeechModule?.isSpeaking) window.SpeechModule.stopTextToSpeech();
   
   callModeOverlay?.classList.remove('active');
-  callModeBtn?.classList.remove('call-mode');
   showAudioVisualization(false);
+  stopTimer();
   
   console.log('CALL MODE: Ended');
 }
@@ -87,9 +98,8 @@ async function handleCallModeInput(transcript) {
 
   isProcessingCall = true;
   
-  // ✨ FIXED: Set processing status with animation
-  setCallStatus('processing', 'PROCESSING');
-  if (callTranscript) callTranscript.textContent = `You: ${transcript}`;
+  setCallStatus('processing');
+  appendCallTranscript('user', transcript);
   
   if (window.SpeechModule?.isListening) window.SpeechModule.stopRecognition();
   
@@ -99,92 +109,45 @@ async function handleCallModeInput(transcript) {
     window.SpeechModule?.playProcessingFeedback();
     window.CoreApp?.addMessage("user", transcript);
     
-    // ⚡ OPTIMIZED: Tunggu Backend selesai sebelum mereset state
     if (window.BackendModule) {
       await window.BackendModule.askBackend(transcript);
     }
     
-    // ✨ CRITICAL FIX: Jangan restart mic di sini!
-    // Mic akan di-restart otomatis oleh TTS onended callback di speech-module.js
-    // Biarkan isProcessingCall = true sampai TTS selesai
+    // Once backend replies and TTS starts
+    setCallStatus('speaking');
     
   } catch (error) {
     console.error('[CALL] Error processing input:', error);
     window.SpeechModule?.stopProcessingFeedback();
     
-    // Reset state jika error
     setTimeout(() => {
       if (isCallModeActive && continuousListening) {
         isProcessingCall = false;
-        setCallStatus('listening', 'LISTENING');
-        if (callTranscript) callTranscript.textContent = 'Bicara lagi...';
+        setCallStatus('listening');
         window.SpeechModule?.restartCallListening();
       }
     }, 1000);
   }
-  
-  // ✨ NOTE: isProcessingCall akan di-reset oleh TTS onended callback
 }
 
+/* ================= CONTROLS ================= */
 function toggleMute() {
   const isMuted = muteBtn?.classList.contains('active');
   
-  // Get icon elements
-  const unmutedIcon = muteBtn?.querySelector('.icon-unmuted');
-  const mutedIcon = muteBtn?.querySelector('.icon-muted');
-  
   if (isMuted) {
-    // Unmute
     muteBtn?.classList.remove('active');
     continuousListening = true;
-    
-    // Show unmuted icon
-    if (unmutedIcon) unmutedIcon.style.display = 'block';
-    if (mutedIcon) mutedIcon.style.display = 'none';
-    
     if (isCallModeActive && !isProcessingCall) window.SpeechModule?.restartCallListening();
   } else {
-    // Mute
     muteBtn?.classList.add('active');
     continuousListening = false;
-    
-    // Show muted icon
-    if (unmutedIcon) unmutedIcon.style.display = 'none';
-    if (mutedIcon) mutedIcon.style.display = 'block';
-    
     if (window.SpeechModule?.isListening) window.SpeechModule.stopRecognition();
   }
 }
 
-/**
- * ✨ NEW: Skip AI Speech - Stop TTS and restart listening immediately
- */
-function skipAISpeech() {
-  if (!isCallModeActive) return;
-  
-  console.log('⏭️ SKIP: User skipped AI speech');
-  
-  // Stop any ongoing TTS
-  if (window.SpeechModule?.isSpeaking) {
-    window.SpeechModule.stopTextToSpeech();
-  }
-  
-  // Reset processing state
-  window.isProcessingCall = false;
-  isProcessingCall = false;
-  
-  // Hide skip button
-  const skipBtn = document.getElementById('skipBtn');
-  if (skipBtn) skipBtn.style.display = 'none';
-  
-  // Restart listening immediately
-  setTimeout(() => {
-    if (isCallModeActive && continuousListening) {
-      setCallStatus('listening', 'LISTENING');
-      if (callTranscript) callTranscript.textContent = 'Silakan bicara...';
-      window.SpeechModule?.restartCallListening();
-    }
-  }, 200);
+function toggleSpeaker() {
+  // Toggle UI state for aesthetic/future WebRTC implementation
+  speakerBtn?.classList.toggle('active');
 }
 
 function showAudioVisualization(show) {
@@ -192,89 +155,87 @@ function showAudioVisualization(show) {
   const bars = audioVisualizer.querySelectorAll('.audio-bar');
   
   if (show) {
-    bars.forEach((bar, index) => {
-      bar.classList.add('active');
-      bar.style.animationDelay = `${index * 0.1}s`;
-    });
+    bars.forEach((bar) => bar.classList.add('active'));
   } else {
     bars.forEach(bar => bar.classList.remove('active'));
   }
 }
 
-/* ================= ✨ NEW: CALL STATUS ANIMATOR ================= */
-/**
- * Sets call status with professional animations
- * @param {string} type - 'connected' | 'listening' | 'processing' | 'speaking'
- * @param {string} text - Status text to display
- */
-function setCallStatus(type, text) {
-  if (!callStatus) return;
+/* ================= TIMER LOGIC ================= */
+function startTimer() {
+    callSeconds = 0;
+    updateTimerDisplay();
+    clearInterval(callTimerInterval);
+    callTimerInterval = setInterval(() => {
+        callSeconds++;
+        updateTimerDisplay();
+    }, 1000);
+}
+
+function stopTimer() {
+    clearInterval(callTimerInterval);
+}
+
+function updateTimerDisplay() {
+    if (!callTimerDisplay) return;
+    const mins = String(Math.floor(callSeconds / 60)).padStart(2, '0');
+    const secs = String(callSeconds % 60).padStart(2, '0');
+    callTimerDisplay.textContent = `${mins}:${secs}`;
+}
+
+/* ================= UI STATUS ANIMATOR ================= */
+function setCallStatus(type) {
+  if (!callStatus || !callAvatar) return;
   
-  // Remove all previous status classes
-  callStatus.className = 'call-status';
-  
-  // Add new status class
-  callStatus.classList.add(`status-${type}`);
-  
-  // Create animated status HTML based on type
-  let statusHTML = '';
+  // Clear previous animations
+  callAvatar.classList.remove('listening', 'processing', 'speaking');
   
   switch(type) {
     case 'connected':
-      statusHTML = `
-        <span class="status-indicator pulse"></span>
-        <span class="status-text">${text}</span>
-      `;
+      callStatus.textContent = 'Menghubungkan...';
       break;
       
     case 'listening':
-      statusHTML = `
-        <span class="status-indicator listening-wave"></span>
-        <span class="status-text">${text}</span>
-        <span class="listening-bars">
-          <span class="bar"></span>
-          <span class="bar"></span>
-          <span class="bar"></span>
-          <span class="bar"></span>
-        </span>
-      `;
+      callStatus.textContent = 'AI sedang mendengarkan...';
+      callAvatar.classList.add('listening');
       break;
       
     case 'processing':
-      statusHTML = `
-        <span class="status-indicator processing-spinner"></span>
-        <span class="status-text">${text}</span>
-        <span class="processing-dots">
-          <span class="dot"></span>
-          <span class="dot"></span>
-          <span class="dot"></span>
-        </span>
-      `;
+      callStatus.textContent = 'AI sedang memproses...';
+      callAvatar.classList.add('processing');
       break;
       
     case 'speaking':
-      statusHTML = `
-        <span class="status-indicator speaking-pulse"></span>
-        <span class="status-text">${text}</span>
-      `;
+      callStatus.textContent = 'AI sedang menjawab...';
+      callAvatar.classList.add('speaking');
       break;
-      
-    default:
-      statusHTML = `<span class="status-text">${text}</span>`;
   }
-  
-  callStatus.innerHTML = statusHTML;
+}
+
+/* ================= LIVE TRANSCRIPT ================= */
+function appendCallTranscript(role, text) {
+  if (!callTranscriptLog || !text?.trim()) return;
+
+  // Remove hint text on first real entry
+  const hint = callTranscriptLog.querySelector('.call-transcript-hint');
+  if (hint) hint.remove();
+
+  const line = document.createElement('div');
+  line.className = `transcript-line ${role}`;
+  line.innerHTML = `
+    <span class="t-icon">${role === 'user' ? '👤' : '🤖'}</span>
+    <span class="t-label">${role === 'user' ? 'Anda' : 'Denai'}</span>
+    <span class="t-text">${text.trim()}</span>
+  `;
+  callTranscriptLog.appendChild(line);
+  callTranscriptLog.scrollTop = callTranscriptLog.scrollHeight;
 }
 
 /* ================= EVENT LISTENERS SETUP ================= */
 function setupCallModeEvents() {
-  callModeBtn?.addEventListener("click", startCallMode);
   endCallBtn?.addEventListener("click", endCallMode);
   muteBtn?.addEventListener("click", toggleMute);
-  
-  // ✨ NEW: Skip button event listener
-  const skipBtn = document.getElementById("skipBtn");
-  if (skipBtn) skipBtn.addEventListener("click", skipAISpeech);
+  speakerBtn?.addEventListener("click", toggleSpeaker);
 }
 
 /* ================= MODULE INITIALIZATION ================= */
@@ -285,7 +246,6 @@ function initialize() {
   return true;
 }
 
-/* ================= GLOBAL EXPORTS ================= */
 window.CallModeModule = {
   get isCallModeActive() { return isCallModeActive; },
   get continuousListening() { return continuousListening; },
@@ -295,12 +255,11 @@ window.CallModeModule = {
   endCallMode,
   handleCallModeInput,
   toggleMute,
-  skipAISpeech,  // ✨ NEW: Export skip function
   showAudioVisualization,
-  setCallStatus  // ✨ NEW: Export status animator
+  setCallStatus,
+  appendCallTranscript
 };
 
-// Export state to global scope for backward compatibility
 Object.defineProperty(window, 'isCallModeActive', { get() { return isCallModeActive; }, set(v) { isCallModeActive = v; } });
 Object.defineProperty(window, 'continuousListening', { get() { return continuousListening; }, set(v) { continuousListening = v; } });
 Object.defineProperty(window, 'isProcessingCall', { get() { return isProcessingCall; }, set(v) { isProcessingCall = v; } });

@@ -544,7 +544,7 @@ class DenaiVisualizationEngine {
 
   async renderVisualizationOffer(conversationId, turnId) {
     const data = this.getHRAnalyticsData(turnId);
-    if (!data.rows.length) return;
+    if (!data.rows.length || data.rows.length <= 1) return;
 
     try {
       const res = await fetch(`${window.API_URL}/api/viz/chart-types`);
@@ -572,11 +572,11 @@ class DenaiVisualizationEngine {
     let optionsHTML = `
       <div class="visualization-offer-bubble" id="${bubbleId}">
         <div class="viz-options-header">
-          <div style="display:flex; align-items:center; gap: 14px;">
-            <div style="background: linear-gradient(135deg, #1e40af 0%, #3b82f6 100%); color: white; padding: 12px; border-radius: 12px; font-size: 20px; box-shadow: 0 4px 6px rgba(59,130,246,0.3);">📊</div>
+          <div style="display:flex; align-items:center; gap: 10px;">
+            <div style="background: linear-gradient(135deg, #1e40af 0%, #3b82f6 100%); color: white; padding: 7px 9px; border-radius: 8px; font-size: 16px;">📊</div>
             <div>
-              <h4 style="margin: 0; font-size: 18px; color: #1e293b; font-weight: 700;">Galeri Visualisasi Data</h4>
-              <p style="margin: 4px 0 0 0; font-size: 13px; color: #64748b;">Menganalisis <b>${data.rows.length}</b> kategori data (<b>${data.categoryKey}</b> → <b>${data.valueKey}</b>)</p>
+              <h4 style="margin: 0; font-size: 14px; color: #1e293b; font-weight: 700;">Pilih Visualisasi</h4>
+              <p style="margin: 2px 0 0 0; font-size: 12px; color: #64748b;">${data.rows.length} kategori · ${data.categoryKey} → ${data.valueKey}</p>
             </div>
           </div>
         </div>
@@ -609,14 +609,21 @@ class DenaiVisualizationEngine {
       </div>
     `;
 
-    const container = document.getElementById('messages');
-    if (container) {
-      const div = document.createElement('div'); 
-      div.innerHTML = optionsHTML;
-      container.appendChild(div.firstElementChild); 
-      // Auto-scroll to the new option box
-      setTimeout(() => window.UXEnhancement.smoothScrollTo(), 100);
+    const wrapper = document.createElement('div');
+    wrapper.innerHTML = optionsHTML;
+    const vizEl = wrapper.firstElementChild;
+
+    // Append inside registered chat bubble if available, else fall back to messages
+    const targetBubble = window._hrVizBubbleMap && window._hrVizBubbleMap[turnId];
+    if (targetBubble) {
+      vizEl.style.marginTop = '12px';
+      targetBubble.appendChild(vizEl);
+    } else {
+      const container = document.getElementById('messages');
+      if (container) container.appendChild(vizEl);
     }
+    // Disabled auto-scroll to prevent UX jumping when options appear
+    // setTimeout(() => window.UXEnhancement?.smoothScrollTo(), 100);
   }
 
   renderOptionHTML(chart, turnId, isRecommended, isDisabled) {
@@ -683,29 +690,27 @@ class DenaiVisualizationEngine {
         });
         detailsHTML += `</div>`;
         
-        // 🌟 FIX: Struktur anti kempes (display block, tinggi terkunci, padding aman)
         const chartHTML = `
-          <div class="chart-container" style="display: block; width: 100%; height: auto; background: #ffffff; border: 1px solid #e2e8f0; border-radius: 12px; box-shadow: 0 4px 12px -2px rgba(0,0,0,0.05); overflow: hidden;">
-            <div class="chart-header" style="padding: 20px 24px; border-bottom: 1px solid #e2e8f0; display: flex; justify-content: space-between; align-items: center; background: #fff;">
+          <div class="chart-container" style="display: block; width: 100%; height: auto; background: #ffffff; border: 1px solid #e2e8f0; border-radius: 10px; box-shadow: 0 2px 6px -1px rgba(0,0,0,0.06); overflow: hidden;">
+            <div class="chart-header" style="padding: 10px 16px; border-bottom: 1px solid #e2e8f0; display: flex; justify-content: space-between; align-items: center; background: #fff;">
               <div class="chart-title">
-                <h3 style="margin: 0; font-size: 18px; color: #1e293b; font-weight: 700;">${displayName} - ${categoryKey}</h3>
-                <span class="chart-subtitle" style="font-size:13px; color:#64748b;">Interactive Analytics Dashboard</span>
+                <h3 style="margin: 0; font-size: 14px; color: #1e293b; font-weight: 700;">${displayName} — ${categoryKey}</h3>
               </div>
-              <div class="chart-actions" style="display: flex; gap: 10px;">
-                <button class="export-btn" style="background:#1e40af; color:#fff; border:none; padding:8px 16px; border-radius:8px; font-weight:600; cursor:pointer; box-shadow: 0 2px 4px rgba(30,64,175,0.2);" onclick="window.ChartExportManager.exportChartAsPNG('${chartId}')">📥 Unduh Laporan</button>
-                <button class="change-type-btn" style="background:#f1f5f9; color:#475569; border:1px solid #cbd5e1; padding:8px 16px; border-radius:8px; font-weight:600; cursor:pointer;" onclick="window.VisualizationModule.changeChartType('${session.conversation_id}', '${turnId}')">🔄 Ganti Grafik</button>
+              <div class="chart-actions" style="display: flex; gap: 8px;">
+                <button class="export-btn" style="background:#1e40af; color:#fff; border:none; padding:5px 12px; border-radius:6px; font-size:12px; font-weight:600; cursor:pointer;" onclick="window.ChartExportManager.exportChartAsPNG('${chartId}')">📥 Unduh</button>
+                <button class="change-type-btn" style="background:#f1f5f9; color:#475569; border:1px solid #cbd5e1; padding:5px 12px; border-radius:6px; font-size:12px; font-weight:600; cursor:pointer;" onclick="window.VisualizationModule.changeChartType('${session.conversation_id}', '${turnId}')">🔄 Ganti</button>
               </div>
             </div>
-            
-            <div class="chart-content" style="position: relative; height: 420px; min-height: 420px; width: 100%; padding: 24px; background: #fff;">
+
+            <div class="chart-content" style="position: relative; height: 280px; min-height: 280px; width: 100%; padding: 16px; background: #fff;">
               <canvas id="${chartId}"></canvas>
             </div>
-            
-            <div class="chart-footer" style="padding: 24px; background: #f8fafc; border-top: 1px solid #e2e8f0;">
+
+            <div class="chart-footer" style="padding: 12px 16px; background: #f8fafc; border-top: 1px solid #e2e8f0;">
               ${detailsHTML}
-              <div style="text-align: center; font-size: 15px; color: #1e293b; font-weight: 600; margin-top: 16px; padding-top: 16px; border-top: 2px dashed #cbd5e1;">
-                  Total Akumulasi Keseluruhan: <span style="color: #1e40af; font-size: 20px; font-weight:800; margin: 0 4px;">${totalValue.toLocaleString('id-ID')}</span>
-                  <span style="color: #64748b; font-size: 13px; font-weight: normal;">(dari ${rows.length} kategori data)</span>
+              <div style="text-align: center; font-size: 13px; color: #1e293b; font-weight: 600; margin-top: 8px; padding-top: 8px; border-top: 1px dashed #cbd5e1;">
+                  Total: <span style="color: #1e40af; font-size: 15px; font-weight:800; margin: 0 4px;">${totalValue.toLocaleString('id-ID')}</span>
+                  <span style="color: #64748b; font-size: 12px; font-weight: normal;">(${rows.length} kategori)</span>
               </div>
             </div>
           </div>
@@ -714,7 +719,7 @@ class DenaiVisualizationEngine {
         const bubble = document.getElementById(`viz-bubble-${turnId}`);
         if (bubble) {
             // Hapus paksaan CSS lama secara ekstrem!
-            bubble.style.cssText = "background: transparent !important; border: none !important; box-shadow: none !important; padding: 0 !important; width: 100% !important; max-width: 100% !important; height: auto !important; max-height: none !important; overflow: visible !important;";
+            bubble.style.cssText = "background: transparent !important; border: none !important; box-shadow: none !important; padding: 0 !important; width: 100% !important; max-width: 900px !important; height: auto !important; max-height: none !important; overflow: visible !important;";
             bubble.innerHTML = chartHTML;
         }
 
@@ -722,11 +727,6 @@ class DenaiVisualizationEngine {
         if (chart) {
             window.ChartExportManager.registerChart(chartId, chart, { chartType: type, title: `Analisis ${session.data.categoryKey}`, analyticsData: session.data });
             session.chart_id = chartId;
-            
-            // 🌟 THE FIX: SCROLL OTOMATIS KE BAWAH SETELAH GRAFIK JADI!
-            setTimeout(() => {
-                window.UXEnhancement.smoothScrollTo();
-            }, 300);
             
         } else {
             bubble.innerHTML += `<div style="padding: 20px; color: red; text-align: center;"><b>Warning:</b> Grafik ini tidak dapat dirender karena ketidakcocokan tipe data.</div>`;
@@ -788,24 +788,24 @@ class DenaiVisualizationEngine {
     style.id = 'denai-viz-styles';
     
     style.textContent = `
-      .visualization-offer-bubble { background: #fff; border: 1px solid #e2e8f0; border-radius: 12px; margin: 16px 0; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1); width: 100%; max-width: 100%; transition: all 0.3s ease; }
-      .viz-options-header { padding: 24px; border-bottom: 1px solid #e2e8f0; background: #f8fafc; border-top-left-radius: 12px; border-top-right-radius: 12px;}
-      .viz-options-content { padding: 24px; }
-      .viz-section-title { font-size: 14px; font-weight: 700; color: #334155; text-transform: uppercase; letter-spacing: 0.5px; margin: 0 0 12px 0; }
-      
-      .viz-options-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 16px; }
-      
-      .viz-chart-card { background: #ffffff; border: 1px solid #e2e8f0; border-radius: 10px; padding: 16px; cursor: pointer; transition: all 0.2s ease; display: flex; flex-direction: column; gap: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); }
-      .viz-chart-card:hover:not(.disabled) { border-color: #3b82f6; transform: translateY(-3px); box-shadow: 0 8px 16px rgba(59,130,246,0.12); }
+      .visualization-offer-bubble { background: #fff; border: 1px solid #e2e8f0; border-radius: 10px; margin: 12px 0; box-shadow: 0 2px 4px -1px rgba(0,0,0,0.08); width: 100%; max-width: 900px; transition: all 0.3s ease; }
+      .viz-options-header { padding: 12px 16px; border-bottom: 1px solid #e2e8f0; background: #f8fafc; border-top-left-radius: 10px; border-top-right-radius: 10px; }
+      .viz-options-content { padding: 14px 16px; max-height: 320px; overflow-y: auto; }
+      .viz-section-title { font-size: 11px; font-weight: 700; color: #334155; text-transform: uppercase; letter-spacing: 0.5px; margin: 0 0 8px 0; }
+
+      .viz-options-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+
+      .viz-chart-card { background: #ffffff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 10px 12px; cursor: pointer; transition: all 0.2s ease; display: flex; flex-direction: column; gap: 6px; box-shadow: 0 1px 2px rgba(0,0,0,0.04); }
+      .viz-chart-card:hover:not(.disabled) { border-color: #3b82f6; transform: translateY(-2px); box-shadow: 0 4px 10px rgba(59,130,246,0.1); }
       .viz-chart-card.recommended { border-color: #f59e0b; background: linear-gradient(to bottom right, #ffffff, #fffbeb); border-width: 2px; }
       .viz-chart-card.disabled { opacity: 0.6; cursor: not-allowed; background: #f8fafc; }
       
-      .viz-chart-card-header { display: flex; align-items: center; gap: 12px; }
-      .viz-icon-wrapper { font-size: 20px; background: #f1f5f9; padding: 8px; border-radius: 8px; }
+      .viz-chart-card-header { display: flex; align-items: center; gap: 8px; }
+      .viz-icon-wrapper { font-size: 16px; background: #f1f5f9; padding: 6px; border-radius: 6px; }
       .recommended .viz-icon-wrapper { background: #fef3c7; }
       .viz-chart-title-wrap { display: flex; flex-direction: column; align-items: flex-start; }
-      .viz-chart-title { font-weight: 700; font-size: 15px; color: #1e293b; }
-      .viz-chart-desc { font-size: 13px; color: #64748b; line-height: 1.5; margin-top: 4px; }
+      .viz-chart-title { font-weight: 700; font-size: 13px; color: #1e293b; }
+      .viz-chart-desc { font-size: 12px; color: #64748b; line-height: 1.4; margin-top: 2px; }
       
       .rec-badge { background: #fbbf24; color: #92400e; font-size: 10px; font-weight:bold; padding: 2px 6px; border-radius: 10px; margin-top: 4px; }
       .viz-reason { font-size: 12px; color: #ef4444; margin-top: auto; font-weight: 600; padding-top: 8px; border-top: 1px solid #fee2e2;}

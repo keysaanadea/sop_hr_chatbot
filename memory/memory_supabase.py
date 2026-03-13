@@ -33,13 +33,17 @@ def save_message(session_id: str, role: str, message: str, **kwargs):
             "role": role,
             "message": message
         }
-        
+
         # Ekstrak field tambahan secara dinamis jika ada (misal dari visualisasi HR)
         for key in ["sql_query", "sql_explanation", "last_query"]:
             if key in kwargs and kwargs[key]:
                 data[key] = kwargs[key]
 
         supabase.table("chat_memory").insert(data).execute()
+
+        # Update last_message_at pada session agar sidebar sorting akurat
+        now_iso = datetime.now().isoformat()
+        supabase.table("chat_sessions").update({"last_message_at": now_iso}).eq("session_id", session_id).execute()
     except Exception as e:
         logger.error(f"❌ Failed to save message: {e}")
 
@@ -81,13 +85,21 @@ def get_sessions(limit: int = 30):
         res = (
             supabase
             .table("chat_sessions")
-            .select("session_id,title,pinned,created_at")
-            .order("pinned", desc=True)
-            .order("created_at", desc=True)
+            .select("session_id,title,pinned,created_at,last_message_at")
             .limit(limit)
             .execute()
         )
-        return res.data
+        data = res.data or []
+        # Sort: pinned dulu, lalu berdasarkan last_message_at (atau created_at jika belum ada pesan)
+        def sort_key(s):
+            ts_str = s.get("last_message_at") or s.get("created_at") or "1970-01-01T00:00:00"
+            try:
+                ts = datetime.fromisoformat(ts_str.replace("Z", "+00:00"))
+            except Exception:
+                ts = datetime.min
+            return (not s.get("pinned", False), -ts.timestamp())
+        data.sort(key=sort_key)
+        return data
     except Exception as e:
         logger.error(f"❌ Failed to get sessions: {e}")
         return []

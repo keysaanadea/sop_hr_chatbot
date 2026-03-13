@@ -250,23 +250,24 @@ casual_chat:
 
 A (SOP_DOCUMENTS / RAG POLICY):
 - User asks for rules, policies, guidelines, requirements, or procedures.
-- User asks for a PERSONAL CALCULATION or SIMULATION using hypothetical numbers (e.g., "Kalau gaji saya 10 juta", "Jika saya lembur 5 jam").
+- User asks for a PERSONAL CALCULATION using THEIR OWN hypothetical numbers, not real DB data (e.g., "Kalau gaji SAYA 10 juta", "Jika SAYA lembur 5 jam", "Hitungkan upah lembur SAYA").
 - Keywords: "Bagaimana aturan", "Apa syarat", "Cara mengajukan", "Boleh atau tidak", "Coba hitungkan upah saya".
 - Example: "Bagaimana aturan lembur di hari libur?" -> A
-- Example: "Kalau gaji saya 5 juta dan saya lembur, dapat berapa?" -> A
+- Example: "Kalau gaji SAYA 5 juta dan saya lembur, dapat berapa?" -> A
 
 B (EMPLOYEE_DATA / SQL DATABASE):
 - User asks for FACTUAL COMPANY DATA, aggregation, statistics, lists of names, or data filtering from the database.
-- MUST NOT be used for personal/hypothetical simulations.
-- Keywords: "Berapa total jumlah", "Siapa saja nama", "Tampilkan daftar", "Penyebaran".
+- ALSO includes GROUP/AGGREGATE calculations using real employee data (e.g., "Jika SELURUH karyawan band 5 lembur 5 jam, berapa total biaya?"). These require pulling actual DB data (salaries, headcount) and should be → B.
+- Keywords: "Berapa total jumlah", "Siapa saja nama", "Tampilkan daftar", "Penyebaran", "seluruh karyawan", "semua band", "total biaya jika".
 - Example: "Siapa saja karyawan yang akan pensiun tahun depan?" -> B
 - Example: "Berapa total biaya lembur divisi IT bulan lalu?" -> B
+- Example: "Jika seluruh karyawan band 5 lembur 5 jam, berapa total uang lembur perusahaan?" -> B
 
 RULES:
 1. Clear greeting → "greeting"
 2. Casual/unrelated → "casual_chat"
-3. Policy question or personal simulation → "A"
-4. Factual company data query → "B"
+3. Policy question OR personal (self) simulation → "A"
+4. Factual company data query OR group/aggregate calculation → "B"
 5. Unsure A/B → default "A"
 6. Unsure casual → treat as HR (A or B)
 
@@ -425,6 +426,75 @@ Pertanyaan Mandiri:"""
         
         return any(keyword in answer for keyword in failure_keywords)
 
+    async def _decompose_query(self, question: str) -> Dict[str, Any]:
+        """
+        Master Orchestrator: Memutuskan rute mana yang aktif.
+        Sekarang lebih ketat dalam membedakan subjek 'SAYA' vs 'SELURUH'.
+        """
+        prompt = f"""Anda adalah Master Orchestrator untuk sistem Multi-Agent HR.
+Tugas Anda: Analisis pertanyaan pengguna dan tentukan mesin mana yang harus dijalankan.
+
+=== MESIN YANG TERSEDIA ===
+- Mesin A (SOP/Policy): Aturan, kebijakan, dan simulasi PERSONAL (Subjek: "Saya", "Kalau gaji saya").
+- Mesin B (HR Database): Data faktual kelompok (Subjek: "Seluruh", "Semua", "Berapa jumlah", "Daftar nama").
+  ⚠️ Database TIDAK punya data gaji. Hanya boleh ditanya JUMLAH orang.
+
+=== ATURAN ROUTING (SANGAT KETAT) ===
+1. PERTANYAAN PERSONAL (Subjek: "Saya", "Gaji saya", "Kalau saya"):
+   - Ini adalah simulasi diri sendiri. User sudah menyediakan angka gajinya sendiri.
+   - SET: run_a=true, run_b=false. 
+   - JANGAN panggil Mesin B. Jangan menanyakan jumlah orang jika user bertanya tentang dirinya sendiri.
+
+2. PERTANYAAN FAKTUAL / DATA (Subjek: "Berapa jumlah", "Siapa saja", "Tampilkan daftar"):
+   - SET: run_a=false, run_b=true.
+
+3. KALKULASI KELOMPOK (Subjek: "Seluruh", "Semua", "Satu divisi", "Total biaya jika"):
+   - Butuh aturan SOP (A) DAN jumlah orang dari database (B).
+   - SET: run_a=true, run_b=true.
+
+Pertanyaan: "{question}"
+
+Balas HANYA dengan JSON valid:
+{{
+  "run_a": true/false,
+  "run_b": true/false,
+  "query_a": "<pertanyaan fokus untuk mesin SOP>",
+  "query_b": "<pertanyaan HANYA tentang jumlah karyawan (jika run_b true)>"
+}}"""
+
+        try:
+            response = await asyncio.to_thread(
+                self.client.chat.completions.create,
+                model=INTENT_CLASSIFIER_MODEL,
+                messages=[{"role": "user", "content": prompt}],
+                temperature=0.0,
+                max_tokens=200,
+                response_format={"type": "json_object"}
+            )
+            parsed = json.loads(response.choices[0].message.content.strip())
+
+            run_a = bool(parsed.get("run_a", True))
+            run_b = bool(parsed.get("run_b", False))
+            
+            # Jika itu pertanyaan "SAYA", pastikan run_b mati meskipun LLM salah tebak
+            question_lower = question.lower()
+            if "saya" in question_lower or "gaji saya" in question_lower:
+                run_b = False
+
+            query_a = parsed.get("query_a") or (question if run_a else "")
+            query_b = parsed.get("query_b") if run_b else ""
+
+            if not run_a and not run_b:
+                run_a = True
+                query_a = question
+
+            logger.info(f"🧭 [ORCHESTRATOR] run_a={run_a} | run_b={run_b} | A: {query_a[:50]} | B: {query_b}")
+            return {"run_a": run_a, "run_b": run_b, "query_a": query_a, "query_b": query_b}
+
+        except Exception as e:
+            logger.warning(f"⚠️ Orchestrator failed: {e}. Defaulting to run_a=True.")
+            return {"run_a": True, "run_b": False, "query_a": question, "query_b": ""}
+
     async def _execute_intent_flow(
         self, intent: str, question: str, user_role: str, session_id: str, 
         history: List[Dict[str, Any]], mode: str, cancellation_check: Optional[Callable]
@@ -455,6 +525,7 @@ Pertanyaan Mandiri:"""
             if isinstance(result, dict) and result.get("data"):
                 return {
                     "answer": result.get("answer", result.get("text", "Analytics completed")),
+                    "query": question,
                     "authorized": True,
                     "tool_called": function_name,
                     "message_type": "analytics_result",
@@ -505,83 +576,159 @@ Pertanyaan Mandiri:"""
         cancellation_check: Optional[Callable] = None
     ) -> Dict[str, Any]:
         try:
-            # ✨ STEP 1: UNIFIED Classification (Greeting + Intent in ONE!)
-            classification = await classify_intent_unified(question, history)
-            
-            # Handle greeting
-            if classification == "greeting":
-                logger.info(f"👋 Greeting detected: '{question}'")
-                return {
-                    "answer": GREETING_RESPONSE,
-                    "authorized": True,
-                    "intent": "greeting",
-                    "tool_called": None,
-                    "is_greeting": True
-                }
-            
-            # Handle casual chat
-            if classification == "casual_chat":
-                logger.info(f"💬 Casual chat detected: '{question}'")
-                return {
-                    "answer": CASUAL_CHAT_RESPONSE,
-                    "authorized": True,
-                    "intent": "casual_chat",
-                    "tool_called": None,
-                    "is_casual_chat": True
-                }
-            
-            # classification is now "A" or "B"
-            original_intent = classification
-            
-            # ✨ STEP 2: Smart Paraphrase (SKIP if clear!)
-            standalone_question = await self._smart_contextualize(question, history)
+            is_hr_user = user_role.lower() in ['hr', 'admin', 'manager']
+            gatekeeper_redirected = False
 
-            # ✨ STEP 3: Execute with intent
-            result = await self._execute_intent_flow(
-                intent=original_intent, 
-                question=standalone_question, 
-                user_role=user_role, 
-                session_id=session_id, 
-                history=history, 
-                mode=mode, 
-                cancellation_check=cancellation_check
-            )
-            
-            # 4. SISTEM FALLBACK NINJA (B -> A)
-            if original_intent == "B" and self._is_failure(result):
-                logger.warning("🔄 Rute B (Database) Gagal. Fallback ke SOP (Ninja Mode)...")
-                
-                fallback_result = await self._execute_intent_flow(
-                    intent="A",
-                    question=standalone_question, 
-                    user_role=user_role, 
-                    session_id=session_id, 
-                    history=history, 
-                    mode=mode, 
-                    cancellation_check=cancellation_check
+            if not is_hr_user:
+                # ⚡ FAST PATH: Employee — skip ALL classification, direct to Route A
+                logger.info(f"⚡ [FAST PATH] role='{user_role}' → Route A only (no classifier, no router)")
+                standalone_question = question
+                run_a, run_b = True, False
+                query_for_a = question
+            else:
+                # ✨ STEP 1: UNIFIED Classification (Greeting + Intent in ONE!)
+                classification = await classify_intent_unified(question, history)
+
+                # Handle greeting
+                if classification == "greeting":
+                    logger.info(f"👋 Greeting detected: '{question}'")
+                    return {
+                        "answer": GREETING_RESPONSE,
+                        "authorized": True,
+                        "intent": "greeting",
+                        "tool_called": None,
+                        "is_greeting": True
+                    }
+
+                # Handle casual chat
+                if classification == "casual_chat":
+                    logger.info(f"💬 Casual chat detected: '{question}'")
+                    return {
+                        "answer": CASUAL_CHAT_RESPONSE,
+                        "authorized": True,
+                        "intent": "casual_chat",
+                        "tool_called": None,
+                        "is_casual_chat": True
+                    }
+
+                # ✨ STEP 2: Smart Paraphrase (SKIP if clear!)
+                standalone_question = await self._smart_contextualize(question, history)
+
+                # ✨ STEP 3: Master Orchestrator — decides which routes to activate
+                orchestration = await self._decompose_query(standalone_question)
+                run_a = orchestration["run_a"]
+                run_b = orchestration["run_b"]
+                query_for_a = orchestration["query_a"]
+                query_for_b = orchestration["query_b"]
+
+                # Safety gatekeeper (belt-and-suspenders for HR path edge cases)
+                if run_b and not is_hr_user:
+                    logger.warning(
+                        f"🔒 [GATEKEEPER] Route B blocked | role='{user_role}' | "
+                        f"session_id='{session_id}' | query='{standalone_question[:60]}'"
+                    )
+                    run_b = False
+                    if not run_a:
+                        run_a = True
+                        query_for_a = standalone_question
+                    gatekeeper_redirected = True
+
+            # ✨ STEP 4: Selective Parallel Execution (only launch what's needed)
+            active_tasks: Dict[str, asyncio.Task] = {}
+            if run_a:
+                active_tasks["a"] = asyncio.create_task(
+                    self._execute_intent_flow(
+                        intent="A", question=query_for_a, user_role=user_role,
+                        session_id=session_id, history=history, mode=mode,
+                        cancellation_check=cancellation_check
+                    )
                 )
-                
-                if not self._is_failure(fallback_result):
-                    fallback_result["is_fallback"] = True
-                    return fallback_result
-                else:
-                    result = fallback_result 
-            
-            # 5. ERROR HTML DOUBLE FAILURE
-            if self._is_failure(result):
-                error_html = """
-                <div style="background-color: #fdfafb; border-left: 4px solid #c81e1e; padding: 16px; border-radius: 6px; font-family: sans-serif; margin-top: 8px;">
-                    <div style="display: flex; align-items: center; margin-bottom: 8px;">
-                        <strong style="color: #c81e1e; font-size: 15px;">⚠️ Informasi Tidak Ditemukan</strong>
-                    </div>
-                    <p style="color: #4b5563; margin: 0; font-size: 14px; line-height: 1.5;">
-                        Maaf, data spesifik atau panduan aturan yang Anda tanyakan tidak tersedia di <b>Sistem Database</b> maupun <b>Buku Panduan (SOP)</b> kami saat ini. <br><br>Silakan periksa kembali kata kunci Anda atau hubungi <b>Departemen HR</b> untuk mendapatkan bantuan lebih lanjut.
-                    </p>
-                </div>
-                """
-                result["answer"] = error_html
+            if run_b:
+                active_tasks["b"] = asyncio.create_task(
+                    self._execute_intent_flow(
+                        intent="B", question=query_for_b, user_role=user_role,
+                        session_id=session_id, history=history, mode=mode,
+                        cancellation_check=cancellation_check
+                    )
+                )
 
-            return result
+            logger.info(f"⚡ Launching routes: {list(active_tasks.keys())}")
+            raw_results = await asyncio.gather(*active_tasks.values(), return_exceptions=True)
+            results = dict(zip(active_tasks.keys(), raw_results))
+
+            # Normalize exceptions to failure dicts
+            for key in list(results.keys()):
+                if isinstance(results[key], Exception):
+                    logger.warning(f"⚠️ Intent {key.upper()} raised exception: {results[key]}")
+                    results[key] = {"error": str(results[key]), "answer": "maaf, terjadi kesalahan", "authorized": True}
+
+            result_a = results.get("a")
+            result_b = results.get("b")
+            a_failed = self._is_failure(result_a) if result_a is not None else True
+            b_failed = self._is_failure(result_b) if result_b is not None else True
+
+            # SCENARIO 1: Both ran and both succeeded → LLM Synthesis
+            if result_a is not None and result_b is not None and not a_failed and not b_failed:
+                # Siapkan data mentah B agar bisa dibaca dan dihitung oleh LLM
+                b_content_for_llm = str(result_b.get("answer", ""))
+                if result_b.get("message_type") == "analytics_result" and "data" in result_b:
+                    b_data = result_b["data"]
+                    b_content_for_llm += f"\n[RAW DATA: Kolom={b_data.get('columns')}, Baris={b_data.get('rows')}]"
+                elif "structured_data" in result_b:
+                    b_content_for_llm += f"\n[RAW DATA: {result_b['structured_data']}]"
+
+                merged_answer = await self._synthesize_results(
+                    question=standalone_question,
+                    answer_a=str(result_a.get("answer", "")),
+                    answer_b=b_content_for_llm,
+                    mode=mode
+                )
+
+                b_has_analytics = (
+                    result_b.get("message_type") == "analytics_result"
+                    or bool(result_b.get("structured_data"))
+                )
+                if b_has_analytics:
+                    result_b["answer"] = merged_answer
+                    logger.info("✅ MERGE: A + B (Used B as base due to analytics)")
+                    return result_b
+                else:
+                    result_a["answer"] = merged_answer
+                    logger.info("✅ MERGE: A + B (Used A as base, no analytics in B)")
+                    return result_a
+
+            # SCENARIO 2: A succeeded (B not run, or B failed)
+            if not a_failed:
+                if gatekeeper_redirected:
+                    original_answer = result_a.get("answer", "")
+                    result_a["answer"] = (
+                        "Maaf, akses ke data analitik database dibatasi untuk peran Anda. "
+                        "Berikut adalah informasi berdasarkan pedoman SOP perusahaan:\n\n"
+                        + original_answer
+                    )
+                logger.info("✅ Returning A (RAG/SOP)")
+                return result_a
+
+            # SCENARIO 3: B succeeded (A not run, or A failed)
+            if not b_failed:
+                logger.info("✅ Returning B (Database)")
+                return result_b
+
+            # SCENARIO 4: Everything that ran failed
+            logger.warning("❌ All active routes failed — returning failure message")
+            error_html = """
+            <div style="background-color: #fdfafb; border-left: 4px solid #c81e1e; padding: 16px; border-radius: 6px; font-family: sans-serif; margin-top: 8px;">
+                <div style="display: flex; align-items: center; margin-bottom: 8px;">
+                    <strong style="color: #c81e1e; font-size: 15px;">⚠️ Informasi Tidak Ditemukan</strong>
+                </div>
+                <p style="color: #4b5563; margin: 0; font-size: 14px; line-height: 1.5;">
+                    Maaf, data spesifik atau panduan aturan yang Anda tanyakan tidak tersedia di <b>Sistem Database</b> maupun <b>Buku Panduan (SOP)</b> kami saat ini. <br><br>Silakan periksa kembali kata kunci Anda atau hubungi <b>Departemen HR</b> untuk mendapatkan bantuan lebih lanjut.
+                </p>
+            </div>
+            """
+            base_result = result_a or result_b or {}
+            base_result["answer"] = error_html
+            return base_result
             
         except asyncio.CancelledError:
             logger.warning(f"🛑 Chat processing cancelled for session {session_id}")
@@ -591,6 +738,71 @@ Pertanyaan Mandiri:"""
             logger.error(f"❌ Chat processing error: {e}", exc_info=True)
             return {"error": f"Maaf, terjadi gangguan: {str(e)}", "authorized": True}
     
+    async def _synthesize_results(
+        self,
+        question: str,
+        answer_a: str,
+        answer_b: str,
+        mode: str
+    ) -> str:
+        fallback = f"**Berdasarkan Panduan/SOP:**\n{answer_a}\n\n**Berdasarkan Data Aktual:**\n{answer_b}"
+        try:
+            temperature = CALL_MODE_TEMPERATURE if mode == "call" else CHAT_MODE_TEMPERATURE
+            max_tokens = CALL_MODE_MAX_TOKENS if mode == "call" else CHAT_MODE_MAX_TOKENS
+
+            response = await asyncio.wait_for(
+                asyncio.to_thread(
+                    self.client.chat.completions.create,
+                    model=self.model,
+                    messages=[
+                        {
+                            "role": "system",
+                            "content": (
+                                "Anda adalah DEN.AI, Senior HR Data Analyst. Tugas Anda adalah mensintesis aturan SOP dan Data Faktual ke dalam satu kesimpulan analisis (Insight) yang komprehensif.\n\n"
+                                "ATURAN MUTLAK:\n"
+                                "1. DILARANG menggunakan Markdown (seperti **, ###, atau LaTeX \\[ \\]). WAJIB gunakan HANYA tag HTML bersih (seperti <h3>, <strong>, <ul>, <li>, <p>, <br>).\n"
+                                "2. WAJIB PERTAHANKAN DETAIL: Jangan membuang informasi penting dari Data A (SOP). Jika ada informasi tentang jarak (km), jenis tarif (Umum/Khusus), atau syarat tertentu, cantumkan semuanya dengan jelas.\n"
+                                "3. Jika ini adalah pertanyaan simulasi biaya, Anda WAJIB melakukan kalkulasi matematika sampai ketemu estimasi TOTAL RUPIAH. PERINGATAN: Lakukan perhitungan perkalian secara perlahan, sesuaikan tarif dengan kondisi di SOP, dan hitung dengan SANGAT AKURAT.\n"
+                                "4. Jika user TIDAK menyebutkan nominal gaji (untuk kasus lembur), WAJIB buat ASUMSI (misal: 'Asumsi rata-rata gaji pokok adalah Rp 5.000.000'). Untuk kasus Perjalanan Dinas, gunakan tarif yang ada di SOP.\n"
+                                "5. Struktur HTML Anda harus terdiri dari 4 bagian:\n"
+                                "   <h3>Aturan & Kebijakan</h3> (Jelaskan aturan lengkap dari SOP, JANGAN dihilangkan detail syarat/jarak/tarifnya)\n"
+                                "   <h3>Data Faktual</h3> (Sebutkan jumlah karyawan dari database)\n"
+                                "   <h3>Simulasi & Insight Biaya</h3> (Tunjukkan step-by-step perkaliannya dengan angka yang PRESISI hingga ketemu Grand Total)\n"
+                                "   <h3>Rujukan Dokumen</h3> (Salin persis sumber dokumen dan bab dari Data A).\n\n"
+                                "Gunakan bahasa Indonesia yang profesional, rapi, dan mudah dibaca oleh jajaran direksi."
+                            )
+                        },
+                        {
+                            "role": "user",
+                            "content": (
+                                f"Pertanyaan User: {question}\n\n"
+                                f"Data dari Buku Panduan/SOP (Data A):\n{answer_a}\n\n"
+                                f"Data dari Database HR (Data B):\n{answer_b}\n\n"
+                                "Berikan laporan analisis HTML Anda sekarang."
+                            )
+                        }
+                    ],
+                    temperature=temperature,
+                    max_tokens=max_tokens
+                ),
+                timeout=15
+            )
+
+            synthesized = response.choices[0].message.content
+            if not synthesized or not synthesized.strip():
+                logger.warning("⚠️ Synthesis returned empty response, using fallback")
+                return fallback
+
+            logger.info("✅ LLM synthesis completed successfully")
+            return synthesized
+
+        except asyncio.TimeoutError:
+            logger.warning("⚠️ Synthesis timed out after 15s, using fallback")
+            return fallback
+        except Exception as e:
+            logger.error(f"❌ Synthesis error: {e}")
+            return fallback
+
     async def _run_completion(self, messages: List[Dict[str, str]], tools: List[Dict[str, Any]] = None, mode: str = "chat"):
         try:
             temperature = CALL_MODE_TEMPERATURE if mode == "call" else CHAT_MODE_TEMPERATURE
@@ -666,18 +878,20 @@ Pertanyaan Mandiri:"""
                     domain_map = {"query_hr_database": "hr", "finance_analysis": "finance"}
                     domain = domain_map.get(function_name, "general")
                     
-                    brief_text = self._extract_brief_summary(getattr(tool_result, 'text_content', ''))
-                    
+                    # Use question as styled HTML heading for chat bubble
+                    title_text = original_question.title() if original_question else "Hasil Analisis Data"
+                    brief_text = f'<h3 class="analytics-query-title">{title_text}</h3>'
+
                     viz_available = (tool_result.visualization_available and len(rows) >= 2 and len(columns) >= 2 and len(rows) <= 500)
                     chart_hints = generate_chart_hints(domain, columns, rows) if viz_available else None
-                    
+
                     result = build_analytics_response(
                         domain=domain, text=brief_text, columns=columns, rows=rows,
                         session_id=session_id, visualization_available=viz_available, chart_hints=chart_hints,
                         sql_query=getattr(tool_result, 'sql_query', None),
                         sql_explanation=getattr(tool_result, 'sql_explanation', None)
                     )
-                    result["answer"] = getattr(tool_result, 'text_content', brief_text)
+                    result["answer"] = brief_text
                     return result
                 
                 return {
@@ -715,9 +929,10 @@ Pertanyaan Mandiri:"""
         if not text_content: return "Analisis data berhasil"
         for line in text_content.split('\n'):
             line = line.strip()
-            if line and not any(line.startswith(c) for c in ('#', '|', '---', '*')) and len(line) > 10:
+            # Strict filter: skip tables, headers, lists, and separators
+            if line and not any(line.startswith(c) for c in ('#', '|', '---', '*', '-', '+')) and len(line) > 10:
                 return line
-        return text_content.split('\n')[0].strip().lstrip('# ') if text_content.split('\n') else "Analisis data berhasil"
+        return "Berikut hasil analisis data Anda."
     
     def _prepare_messages(self, current_question: str, history: List[Dict[str, Any]] = None, mode: str = "chat") -> List[Dict[str, str]]:
         system_prompt = "DENAI, asisten AI perusahaan. Jawab dalam bahasa Indonesia."

@@ -57,30 +57,97 @@ async function getUserRole() {
     
     const data = await response.json();
     
-    userRole = data.role || "Employee";
+    userRole = data.is_hr ? 'hr' : 'employee';
     isHR = data.is_hr || false;
-    
+
     updateUserInterface();
-    
+    _applyRoleSwitcherUI(userRole);
+
   } catch (error) {
     console.error('Failed to get user role:', error);
-    userRole = 'Employee';
+    userRole = 'employee';
     isHR = false;
     updateUserInterface();
+    _applyRoleSwitcherUI('employee');
   }
 }
 
 function updateUserInterface() {
-  if (isHR) {
-    userBadge.classList.add("hr");
-    userRoleText.textContent = "HR Access";
-  } else {
-    userBadge.classList.remove("hr");
-    userRoleText.textContent = "Employee";
+  if (userBadge) {
+    if (isHR) userBadge.classList.add("hr");
+    else userBadge.classList.remove("hr");
   }
-  
+  if (userRoleText) {
+    userRoleText.textContent = isHR ? "HR Access" : "Employee";
+  }
+
   if (window.SessionModule && window.SessionModule.loadSessions) {
     window.SessionModule.loadSessions();
+  }
+}
+
+function switchRole(role) {
+  isHR = (role === 'hr');
+  userRole = role;
+  _applyRoleSwitcherUI(role);
+
+  // Close menu after switching
+  const menu = document.getElementById('roleMenu');
+  if (menu) menu.classList.remove('open');
+
+  console.log(`🔑 Account switched: role=${userRole}, isHR=${isHR}`);
+}
+
+function toggleHRAccess() {
+  switchRole(isHR ? 'employee' : 'hr');
+}
+
+function toggleRoleMenu() {
+  const menu = document.getElementById('roleMenu');
+  if (menu) menu.classList.toggle('open');
+}
+
+function _applyRoleSwitcherUI(role) {
+  const isHRMode = (role === 'hr');
+
+  const avatar = document.getElementById('roleSwitcherAvatar');
+  const name = document.getElementById('roleSwitcherName');
+  const badge = document.getElementById('roleSwitcherBadge');
+
+  if (isHRMode) {
+    if (avatar) avatar.src = 'https://ui-avatars.com/api/?name=Keysa&background=16a34a&color=fff&size=40';
+    if (name) name.textContent = 'Keysa';
+    if (badge) { badge.textContent = 'HR'; badge.className = 'role-switcher-badge hr-badge'; }
+  } else {
+    if (avatar) avatar.src = 'https://ui-avatars.com/api/?name=Staff&background=6b7280&color=fff&size=40';
+    if (name) name.textContent = 'Staff';
+    if (badge) { badge.textContent = 'Karyawan'; badge.className = 'role-switcher-badge employee-badge'; }
+  }
+
+  const checkEmployee = document.getElementById('checkEmployee');
+  const checkHR = document.getElementById('checkHR');
+  if (checkEmployee) checkEmployee.style.display = isHRMode ? 'none' : 'block';
+  if (checkHR) checkHR.style.display = isHRMode ? 'block' : 'none';
+
+  const optEmployee = document.getElementById('optEmployee');
+  const optHR = document.getElementById('optHR');
+  if (optEmployee) optEmployee.classList.toggle('active', !isHRMode);
+  if (optHR) optHR.classList.toggle('active', isHRMode);
+
+  // Schema button: only HR can see it
+  const schemaBtnEl = document.getElementById('schemaBtn');
+  if (schemaBtnEl) schemaBtnEl.style.display = isHRMode ? '' : 'none';
+
+  // Suggestion pill 1: HR gets a data query, employee gets an SOP question
+  const pill1 = document.getElementById('suggestionPill1');
+  if (pill1) {
+    if (isHRMode) {
+      pill1.textContent = '• Berapa jumlah karyawan di SIG?';
+      pill1.onclick = () => { document.getElementById('landingInput').value = 'Berapa jumlah karyawan di SIG?'; startFromLanding(); };
+    } else {
+      pill1.textContent = '• Apa saja hak karyawan kontrak?';
+      pill1.onclick = () => { document.getElementById('landingInput').value = 'Apa saja hak karyawan kontrak?'; startFromLanding(); };
+    }
   }
 }
 
@@ -332,15 +399,26 @@ function removeThinkingAnimation() {
 }
 
 /* ================= ENHANCED CHAT FUNCTIONS ================= */
-function newChat() {
+function newChat(goToLanding = false) {
   activeChatId = crypto.randomUUID();
   conversationHistory = [];
   messages.innerHTML = "";
-  landing.style.display = "none";
-  chat.style.display = "flex";
-  
-  if (!window.isCallModeActive) {
-    chatInput.focus();
+
+  if (goToLanding) {
+    // New Chat button: reset to home landing view
+    landing.style.display = "flex";
+    chat.style.display = "none";
+    if (!window.isCallModeActive) {
+      landingInput.value = "";
+      const bottomBar = document.querySelector('.bottom-bar-input');
+      if (bottomBar) bottomBar.value = "";
+      landingInput.focus();
+    }
+  } else {
+    // Called programmatically (e.g. startFromLanding): switch to chat view
+    landing.style.display = "none";
+    chat.style.display = "flex";
+    if (!window.isCallModeActive) chatInput.focus();
   }
 }
 
@@ -387,17 +465,19 @@ function regenerateQuery(query) {
 }
 
 function startFromLanding() {
-  const text = landingInput.value.trim();
+  const bottomBar = document.querySelector('.bottom-bar-input');
+  const text = (landingInput?.value || '').trim() || (bottomBar?.value || '').trim();
   if (!text || isWaitingForResponse) return;
-  
-  isTextOnlyMode = true;
-  isVoiceToTextMode = false;
-  
-  setInputState(true);
+
+  // Clear landing inputs
+  if (landingInput) landingInput.value = "";
+  if (bottomBar) bottomBar.value = "";
+
+  // Switch to chat view (creates new activeChatId)
   newChat();
-  addMessage("user", text);
-  if (window.askBackend) askBackend(text);
-  landingInput.value = "";
+
+  // Send via the same sendMessage() logic, passing text directly
+  sendMessage(text);
 }
 
 /**
@@ -417,29 +497,57 @@ function addMessage(role, text, shouldSave = true, responseData = null) {
     }
   }
 
-  // 🎨 FOR HR ANALYTICS: Create FULL DASHBOARD
+  // 🎨 FOR HR ANALYTICS: avatar + chat-column (bubble text + data-result block)
   if (role === "bot" && isHRData && window.HRAnalyticsRenderer) {
     try {
-      const hrDashboardContainer = document.createElement("div");
-      hrDashboardContainer.className = "hr-analytics-full-dashboard-wrapper";
-      hrDashboardContainer.style.cssText = `
-        width: 100%;
-        margin: 24px 0;
-        padding: 0;
-        background: transparent;
-        border-radius: 0;
-        box-shadow: none;
-      `;
-      
+      const msgDiv = document.createElement("div");
+      msgDiv.className = "msg bot";
+
+      const avatarDiv = document.createElement("div");
+      avatarDiv.className = "avatar";
+      avatarDiv.textContent = "AI";
+
+      // chat-column wraps both bubble (text) and data-result (table/viz)
+      const chatColumn = document.createElement("div");
+      chatColumn.className = "chat-column";
+
+      // Text bubble — explanation only, no data
+      const cleanText = text ? text.replace(/<[^>]*>/g, '').trim() : '';
+      if (cleanText) {
+        const bubbleDiv = document.createElement("div");
+        bubbleDiv.className = "bubble";
+        bubbleDiv.innerHTML = text;
+        chatColumn.appendChild(bubbleDiv);
+      }
+
+      // Data result block — table, sql explanation, sql query (wider than bubble)
+      const dataResult = document.createElement("div");
+      dataResult.className = "data-result";
+
       const messageId = Date.now();
-      const renderSuccess = window.HRAnalyticsRenderer.render(responseData, messageId, hrDashboardContainer);
-      
+      // Render directly into dataResult container
+      const renderSuccess = window.HRAnalyticsRenderer.render(responseData, messageId, dataResult);
+
       if (renderSuccess) {
+        // FIX: Append the data result (table) to the chat column first.
+        chatColumn.appendChild(dataResult);
+
+        // FIX: Then, append the avatar and the now-complete column to the message div.
+        msgDiv.appendChild(avatarDiv);
+        msgDiv.appendChild(chatColumn);
+        
         if (messages) {
-          messages.appendChild(hrDashboardContainer);
+          messages.appendChild(msgDiv);
           messages.scrollTop = messages.scrollHeight;
         }
-        
+
+        // Register chatColumn so viz offer appends inside it (below data-result)
+        if (responseData.turn_id) {
+          window._hrVizBubbleMap = window._hrVizBubbleMap || {};
+          // Map to chatColumn so visualisations appear as siblings, not children of bubble
+          window._hrVizBubbleMap[responseData.turn_id] = chatColumn; 
+        }
+
         if (shouldSave) {
           conversationHistory.push({
             role: role,
@@ -449,10 +557,11 @@ function addMessage(role, text, shouldSave = true, responseData = null) {
             messageType: responseData?.message_type,
             domain: responseData?.domain,
             sql_query: responseData?.sql_query,
-            sql_explanation: responseData?.sql_explanation
+            sql_explanation: responseData?.sql_explanation,
+            query: responseData?.query
           });
         }
-        return hrDashboardContainer;
+        return msgDiv;
       }
     } catch (error) {
       console.error("❌ Error rendering HR Analytics dashboard:", error);
@@ -467,7 +576,7 @@ function addMessage(role, text, shouldSave = true, responseData = null) {
 /**
  * 🔄 REGULAR MESSAGE RENDERING
  */
-function createRegularMessage(role, text, shouldSave = true, responseData = null) {
+function createRegularMessage(role, text, shouldSave = true) {
   const div = document.createElement("div");
   div.className = `msg ${role==="user"?"user-msg user":"bot"}`;
   
@@ -511,7 +620,12 @@ function createRegularMessage(role, text, shouldSave = true, responseData = null
     messages.appendChild(div);
     messages.scrollTop = messages.scrollHeight;
   }
-  
+
+  // Push AI reply text to the live call transcript log
+  if (role === 'bot' && window.isCallModeActive) {
+    window.CallModeModule?.appendCallTranscript('ai', stripHtml(text));
+  }
+
   if (shouldSave) {
     conversationHistory.push({
       role: role,
@@ -575,7 +689,8 @@ function extractAnalyticsData(responseData) {
       sql_query: responseData.sql_query || null,
       sql_explanation: responseData.sql_explanation || null,
       visualization_available: responseData.visualization_available || false,
-      turn_id: responseData.turn_id
+      turn_id: responseData.turn_id,
+      query: responseData.query
     };
   }
   
@@ -617,17 +732,17 @@ function setInputState(disabled) {
   isWaitingForResponse = disabled;
 }
 
-function sendMessage() {
-  const text = chatInput.value.trim();
+function sendMessage(textOverride) {
+  const text = (textOverride || chatInput.value).trim();
   if (!text || isWaitingForResponse) return;
 
   isTextOnlyMode = true;
   isVoiceToTextMode = false;
 
-  // 🔥 NEW: Store last query for regenerate feature
+  // Store last query for regenerate feature
   window.CoreApp._lastUserQuery = text;
-  
-  // 🔥 NEW: Hide old stopped messages when sending new message
+
+  // Hide old stopped messages when sending new message
   hideOldRegenerateButtons();
 
   addMessage("user", text);
@@ -711,6 +826,38 @@ function setupEventListeners() {
     }
   });
 
+  // Landing send button (belt-and-suspenders alongside the inline onclick)
+  const landingSendBtn = document.querySelector('.landing-send');
+  if (landingSendBtn) {
+    landingSendBtn.addEventListener("click", startFromLanding);
+  }
+
+  // Bottom bar send button on landing page
+  const redSendBtn = document.querySelector('.red-send-btn');
+  if (redSendBtn) {
+    redSendBtn.addEventListener("click", () => {
+      const bottomBar = document.querySelector('.bottom-bar-input');
+      if (bottomBar?.value.trim()) {
+        if (landingInput) landingInput.value = bottomBar.value;
+        startFromLanding();
+      }
+    });
+  }
+
+  // Bottom bar Enter key
+  const bottomBarInput = document.querySelector('.bottom-bar-input');
+  if (bottomBarInput) {
+    bottomBarInput.addEventListener("keypress", (e) => {
+      if (e.key === "Enter" && !isWaitingForResponse && !e.shiftKey && !window.isCallModeActive) {
+        e.preventDefault();
+        if (bottomBarInput.value.trim()) {
+          if (landingInput) landingInput.value = bottomBarInput.value;
+          startFromLanding();
+        }
+      }
+    });
+  }
+
   chatInput.addEventListener("input", () => {
     if (window.SpeechModule?.isListening && !window.isCallModeActive) {
       window.SpeechModule.stopRecognition();
@@ -720,6 +867,15 @@ function setupEventListeners() {
   landingInput.addEventListener("input", () => {
     if (window.SpeechModule?.isListening && !window.isCallModeActive) {
       window.SpeechModule.stopRecognition();
+    }
+  });
+
+  // Close role menu when clicking outside
+  document.addEventListener('click', (e) => {
+    const switcher = document.getElementById('roleSwitcher');
+    if (switcher && !switcher.contains(e.target)) {
+      const menu = document.getElementById('roleMenu');
+      if (menu) menu.classList.remove('open');
     }
   });
 
@@ -747,7 +903,9 @@ window.CoreApp = {
   get activeChatId() { return activeChatId; },
   set activeChatId(value) { activeChatId = value; },
   get userRole() { return userRole; },
+  set userRole(value) { userRole = value; },
   get isHR() { return isHR; },
+  set isHR(value) { isHR = value; },
   get isWaitingForResponse() { return isWaitingForResponse; },
   get isTextOnlyMode() { return isTextOnlyMode; },
   set isTextOnlyMode(value) { isTextOnlyMode = value; },
@@ -755,6 +913,9 @@ window.CoreApp = {
   set isVoiceToTextMode(value) { isVoiceToTextMode = value; },
   
   addMessage,
+  toggleHRAccess,
+  switchRole,
+  toggleRoleMenu,
   setInputState,
   showProcessingMessage,
   showTypingIndicator,

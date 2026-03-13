@@ -47,88 +47,23 @@ class EnhancedHRAnalyticsRenderer {
       }
       
       if (responseData.data && responseData.data.rows && responseData.data.rows.length > 0) {
-        dashboardContainer.appendChild(this.renderSmartSortableDataTable(responseData.data, messageId));
+        // Pass full responseData to access 'text' (answer) for natural labels
+        dashboardContainer.appendChild(this.renderSmartSortableDataTable(responseData, messageId));
       }
-      
+
       container.appendChild(dashboardContainer);
-      
+
       this.renderedAnalytics.set(messageId, {
         data: responseData,
         timestamp: Date.now(),
         containerElement: dashboardContainer
       });
-      
-      // 🚀 THE MAGIC FIX: Aktifkan Magnet untuk menyedot grafik!
-      this.captureAndBindVisualization(dashboardContainer);
-      
+
       return true;
     } catch (error) {
       console.error("❌ Error in enhanced dashboard rendering:", error);
       return false;
     }
-  }
-
-  /**
-   * 🧲 THE TRACTOR BEAM: Menangkap grafik yang terbang ke bawah, 
-   * dan memaksanya nempel di bawah tabel ini!
-   */
-  captureAndBindVisualization(dashboardContainer) {
-    const chatBubble = dashboardContainer.closest('.msg.bot');
-    if (!chatBubble) return;
-
-    // 1. Cari dulu, barangkali grafiknya sudah keburu muncul
-    const existingUnbound = Array.from(document.querySelectorAll('.msg.bot')).find(b => 
-        (b.innerHTML.includes('Galeri Visualisasi') || b.innerHTML.includes('Alternatif Visualisasi')) && 
-        !b.hasAttribute('data-bound')
-    );
-    
-    if (existingUnbound) {
-        this.bindVizToTable(existingUnbound, chatBubble);
-        return;
-    }
-    
-    // 2. Jika belum muncul, pasang radar penjebak (Observer)
-    const chatContainer = document.querySelector('.messages') || document.body;
-    const observer = new MutationObserver((mutations) => {
-        for (const mutation of mutations) {
-            for (const node of mutation.addedNodes) {
-                if (node.nodeType === 1 && node.classList && node.classList.contains('msg')) {
-                    if (node.innerHTML.includes('Galeri Visualisasi') || node.innerHTML.includes('Alternatif Visualisasi')) {
-                        if (!node.hasAttribute('data-bound')) {
-                            this.bindVizToTable(node, chatBubble);
-                            observer.disconnect(); // Matikan radar setelah dapat
-                            return;
-                        }
-                    }
-                }
-            }
-        }
-    });
-    
-    observer.observe(chatContainer, { childList: true, subtree: true });
-    setTimeout(() => observer.disconnect(), 5000); // Matikan paksa jika 5 detik tidak ada grafik
-  }
-
-  // Menempelkan grafik ke tabel dan menghilangkan styling abu-abu yang sempit
-  bindVizToTable(vizBubble, tableBubble) {
-    vizBubble.setAttribute('data-bound', 'true');
-    vizBubble.style.setProperty('max-width', '95%', 'important');
-    vizBubble.style.setProperty('width', '100%', 'important');
-    vizBubble.style.setProperty('margin-top', '-5px', 'important'); // Tarik lebih rapat
-    
-    const innerBubble = vizBubble.querySelector('.bubble');
-    if (innerBubble) {
-        innerBubble.classList.add('hr-analytics-bubble');
-        innerBubble.style.setProperty('background', 'transparent', 'important');
-        innerBubble.style.setProperty('border', 'none', 'important');
-        innerBubble.style.setProperty('box-shadow', 'none', 'important');
-        innerBubble.style.setProperty('padding', '0', 'important');
-        innerBubble.style.setProperty('width', '100%', 'important');
-        innerBubble.style.setProperty('max-width', '100%', 'important');
-    }
-    
-    // Pindahkan persis setelah chat bubble tabel
-    tableBubble.insertAdjacentElement('afterend', vizBubble);
   }
 
   renderAnalysisWithFallback(responseData, container) {
@@ -191,9 +126,6 @@ class EnhancedHRAnalyticsRenderer {
     const container = document.createElement('div');
     container.className = 'hr-analytics-dashboard-enhanced';
     container.id = `hr-analytics-dashboard-${messageId}`;
-    container.style.width = '100%';
-    container.style.maxWidth = 'none';
-    container.style.margin = '0';
     return container;
   }
 
@@ -223,28 +155,96 @@ class EnhancedHRAnalyticsRenderer {
     return card;
   }
 
-  renderSmartSortableDataTable(dataObj, messageId) {
-    const card = document.createElement('div');
-    card.className = 'hr-table-card-enhanced sortable-table';
+  renderSmartSortableDataTable(responseData, messageId) {
+    const dataObj = responseData.data || responseData; // Handle both structure types
     const rows = dataObj.rows || [];
-    let total = dataObj.total;
-    
+
     if (rows.length === 0) {
+      const card = document.createElement('div');
+      card.className = 'hr-table-card-enhanced';
       card.innerHTML = '<div class="hr-no-data-enhanced">No data available</div>';
       return card;
     }
+
+    // Tampilkan stat card jika hanya 1 baris data
+    // FIX: Stat card hanya untuk metric simple (<= 2 kolom). Kalau detail banyak kolom, pakai tabel.
+    const columns = Object.keys(rows[0]);
     
+    let title = responseData.query
+      ? responseData.query.replace(/\b\w/g, c => c.toUpperCase())
+      : "Data Lengkap";
+
+    if (rows.length === 1 && columns.length <= 2) {
+      return this.renderSingleStatCard(rows[0], messageId, responseData.text || responseData.answer, title);
+    }
+
+    const card = document.createElement('div');
+    card.className = 'hr-table-card-enhanced sortable-table';
+    let total = dataObj.total;
+
     if (total == null || total === 'N/A') {
       const valueColumn = this.findValueColumn(Object.keys(rows[0]), rows[0]);
       if (valueColumn) total = rows.reduce((sum, row) => sum + (row[valueColumn] || 0), 0);
     }
-    
+
     const smartSort = this.detectOptimalSort(rows);
     const sortedRows = this.sortTableData(rows, smartSort.column, smartSort.direction);
-    
+
     this.tableSortState.set(messageId, { column: smartSort.column, direction: smartSort.direction });
-    this.renderSortableTableHTML(card, sortedRows, total, messageId);
+    this.renderSortableTableHTML(card, sortedRows, total, messageId, title);
     return card;
+  }
+
+  renderSingleStatCard(row, messageId, labelText, title) {
+    const card = document.createElement('div');
+    card.className = 'hr-stat-card';
+    const columns = Object.keys(row);
+    const valueColumn = this.findValueColumn(columns, row);
+    
+    // Logic: Use natural text from AI answer as label if possible
+    let label = '';
+    if (labelText) {
+        const tmp = document.createElement('div');
+        tmp.innerHTML = labelText;
+        label = tmp.textContent || tmp.innerText || '';
+        
+        // 🔥 FIX: Ignore generic success messages to force smart label generation
+        const genericMessages = ['analisis data berhasil', 'berikut data', 'tampilkan data', 'data ditemukan', 'hasil analisis', 'data:'];
+        if (genericMessages.some(msg => label.toLowerCase().includes(msg)) || label.length < 5) {
+            label = '';
+        }
+        
+        if (label.length > 80) label = label.substring(0, 80) + '...';
+    }
+    
+    // FIX: Hilangkan label kolom database (e.g. "Company Home", "Jumlah Karyawan 100")
+    // Jika tidak ada label natural dari AI, biarkan kosong (tampilkan angka saja).
+    
+    const value = valueColumn ? this.formatNumber(row[valueColumn]) : String(Object.values(row)[0]);
+    const sqlButtonHtml = this.renderSQLInspectorButton(messageId);
+
+    const cardTitle = (title && title !== "Data Lengkap") ? title : "Ringkasan Data";
+
+    card.innerHTML = `
+      <div class="hr-stat-card-header">
+        <div style="display:flex; align-items:center; gap:8px;"><span>📊</span><h4 style="font-size: 13px; line-height: 1.3;">${cardTitle}</h4></div>
+        ${sqlButtonHtml}
+      </div>
+      <div class="hr-stat-card-body">
+        ${label ? `<div class="hr-stat-label">${label}</div>` : ''}
+        <div class="hr-stat-value">${value}</div>
+      </div>`;
+    
+    this.attachSQLInspectorHandlers(card, messageId);
+    return card;
+  }
+
+  renderSQLActionRow(messageId) {
+    const row = document.createElement('div');
+    row.className = 'hr-sql-action-row';
+    row.innerHTML = this.renderSQLInspectorButton(messageId);
+    this.attachSQLInspectorHandlers(row, messageId);
+    return row;
   }
 
   detectOptimalSort(rows) {
@@ -289,7 +289,7 @@ class EnhancedHRAnalyticsRenderer {
 
   extractNumber(str) { const match = str.match(this.numRegex); return match ? parseInt(match[1], 10) : null; }
 
-  renderSortableTableHTML(card, rows, total, messageId) {
+  renderSortableTableHTML(card, rows, total, messageId, title = "Data Lengkap") {
     const firstRow = rows[0]; const columns = Object.keys(firstRow);
     const currentSort = this.tableSortState.get(messageId);
     const headerCells = columns.map(col => {
@@ -300,9 +300,15 @@ class EnhancedHRAnalyticsRenderer {
     const dataRows = rows.map(row => `<tr class="hr-table-row-enhanced">${columns.map(col => `<td class="hr-table-cell-enhanced">${this.formatCellValue(row[col], col)}</td>`).join('')}</tr>`).join('');
 
     card.innerHTML = `
-      <div class="hr-table-header-section-enhanced">
-        <div class="hr-table-title-section"><div class="hr-table-icon-enhanced">📈</div><h4 class="hr-table-title-enhanced">Data Lengkap</h4>${this.renderSQLInspectorButton(messageId)}</div>
-        <div class="hr-badge-enhanced">${rows.length} Kategori</div>
+      <div class="hr-table-header-section-enhanced" style="flex-direction: column; align-items: flex-start; gap: 2px; padding-bottom: 12px;">
+        <div style="display: flex; justify-content: space-between; width: 100%; align-items: center;">
+            <div class="hr-table-title-section" style="gap: 10px; flex: 1; min-width: 0;">
+                <div class="hr-table-icon-enhanced" style="background: rgba(255,255,255,0.2); width: 28px; height: 28px; display: flex; align-items: center; justify-content: center; border-radius: 6px; flex-shrink: 0;">📊</div>
+                <h4 class="hr-table-title-enhanced" style="font-size: 14px; line-height: 1.3; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${title}</h4>
+            </div>
+            ${this.renderSQLInspectorButton(messageId)}
+        </div>
+        <div class="hr-table-subtitle-enhanced" style="font-size: 11px; color: rgba(255,255,255,0.85); margin-left: 38px; font-weight: 500;">Menampilkan ${rows.length} kategori</div>
       </div>
       <div class="hr-table-wrapper-enhanced"><table class="hr-table-main-enhanced"><thead class="hr-table-head-enhanced"><tr>${headerCells}</tr></thead><tbody class="hr-table-body-enhanced">${dataRows}</tbody></table></div>
       <div class="hr-table-footer-enhanced"><span class="hr-table-total-enhanced">Total: <strong>${this.formatNumber(total || 'N/A')}</strong></span></div>`;
@@ -353,12 +359,25 @@ class EnhancedHRAnalyticsRenderer {
       const sortedRows = this.sortTableData(rows, column, newDirection);
       const dashboard = document.getElementById(`hr-analytics-dashboard-${tableId}`);
       const tableCard = dashboard ? dashboard.querySelector('.hr-table-card-enhanced') : document.querySelector('.hr-table-card-enhanced');
-      if (tableCard) this.renderSortableTableHTML(tableCard, sortedRows, total, tableId);
+      
+      let title = "Data Lengkap";
+      if (analytics && analytics.data && analytics.data.query) {
+        title = analytics.data.query.replace(/\b\w/g, c => c.toUpperCase());
+      }
+      if (tableCard) this.renderSortableTableHTML(tableCard, sortedRows, total, tableId, title);
     }
   }
 
   findValueColumn(columns, firstRow) { return columns.find(col => !col.toLowerCase().match(/category|percent|persentase/) && typeof firstRow[col] === 'number'); }
-  getDisplayName(columnName) { const displayMap = { 'category': 'Kategori', 'value': 'Jumlah', 'percent': 'Persentase', 'persentase': 'Persentase', 'jumlah': 'Jumlah', 'company_host': 'Company Host', 'band': 'Band', 'grade': 'Grade', 'education_level': 'Tingkat Pendidikan', 'location': 'Lokasi', 'department': 'Departemen', 'status': 'Status', '_percentage': 'Persentase' }; return displayMap[columnName.toLowerCase()] || columnName.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase()); }
+  getDisplayName(columnName) { 
+      const displayMap = { 
+          'category': 'Kategori', 'value': 'Jumlah', 'percent': 'Persentase', 'persentase': 'Persentase', 'jumlah': 'Jumlah', 
+          'company_host': 'Company', 'company_home': 'Company', 'band': 'Band', 'grade': 'Grade', 
+          'education_level': 'Tingkat Pendidikan', 'location': 'Lokasi', 'department': 'Departemen', 'status': 'Status', 
+          '_percentage': 'Persentase', 'count': 'Total', 'total_count': 'Total', 'employee_count': 'Total Karyawan', 'salary': 'Gaji', 'total_salary': 'Total Gaji'
+      }; 
+      return displayMap[columnName.toLowerCase()] || columnName.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase()); 
+  }
   formatCellValue(value, columnName) {
     if (value == null) return '<span class="hr-null-enhanced">-</span>';
     if (columnName.toLowerCase().match(/percent|persentase/)) return `<span class="hr-percentage-enhanced">${this.formatPercentage(value)}</span>`;
@@ -372,86 +391,73 @@ class EnhancedHRAnalyticsRenderer {
     if (document.getElementById('hr-analytics-enhanced-sortable-styles')) return;
     const style = document.createElement('style'); style.id = 'hr-analytics-enhanced-sortable-styles';
     style.textContent = `
-      .hr-analytics-dashboard-enhanced { display: flex; flex-direction: column; gap: 20px; margin: 20px 0; width: 100%; max-width: none; font-family: 'Inter', system-ui, -apple-system, sans-serif; animation: hrFadeInEnhanced 0.6s ease-out; }
-      .hr-insight-card-enhanced, .hr-facts-card-enhanced, .hr-table-card-enhanced { background: #ffffff; border-radius: 12px; overflow: hidden; border: 2px solid #e2e8f0; box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1); margin-bottom: 4px; }
-      .hr-insight-header-enhanced, .hr-table-header-section-enhanced { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 20px 28px; background: linear-gradient(135deg, #1e40af 0%, #3b82f6 100%); color: #ffffff; }
-      .hr-facts-header-enhanced { display: flex; align-items: center; gap: 12px; padding: 20px 28px; background: linear-gradient(135deg, #dc2626 0%, #ef4444 100%); color: #ffffff; }
-      .hr-insight-icon-enhanced, .hr-facts-icon-enhanced, .hr-table-icon-enhanced { font-size: 20px; filter: drop-shadow(0 2px 4px rgba(0,0,0,0.1)); }
-      .hr-insight-title-enhanced, .hr-facts-title-enhanced, .hr-table-title-enhanced { margin: 0; font-size: 18px; font-weight: 700; text-shadow: 0 1px 2px rgba(0,0,0,0.1); }
-      .hr-insight-content-enhanced, .hr-facts-content-enhanced { padding: 16px 28px 24px; background: #f8fafc; }
-      .hr-insight-summary-enhanced { margin: 0; font-size: 16px; line-height: 1.6; color: #475569; font-weight: 500; }
-      .hr-facts-list-enhanced { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 12px; }
-      .hr-fact-item-enhanced { display: flex; align-items: flex-start; gap: 12px; padding: 12px 16px; background: #ffffff; border-radius: 8px; border-left: 4px solid #dc2626; box-shadow: 0 1px 3px 0 rgb(0 0 0 / 0.1); font-size: 15px; line-height: 1.5; color: #374151; font-weight: 500; }
-      .hr-fact-item-enhanced:before { content: "✓"; color: #dc2626; font-weight: bold; font-size: 14px; flex-shrink: 0; margin-top: 1px; }
-      .hr-table-title-section { display: flex; align-items: center; gap: 12px; }
-      .hr-badge-enhanced { background: rgba(255, 255, 255, 0.2); color: #ffffff; padding: 8px 16px; border-radius: 24px; font-size: 14px; font-weight: 600; border: 1px solid rgba(255, 255, 255, 0.3); }
-      
-      /* 🚀 FIX 1: Kembalikan wrapper ke mode normal tanpa padding aneh */
-      .hr-table-wrapper-enhanced { 
-        overflow-x: auto; 
-        max-height: 500px; 
+      .hr-analytics-dashboard-enhanced { display: flex; flex-direction: column; gap: 8px; margin: 0; width: 100%; max-width: none; font-family: 'Inter', system-ui, -apple-system, sans-serif; animation: hrFadeInEnhanced 0.4s ease-out; }
+      .hr-insight-card-enhanced, .hr-facts-card-enhanced { background: #ffffff; border-radius: 10px; overflow: hidden; border: 1px solid #e2e8f0; box-shadow: 0 2px 4px -1px rgb(0 0 0 / 0.07); margin-bottom: 2px; }
+      .hr-table-card-enhanced { background: #ffffff; border-radius: 10px; overflow: hidden; border: 1px solid #e2e8f0; box-shadow: 0 2px 4px -1px rgb(0 0 0 / 0.07); margin-bottom: 2px; width: 100%; }
+      .hr-insight-header-enhanced, .hr-table-header-section-enhanced { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 10px 14px; background: linear-gradient(135deg, #1e40af 0%, #3b82f6 100%); color: #ffffff; }
+      .hr-facts-header-enhanced { display: flex; align-items: center; gap: 8px; padding: 10px 14px; background: linear-gradient(135deg, #dc2626 0%, #ef4444 100%); color: #ffffff; }
+      .hr-insight-icon-enhanced, .hr-facts-icon-enhanced, .hr-table-icon-enhanced { font-size: 15px; }
+      .hr-insight-title-enhanced, .hr-facts-title-enhanced, .hr-table-title-enhanced { margin: 0; font-size: 13px; font-weight: 700; }
+      .hr-insight-content-enhanced, .hr-facts-content-enhanced { padding: 10px 14px 12px; background: #f8fafc; }
+      .hr-insight-summary-enhanced { margin: 0; font-size: 13px; line-height: 1.5; color: #475569; font-weight: 500; }
+      .hr-facts-list-enhanced { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 6px; }
+      .hr-fact-item-enhanced { display: flex; align-items: flex-start; gap: 8px; padding: 8px 10px; background: #ffffff; border-radius: 6px; border-left: 3px solid #dc2626; font-size: 13px; line-height: 1.4; color: #374151; font-weight: 500; }
+      .hr-fact-item-enhanced:before { content: "✓"; color: #dc2626; font-weight: bold; font-size: 12px; flex-shrink: 0; margin-top: 1px; }
+      .hr-table-title-section { display: flex; align-items: center; gap: 8px; }
+      .hr-badge-enhanced { background: rgba(255, 255, 255, 0.2); color: #ffffff; padding: 3px 9px; border-radius: 24px; font-size: 11px; font-weight: 600; border: 1px solid rgba(255, 255, 255, 0.3); }
+
+      .hr-table-wrapper-enhanced {
+        overflow-x: auto;
+        max-height: 240px;
         overflow-y: auto;
       }
+      .hr-table-wrapper-enhanced::-webkit-scrollbar { height: 6px; width: 6px; }
+      .hr-table-wrapper-enhanced::-webkit-scrollbar-track { background: #f8fafc; }
+      .hr-table-wrapper-enhanced::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+      .hr-table-wrapper-enhanced::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
 
-      /* 🎨 FIX 2: Scrollbar yang menyatu dengan background tabel */
-      .hr-table-wrapper-enhanced::-webkit-scrollbar {
-        height: 8px;
-        width: 8px;
-      }
-      .hr-table-wrapper-enhanced::-webkit-scrollbar-track {
-        background: #f8fafc; /* Disamakan dengan background Footer biar rapi */
-      }
-      .hr-table-wrapper-enhanced::-webkit-scrollbar-thumb {
-        background: #cbd5e1;
-        border-radius: 4px;
-        border: 2px solid #f8fafc;
-      }
-      .hr-table-wrapper-enhanced::-webkit-scrollbar-thumb:hover {
-        background: #94a3b8;
-      }
-      
-      .hr-table-main-enhanced { width: 100%; border-collapse: collapse; font-size: 15px; font-family: 'Inter', system-ui, sans-serif; }
-      .hr-table-header-enhanced { background: #f3f4f6; padding: 18px 28px; text-align: left; font-weight: 700; color: #374151; border-bottom: 2px solid #1e40af; position: sticky; top: 0; z-index: 2; font-size: 15px; text-transform: uppercase; letter-spacing: 0.5px; white-space: nowrap; user-select: none; transition: background-color 0.2s ease; }
+      .hr-table-main-enhanced { width: 100%; border-collapse: collapse; font-size: 13px; font-family: 'Inter', system-ui, sans-serif; }
+      .hr-table-header-enhanced { background: #f3f4f6; padding: 8px 14px; text-align: left; font-weight: 700; color: #374151; border-bottom: 2px solid #1e40af; position: sticky; top: 0; z-index: 2; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; white-space: nowrap; user-select: none; transition: background-color 0.2s ease; }
       .hr-table-header-enhanced.sortable-header:hover { background: #e5e7eb; cursor: pointer; }
       .hr-table-header-enhanced.sorted { background: #dbeafe !important; color: #1e40af !important; }
-      .sort-icon { margin-left: 8px; font-size: 12px; opacity: 0.6; transition: all 0.2s ease; }
+      .sort-icon { margin-left: 4px; font-size: 10px; opacity: 0.6; transition: all 0.2s ease; }
       .hr-table-header-enhanced.sorted .sort-icon { opacity: 1; color: #1e40af !important; font-weight: bold; }
-      
       .hr-table-row-enhanced:nth-child(even) { background: #f9fafb; }
-      
-      /* 🚀 FIX 3: HAPUS "transform: scale(1.001)" DI SINI! Inilah biang kerok getarannya! */
-      .hr-table-row-enhanced:hover { 
-        background: #e2e8f0; /* Warna hover dibuat sedikit lebih gelap biar jelas */
-        transition: background-color 0.2s ease; 
-      }
-      
-      .hr-table-cell-enhanced { padding: 18px 28px; border-bottom: 1px solid #e5e7eb; color: #111827; font-weight: 500; font-size: 16px; vertical-align: middle; }
-      .hr-table-footer-enhanced { padding: 20px 28px; background: #f8fafc; border-top: 2px solid #1e40af; text-align: right; }
-      .hr-table-total-enhanced { font-size: 16px; color: #111827; font-weight: 600; }
-      .hr-table-total-enhanced strong { font-size: 20px; color: #1e40af; font-weight: 700; }
-      .hr-percentage-enhanced { color: #059669; font-weight: 700; background: linear-gradient(135deg, #ecfdf5 0%, #d1fae5 100%); padding: 4px 8px; border-radius: 6px; font-size: 14px; font-family: 'Courier New', monospace; border: 1px solid #a7f3d0; white-space: nowrap; }
-      .sql-inspector-btn { background: rgba(255, 255, 255, 0.15); color: #ffffff; border: 1px solid rgba(255, 255, 255, 0.3); padding: 6px 12px; border-radius: 6px; font-size: 12px; font-weight: 600; cursor: pointer; display: flex; align-items: center; gap: 4px; transition: all 0.2s ease; margin-left: auto; }
-      .sql-inspector-btn:hover { background: rgba(255, 255, 255, 0.25); transform: scale(1.05); }
-      .sql-inspector-btn svg { width: 14px; height: 14px; }
+      .hr-table-row-enhanced:hover { background: #e2e8f0; transition: background-color 0.15s ease; }
+      .hr-table-cell-enhanced { padding: 8px 14px; border-bottom: 1px solid #e5e7eb; color: #111827; font-weight: 500; font-size: 13px; vertical-align: middle; }
+      .hr-table-footer-enhanced { padding: 8px 14px; background: #f8fafc; border-top: 2px solid #1e40af; text-align: right; }
+      .hr-table-total-enhanced { font-size: 13px; color: #111827; font-weight: 600; }
+      .hr-table-total-enhanced strong { font-size: 15px; color: #1e40af; font-weight: 700; }
+      .hr-percentage-enhanced { color: #059669; font-weight: 700; background: #ecfdf5; padding: 2px 6px; border-radius: 4px; font-size: 12px; font-family: 'Courier New', monospace; border: 1px solid #a7f3d0; white-space: nowrap; }
+      .sql-inspector-btn { background: rgba(255, 255, 255, 0.15); color: #ffffff; border: 1px solid rgba(255, 255, 255, 0.3); padding: 4px 9px; border-radius: 5px; font-size: 11px; font-weight: 600; cursor: pointer; display: flex; align-items: center; gap: 4px; transition: all 0.2s ease; margin-left: auto; }
+      .sql-inspector-btn:hover { background: rgba(255, 255, 255, 0.25); }
+      .sql-inspector-btn svg { width: 12px; height: 12px; }
       .sql-inspector-modal { position: fixed; top: 0; left: 0; right: 0; bottom: 0; z-index: 9999; display: flex; align-items: center; justify-content: center; animation: modalFadeIn 0.3s ease-out; }
       .sql-inspector-backdrop { position: absolute; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0, 0, 0, 0.7); backdrop-filter: blur(4px); }
       .sql-inspector-content { background: #ffffff; border-radius: 12px; box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3); max-width: 700px; width: 90vw; max-height: 80vh; overflow-y: auto; position: relative; z-index: 10000; animation: modalSlideIn 0.3s ease-out; text-align: left;}
-      .sql-inspector-header { display: flex; justify-content: space-between; align-items: center; padding: 20px 24px; border-bottom: 2px solid #1e40af; background: linear-gradient(135deg, #1e40af 0%, #3b82f6 100%); color: #ffffff; }
-      .sql-inspector-header h3 { margin: 0; font-size: 18px; font-weight: 700; }
-      .sql-inspector-close { background: none; border: none; color: #ffffff; font-size: 24px; font-weight: bold; cursor: pointer; padding: 4px 8px; border-radius: 4px; transition: background-color 0.2s ease; }
+      .sql-inspector-header { display: flex; justify-content: space-between; align-items: center; padding: 14px 18px; border-bottom: 2px solid #1e40af; background: linear-gradient(135deg, #1e40af 0%, #3b82f6 100%); color: #ffffff; }
+      .sql-inspector-header h3 { margin: 0; font-size: 15px; font-weight: 700; }
+      .sql-inspector-close { background: none; border: none; color: #ffffff; font-size: 20px; font-weight: bold; cursor: pointer; padding: 2px 6px; border-radius: 4px; transition: background-color 0.2s ease; }
       .sql-inspector-close:hover { background: rgba(255, 255, 255, 0.2); }
-      .sql-explanation-section, .sql-query-section { padding: 20px 24px; background: #f8fafc; border-bottom: 1px solid #e2e8f0; }
-      .sql-explanation-section h4, .sql-query-section h4 { margin: 0 0 12px 0; font-size: 16px; font-weight: 700; color: #1e40af; }
-      .sql-explanation-text { margin: 0; font-size: 15px; line-height: 1.6; color: #374151; background: #ffffff; padding: 16px; border-radius: 8px; border-left: 4px solid #1e40af; }
-      .sql-query-code { background: #1f2937; color: #e5e7eb; padding: 16px; border-radius: 8px; overflow-x: auto; font-family: 'JetBrains Mono', 'Courier New', monospace; font-size: 13px; line-height: 1.5; margin: 0 0 16px 0; border: 1px solid #374151; }
+      .sql-explanation-section, .sql-query-section { padding: 14px 18px; background: #f8fafc; border-bottom: 1px solid #e2e8f0; }
+      .sql-explanation-section h4, .sql-query-section h4 { margin: 0 0 8px 0; font-size: 14px; font-weight: 700; color: #1e40af; }
+      .sql-explanation-text { margin: 0; font-size: 13px; line-height: 1.5; color: #374151; background: #ffffff; padding: 12px; border-radius: 6px; border-left: 3px solid #1e40af; }
+      .sql-query-code { background: #1f2937; color: #e5e7eb; padding: 12px; border-radius: 8px; overflow-x: auto; font-family: 'JetBrains Mono', 'Courier New', monospace; font-size: 12px; line-height: 1.5; margin: 0 0 12px 0; border: 1px solid #374151; }
       .sql-query-code code { color: #10b981; }
-      .sql-copy-btn { background: #1e40af; color: #ffffff; border: none; padding: 8px 16px; border-radius: 6px; font-size: 14px; font-weight: 600; cursor: pointer; transition: all 0.2s ease; display: flex; align-items: center; gap: 6px; }
-      .sql-copy-btn:hover { background: #1d4ed8; transform: scale(1.05); }
+      .sql-copy-btn { background: #1e40af; color: #ffffff; border: none; padding: 7px 14px; border-radius: 6px; font-size: 13px; font-weight: 600; cursor: pointer; transition: all 0.2s ease; display: flex; align-items: center; gap: 6px; }
+      .sql-copy-btn:hover { background: #1d4ed8; }
       @keyframes modalFadeIn { from { opacity: 0; } to { opacity: 1; } }
-      @keyframes modalSlideIn { from { opacity: 0; transform: scale(0.9) translateY(-20px); } to { opacity: 1; transform: scale(1) translateY(0); } }
-      @keyframes hrFadeInEnhanced { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
-      .hr-null-enhanced { color: #9ca3af; font-style: italic; font-size: 14px; }
-      .hr-no-data-enhanced { text-align: center; color: #6b7280; padding: 60px 40px; font-style: italic; font-size: 18px; background: #f9fafb; }
+      @keyframes modalSlideIn { from { opacity: 0; transform: scale(0.95) translateY(-10px); } to { opacity: 1; transform: scale(1) translateY(0); } }
+      @keyframes hrFadeInEnhanced { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+      .hr-null-enhanced { color: #9ca3af; font-style: italic; font-size: 12px; }
+      .hr-no-data-enhanced { text-align: center; color: #6b7280; padding: 24px; font-style: italic; font-size: 13px; background: #f9fafb; }
+      .hr-sql-action-row { display: flex; align-items: center; gap: 8px; padding: 4px 0; }
+      .hr-stat-card { background: #ffffff; border-radius: 10px; border: 1px solid #e2e8f0; box-shadow: 0 2px 4px -1px rgb(0 0 0 / 0.07); overflow: hidden; max-width: 100%; width: 100%; margin-bottom: 2px; }
+      .hr-stat-card-header { padding: 10px 14px; background: linear-gradient(135deg, #1e40af 0%, #3b82f6 100%); color: #ffffff; display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+      .hr-stat-card-header h4 { margin: 0; font-size: 13px; font-weight: 700; }
+      .hr-stat-card-body { padding: 20px 24px; text-align: center; background: #f8fafc; }
+      .hr-stat-label { font-size: 13px; color: #64748b; font-weight: 500; margin-bottom: 8px; line-height: 1.4; }
+      .hr-stat-value { font-size: 36px; font-weight: 800; color: #1e40af; line-height: 1; }
     `;
     document.head.appendChild(style);
   }
@@ -502,12 +508,21 @@ class EnhancedHRAnalyticsRenderer {
 
     // 🚀 AUTO-FORMATTER MAGIC: Menyulap teks ngeyel AI menjadi rapi!
     let formattedExp = sqlExplanation || '';
-    if (formattedExp && !formattedExp.includes('<ul>') && !formattedExp.includes('<br>')) {
+    // Case-insensitive check and improved formatting logic
+    if (formattedExp && !formattedExp.toLowerCase().includes('<ul>') && !formattedExp.toLowerCase().includes('<br>')) {
         // Jika AI menjawab pakai Markdown biasa, kita ubah jadi HTML cantik
-        formattedExp = formattedExp
-            .replace(/\*\*(.*?)\*\*/g, '<strong style="color: #1e40af; display: block; margin-top: 16px; font-size: 16px; border-bottom: 1px solid #e2e8f0; padding-bottom: 4px;">$1</strong>')
-            .replace(/(?:\n|^)-\s(.*?)(?=\n|$)/g, '<div style="margin-left: 12px; margin-top: 6px;">🔸 $1</div>')
-            .replace(/\n/g, ''); // Hapus enter sisa agar tidak bolong-bolong
+        const originalExp = formattedExp;
+
+        formattedExp = formattedExp.replace(/\*\*(.*?)\*\*/g, '<strong style="color: #1e40af; display: block; margin-top: 16px; font-size: 16px; border-bottom: 1px solid #e2e8f0; padding-bottom: 4px;">$1</strong>');
+        formattedExp = formattedExp.replace(/(?:\n|^)-\s(.*?)(?=\n|$)/g, '<div style="margin-left: 12px; margin-top: 6px;">🔸 $1</div>');
+        
+        // Fix: Jangan hapus newline jika tidak ada bullet point yang terdeteksi
+        if (formattedExp.includes('🔸') || formattedExp.includes('<strong')) {
+            formattedExp = formattedExp.replace(/\n/g, ''); 
+        } else {
+            // Convert newline to br for readability if it's just paragraphs
+            formattedExp = formattedExp.replace(/\n/g, '<br>');
+        }
     }
 
     const modal = document.createElement('div');

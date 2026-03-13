@@ -121,7 +121,8 @@ function handleBackendResponse(data) {
         conversation_id: data.conversation_id,
         turn_id: data.turn_id,
         sql_query: data.sql_query,           
-        sql_explanation: data.sql_explanation
+        sql_explanation: data.sql_explanation,
+        query: data.query
       });
       
       // Visualization trigger (Dumb Trigger Principle)

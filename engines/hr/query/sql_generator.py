@@ -185,12 +185,26 @@ PERTANYAAN USER (dalam bahasa natural Indonesia):
 
 LANGKAH ANALYSIS:
 1. Deteksi apakah pertanyaan berhubungan dengan data HR di database.
-2. 🚨 FILTER SIMULASI PRIBADI (KRITIS): JIKA pertanyaan bersifat pengandaian, simulasi hitungan pribadi, atau tidak menanyakan data faktual agregat perusahaan (contoh: "kalau gaji saya X", "misal saya lembur", "berapa upah lembur saya"), ANDA WAJIB MEMBALAS HANYA DENGAN: INVALID_QUERY
+2. 🚨 FILTER SIMULASI PRIBADI (KRITIS): TOLAK HANYA JIKA pertanyaan adalah simulasi untuk DIRI SENDIRI / SATU INDIVIDU yang datanya tidak ada di database (contoh: "kalau gaji SAYA X", "misal SAYA lembur Y jam", "berapa upah lembur SAYA"). JANGAN TOLAK pertanyaan tentang SELURUH KARYAWAN atau KELOMPOK (contoh: "jika seluruh band 5 lembur 5 jam", "berapa total biaya jika semua karyawan divisi X lembur") — ini VALID dan harus dikonversi ke SQL yang menarik data nyata dari database (COUNT, AVG/SUM gaji_pokok per kelompok tersebut). Balas INVALID_QUERY HANYA untuk simulasi pribadi individual.
 3. 🚨 FILTER TABEL HALUSINASI (KRITIS): Anda HANYA BOLEH menggunakan tabel yang tertera persis di DATABASE SCHEMA. DILARANG KERAS mengarang nama tabel (seperti menambah nama orang/tanggal di nama tabel). JIKA tidak ada tabel di schema yang cocok untuk menjawab pertanyaan, ANDA WAJIB MEMBALAS HANYA DENGAN: INVALID_QUERY
 4. Jika lolos filter, identifikasi key words untuk analytical intent.
-5. Tentukan pattern yang tepat (distribusi/ranking/statistik).
+5. Tentukan pattern yang tepat (distribusi/ranking/statistik/aggregate-calculation).
 6. Pilih tabel dan kolom yang relevan dari schema.
 7. Generate SQL dengan formula yang mathematically correct.
+
+PATTERN 5 - GROUP HYPOTHETICAL & BASE DATA EXTRACTION (untuk simulasi/hipotetis kelompok: "jika seluruh X lembur", "kalau divisi Y dapat bonus", "estimasi biaya jika semua Z dinas"):
+Anda adalah bagian dari sistem Multi-Agent. JANGAN hitung metrik akhir (total lembur, total bonus, dsb.). Cukup tarik DATA DASAR (headcount + agregat gaji atau kolom relevan) untuk kelompok yang dimaksud. Agen orkestrator akan menyelesaikan kalkulasi bisnis menggunakan data yang diperoleh dari SOP/kebijakan.
+Contoh mengekstrak data dasar untuk "jika seluruh band 5 lembur":
+```sql
+SELECT
+    band,
+    COUNT(*) AS jumlah_karyawan,
+    AVG(gaji_pokok) AS rata_rata_gaji_pokok,
+    SUM(gaji_pokok) AS total_gaji_pokok
+FROM hr.employees
+WHERE band = '5'
+GROUP BY band;
+```
 
 GENERATE SQL PostgreSQL yang akurat (ATAU KETIK INVALID_QUERY):
 """
@@ -248,16 +262,26 @@ PENTING: Generate HANYA SQL PostgreSQL yang valid untuk hr schema di Supabase, t
             
             # Extract SQL dari response
             sql = response.choices[0].message.content.strip()
-            
+
+            # Handle INVALID_QUERY signal from LLM (expected: simulasi/hipotetikal terdeteksi)
+            if sql.strip().upper() == 'INVALID_QUERY':
+                self.logger.warning(f"⚠️ Non-DB query detected (simulasi/hipotetikal): '{question[:80]}'")
+                raise ValueError("INVALID_QUERY: Pertanyaan bukan query database yang valid")
+
             # Clean up SQL
             sql = self._clean_sql(sql)
-            
+
             self.logger.info(f"✅ Indonesian natural language SQL generated: {sql[:100]}...")
             return sql
-            
+
         except Exception as e:
-            self.logger.error(f"Indonesian natural language SQL generation failed: {str(e)}")
-            raise Exception(f"Failed to generate SQL: {str(e)}")
+            err_msg = str(e)
+            # INVALID_QUERY and non-SELECT rejections are expected — log as WARNING, not ERROR
+            if "INVALID_QUERY" in err_msg or "Generated query must be SELECT" in err_msg:
+                self.logger.warning(f"⚠️ SQL Generator rejected non-DB query: {err_msg}")
+            else:
+                self.logger.error(f"Indonesian natural language SQL generation failed: {err_msg}")
+            raise Exception(f"Failed to generate SQL: {err_msg}")
         
     def generate_sql_explanation(self, sql: str, question: str) -> str:
         """Menerjemahkan SQL menjadi 3 bagian: Bisnis, Logika Non-Teknis, & Teknis"""
@@ -368,7 +392,7 @@ Berikan penjelasan logikanya dalam format HTML tersebut:"""
         
         if 'OVER' in sql_upper:
             # Ensure parentheses balance for OVER clauses
-            over_positions = [i for i, char in enumerate(sql_upper) if sql_upper[i:i+4] == 'OVER']
+            over_positions = [i for i, _ in enumerate(sql_upper) if sql_upper[i:i+4] == 'OVER']
             
             for pos in over_positions:
                 # Find the opening parenthesis after OVER

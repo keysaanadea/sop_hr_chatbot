@@ -204,6 +204,14 @@ function setupSchemaExplorerEvents() {
     schemaBtn.addEventListener('click', openSchemaExplorer);
   }
   
+  // ✅ Fix: Set label tombol agar lebih clean sesuai request
+  if (closeSchemaBtn) {
+    closeSchemaBtn.innerHTML = '✕ Close';
+  }
+  if (refreshSchemaBtn) {
+    refreshSchemaBtn.innerHTML = '🔄 Refresh';
+  }
+
   if (closeSchemaBtn) {
     closeSchemaBtn.addEventListener('click', closeSchemaExplorer);
   }

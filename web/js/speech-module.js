@@ -88,8 +88,9 @@ function initializeSpeechRecognition() {
     }
     
     if (window.isCallModeActive) {
-      const callTranscript = document.getElementById("callTranscript");
-      if (callTranscript) callTranscript.textContent = displayText || 'Mendengarkan...';
+      // Show live interim text under the waveform
+      const interimEl = document.getElementById("callInterimText");
+      if (interimEl) interimEl.textContent = displayText || '';
     }
     
     if (currentInput && displayText) {
@@ -106,8 +107,12 @@ function initializeSpeechRecognition() {
       // Set timer baru - tunggu 1.5 detik sebelum processing
       finalTranscriptTimer = setTimeout(() => {
         console.log("Jeda selesai, processing final transcript...");
-        
+
         if (window.isCallModeActive && window.CallModeModule) {
+          // Clear interim display before handing off to call module
+          const interimEl = document.getElementById("callInterimText");
+          if (interimEl) interimEl.textContent = '';
+
           // Hentikan mic segera setelah user selesai bicara (saat mau diproses)
           stopRecognition();
           window.CallModeModule.handleCallModeInput(finalTranscript.trim());
@@ -346,8 +351,8 @@ async function speakText(text, options = {}) {
                 window.CallModeModule.setCallStatus('listening', 'LISTENING');
               }
               
-              const callTranscript = document.getElementById("callTranscript");
-              if (callTranscript) callTranscript.textContent = 'Silakan bicara...';
+              const interimEl = document.getElementById("callInterimText");
+              if (interimEl) interimEl.textContent = '';
               
               restartCallListening();
             }, 500);

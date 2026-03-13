@@ -1,411 +1,213 @@
 /* ================= CALL STATUS ANIMATIONS (PROFESSIONAL) ================= */
 
-/* Base Call Status Styling */
 .call-status {
-  font-size: 20px; 
-  font-weight: 600; 
-  color: var(--color-gray-800); 
-  margin-bottom: var(--space-3); 
-  font-family: var(--font-primary); 
-  text-transform: uppercase;
-  letter-spacing: 1.5px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: var(--space-3);
-  min-height: 32px;
+    font-size: 16px; 
+    font-weight: 500; 
+    color: #9ca3af; 
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
 }
 
 .status-text {
-  font-size: 18px;
-  font-weight: 700;
-  letter-spacing: 2px;
+    letter-spacing: 0.5px;
 }
 
 /* ================= STATUS INDICATORS ================= */
 
-/* 1. PULSE INDICATOR (Connected/Default) */
+.status-indicator {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    display: inline-block;
+}
+
 .status-indicator.pulse {
-  width: 12px;
-  height: 12px;
-  background: var(--color-accent);
-  border-radius: 50%;
-  animation: statusPulse 1.5s infinite;
-  box-shadow: 0 0 10px rgba(5, 150, 105, 0.5);
+    background: #10b981; /* Green */
+    box-shadow: 0 0 10px rgba(16, 185, 129, 0.5);
+    animation: statusPulse 1.5s infinite;
 }
 
-@keyframes statusPulse {
-  0%, 100% { 
-    opacity: 1; 
-    transform: scale(1); 
-    box-shadow: 0 0 10px rgba(5, 150, 105, 0.5);
-  }
-  50% { 
-    opacity: 0.6; 
-    transform: scale(1.2); 
-    box-shadow: 0 0 20px rgba(5, 150, 105, 0.8);
-  }
-}
-
-/* 2. LISTENING WAVE INDICATOR */
 .status-indicator.listening-wave {
-  width: 14px;
-  height: 14px;
-  background: var(--color-primary);
-  border-radius: 50%;
-  animation: listeningPulse 1s infinite ease-in-out;
-  box-shadow: 0 0 15px rgba(220, 38, 38, 0.6);
-  position: relative;
+    background: #3b82f6; /* Blue */
+    box-shadow: 0 0 10px rgba(59, 130, 246, 0.5);
+    animation: listeningPulse 1s infinite ease-in-out;
 }
 
-.status-indicator.listening-wave::before,
-.status-indicator.listening-wave::after {
-  content: '';
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-  width: 100%;
-  height: 100%;
-  border-radius: 50%;
-  border: 2px solid var(--color-primary);
-  opacity: 0;
-  animation: listeningWave 2s infinite;
-}
-
-.status-indicator.listening-wave::after {
-  animation-delay: 1s;
-}
-
-@keyframes listeningPulse {
-  0%, 100% { 
-    transform: scale(1); 
-    opacity: 1;
-  }
-  50% { 
-    transform: scale(1.1); 
-    opacity: 0.8;
-  }
-}
-
-@keyframes listeningWave {
-  0% {
-    width: 100%;
-    height: 100%;
-    opacity: 0.6;
-  }
-  100% {
-    width: 250%;
-    height: 250%;
-    opacity: 0;
-  }
-}
-
-/* Listening Bars Animation */
-.listening-bars {
-  display: flex;
-  align-items: center;
-  gap: 3px;
-  height: 20px;
-}
-
-.listening-bars .bar {
-  width: 3px;
-  background: var(--color-primary);
-  border-radius: 2px;
-  animation: listeningBarWave 1.2s ease-in-out infinite;
-  box-shadow: 0 0 5px rgba(220, 38, 38, 0.5);
-}
-
-.listening-bars .bar:nth-child(1) {
-  height: 8px;
-  animation-delay: 0s;
-}
-
-.listening-bars .bar:nth-child(2) {
-  height: 16px;
-  animation-delay: 0.1s;
-}
-
-.listening-bars .bar:nth-child(3) {
-  height: 12px;
-  animation-delay: 0.2s;
-}
-
-.listening-bars .bar:nth-child(4) {
-  height: 18px;
-  animation-delay: 0.3s;
-}
-
-@keyframes listeningBarWave {
-  0%, 100% {
-    transform: scaleY(1);
-    opacity: 0.7;
-  }
-  50% {
-    transform: scaleY(1.5);
-    opacity: 1;
-  }
-}
-
-/* 3. PROCESSING SPINNER */
 .status-indicator.processing-spinner {
-  width: 16px;
-  height: 16px;
-  border: 3px solid rgba(30, 64, 175, 0.3);
-  border-top-color: var(--color-secondary);
-  border-radius: 50%;
-  animation: processingSpinFast 0.8s linear infinite;
+    background: transparent;
+    border: 2px solid rgba(255, 255, 255, 0.2);
+    border-top-color: #f59e0b; /* Yellow */
+    animation: processingSpinFast 0.8s linear infinite;
 }
 
-@keyframes processingSpinFast {
-  to { transform: rotate(360deg); }
-}
-
-/* Processing Dots Animation */
-.processing-dots {
-  display: flex;
-  gap: 4px;
-  align-items: center;
-}
-
-.processing-dots .dot {
-  width: 6px;
-  height: 6px;
-  background: var(--color-secondary);
-  border-radius: 50%;
-  animation: processingDotBounce 1.4s infinite ease-in-out;
-  box-shadow: 0 0 5px rgba(30, 64, 175, 0.6);
-}
-
-.processing-dots .dot:nth-child(1) {
-  animation-delay: 0s;
-}
-
-.processing-dots .dot:nth-child(2) {
-  animation-delay: 0.2s;
-}
-
-.processing-dots .dot:nth-child(3) {
-  animation-delay: 0.4s;
-}
-
-@keyframes processingDotBounce {
-  0%, 80%, 100% {
-    transform: translateY(0) scale(1);
-    opacity: 0.6;
-  }
-  40% {
-    transform: translateY(-8px) scale(1.3);
-    opacity: 1;
-  }
-}
-
-/* 4. SPEAKING PULSE INDICATOR */
 .status-indicator.speaking-pulse {
-  width: 14px;
-  height: 14px;
-  background: linear-gradient(135deg, var(--color-accent) 0%, #047857 100%);
-  border-radius: 50%;
-  animation: speakingPulse 0.8s infinite;
-  box-shadow: 0 0 15px rgba(5, 150, 105, 0.7);
-  position: relative;
+    background: #ef4444; /* Red */
+    box-shadow: 0 0 10px rgba(239, 68, 68, 0.5);
+    animation: speakingPulse 1s infinite;
 }
 
-.status-indicator.speaking-pulse::before {
-  content: '';
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-  width: 140%;
-  height: 140%;
-  border-radius: 50%;
-  border: 2px solid var(--color-accent);
-  animation: speakingRipple 1.5s infinite;
-}
-
-@keyframes speakingPulse {
-  0%, 100% {
-    transform: scale(1);
-    opacity: 1;
-  }
-  50% {
-    transform: scale(1.15);
-    opacity: 0.85;
-  }
-}
-
-@keyframes speakingRipple {
-  0% {
-    width: 140%;
-    height: 140%;
-    opacity: 0.6;
-  }
-  100% {
-    width: 280%;
-    height: 280%;
-    opacity: 0;
-  }
-}
+@keyframes statusPulse { 0%, 100% { opacity: 1; transform: scale(1); } 50% { opacity: 0.6; transform: scale(1.2); } }
+@keyframes listeningPulse { 0%, 100% { transform: scale(1); opacity: 1; } 50% { transform: scale(1.1); opacity: 0.8; } }
+@keyframes processingSpinFast { to { transform: rotate(360deg); } }
+@keyframes speakingPulse { 0%, 100% { transform: scale(1); opacity: 1; } 50% { transform: scale(1.15); opacity: 0.85; } }
 
 /* ================= AVATAR SPEAKING ANIMATION ================= */
+.call-avatar {
+    transition: box-shadow 0.4s ease, transform 0.4s ease, background 0.4s ease;
+}
+
+/* Listening State: Subtle Blue Pulse */
+.call-avatar.listening {
+    animation: avatarPulseBlue 2.5s infinite ease-in-out;
+}
+@keyframes avatarPulseBlue {
+    0%, 100% { box-shadow: 0 0 40px rgba(229,57,53,0.3), 0 0 80px rgba(47,91,255,0.3); transform: scale(1); }
+    50% { box-shadow: 0 0 50px rgba(229,57,53,0.4), 0 0 100px rgba(47,91,255,0.6); transform: scale(1.05); }
+}
+
+/* Processing State: Soft Breathing */
+.call-avatar.processing {
+    animation: avatarPulseSoft 2s infinite ease-in-out;
+    opacity: 0.9;
+}
+@keyframes avatarPulseSoft {
+    0%, 100% { box-shadow: 0 0 30px rgba(229,57,53,0.2), 0 0 60px rgba(47,91,255,0.2); transform: scale(0.98); }
+    50% { box-shadow: 0 0 45px rgba(255,255,255,0.2), 0 0 80px rgba(255,255,255,0.2); transform: scale(1.02); }
+}
+
+/* Speaking State: Vibrant Red/Blue Pulse */
 .call-avatar.speaking {
-  animation: avatarSpeakingPulse 1.2s ease-in-out infinite;
-  box-shadow: 0 10px 40px rgba(5, 150, 105, 0.5) !important;
+    animation: avatarPulseRedBlue 2s infinite ease-in-out;
+    background: linear-gradient(135deg, #1e293b, #e53935);
+}
+@keyframes avatarPulseRedBlue {
+    0%, 100% { box-shadow: 0 0 40px rgba(229,57,53,0.4), 0 0 80px rgba(47,91,255,0.4); transform: scale(1); }
+    50% { box-shadow: 0 0 60px rgba(229,57,53,0.7), 0 0 120px rgba(47,91,255,0.6); transform: scale(1.08); }
 }
 
-@keyframes avatarSpeakingPulse {
-  0%, 100% {
-    transform: scale(1);
-    box-shadow: 0 10px 40px rgba(5, 150, 105, 0.5);
-  }
-  50% {
-    transform: scale(1.08);
-    box-shadow: 0 15px 50px rgba(5, 150, 105, 0.7);
-  }
+/* ================= LIVE INTERIM SPEECH TEXT ================= */
+.call-interim-text {
+    min-height: 28px;
+    width: 100%;
+    text-align: center;
+    font-size: 15px;
+    font-style: italic;
+    color: rgba(255, 255, 255, 0.65);
+    line-height: 1.5;
+    padding: 0 0.5rem;
+    transition: opacity 0.15s ease;
+    word-break: break-word;
+}
+.call-interim-text:empty { opacity: 0; }
+.call-interim-text:not(:empty) { opacity: 1; }
+
+/* Blinking cursor at end of interim text */
+.call-interim-text::after {
+    content: '|';
+    display: inline-block;
+    animation: cursorBlink 0.8s step-end infinite;
+    color: rgba(255,255,255,0.5);
+    margin-left: 2px;
+}
+.call-interim-text:empty::after { display: none; }
+
+@keyframes cursorBlink {
+    0%, 100% { opacity: 1; }
+    50%       { opacity: 0; }
 }
 
-/* ================= ENHANCED AUDIO VISUALIZER ================= */
-.audio-visualizer {
-  display: flex;
-  gap: 4px;
-  align-items: center;
-  justify-content: center;
-  height: 40px;
-  margin: var(--space-6) 0;
+/* ================= LIVE TRANSCRIPT LOG ================= */
+.call-transcript-log {
+    width: 100%;
+    max-height: 160px;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 0.625rem;
+    padding: 0 0.25rem;
+    scrollbar-width: thin;
+    scrollbar-color: rgba(255,255,255,0.15) transparent;
+}
+.call-transcript-log::-webkit-scrollbar { width: 4px; }
+.call-transcript-log::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.15); border-radius: 999px; }
+
+.call-transcript-hint {
+    color: rgba(255,255,255,0.4);
+    font-size: 14px;
+    text-align: center;
+    font-style: italic;
+    padding: 0.5rem 0;
+}
+
+.transcript-line {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.5rem;
+    animation: transcriptFadeIn 0.3s ease;
+    text-align: left;
+}
+@keyframes transcriptFadeIn {
+    from { opacity: 0; transform: translateY(6px); }
+    to   { opacity: 1; transform: translateY(0); }
+}
+
+.transcript-line .t-icon {
+    font-size: 14px;
+    flex-shrink: 0;
+    margin-top: 2px;
+}
+.transcript-line .t-label {
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    flex-shrink: 0;
+    margin-top: 3px;
+    line-height: 1;
+}
+.transcript-line .t-text {
+    font-size: 14px;
+    line-height: 1.55;
+    flex: 1;
+}
+
+.transcript-line.user .t-label { color: rgba(255,255,255,0.5); }
+.transcript-line.user .t-text  { color: rgba(255,255,255,0.88); }
+
+.transcript-line.ai .t-label { color: #60a5fa; }
+.transcript-line.ai .t-text  { color: #93c5fd; }
+
+/* ================= WAVEFORM ANIMATION ================= */
+@keyframes waveBar {
+    0%, 100% { height: 6px;  opacity: 0.45; }
+    50%       { height: 44px; opacity: 1;    }
 }
 
 .audio-bar {
-  width: 5px;
-  background: linear-gradient(to top, var(--color-primary), var(--color-secondary));
-  border-radius: 3px;
-  transition: height 0.1s ease;
-  min-height: 6px;
-  box-shadow: 0 0 8px rgba(220, 38, 38, 0.5);
+    animation: waveBar 1.3s ease-in-out infinite;
+}
+.audio-bar:nth-child(1) { animation-delay: 0s;     }
+.audio-bar:nth-child(2) { animation-delay: 0.13s;  }
+.audio-bar:nth-child(3) { animation-delay: 0.26s;  }
+.audio-bar:nth-child(4) { animation-delay: 0.39s;  }
+.audio-bar:nth-child(5) { animation-delay: 0.52s;  }
+.audio-bar:nth-child(6) { animation-delay: 0.65s;  }
+.audio-bar:nth-child(7) { animation-delay: 0.78s;  }
+
+/* ================= AVATAR IDLE GLOW (default state) ================= */
+@keyframes avatarIdle {
+    0%, 100% { box-shadow: 0 0 40px rgba(229,57,53,0.35), 0 0 80px rgba(47,91,255,0.3);  }
+    50%       { box-shadow: 0 0 60px rgba(229,57,53,0.55), 0 0 110px rgba(47,91,255,0.5); }
 }
 
-.audio-bar.active {
-  animation: audioWaveEnhanced 1s ease-in-out infinite;
-}
-
-.audio-bar:nth-child(1) { animation-delay: 0s; }
-.audio-bar:nth-child(2) { animation-delay: 0.1s; }
-.audio-bar:nth-child(3) { animation-delay: 0.2s; }
-.audio-bar:nth-child(4) { animation-delay: 0.3s; }
-.audio-bar:nth-child(5) { animation-delay: 0.4s; }
-.audio-bar:nth-child(6) { animation-delay: 0.5s; }
-.audio-bar:nth-child(7) { animation-delay: 0.6s; }
-
-@keyframes audioWaveEnhanced {
-  0%, 100% {
-    height: 8px;
-    opacity: 0.7;
-  }
-  25% {
-    height: 24px;
-    opacity: 1;
-  }
-  50% {
-    height: 32px;
-    opacity: 1;
-  }
-  75% {
-    height: 18px;
-    opacity: 0.9;
-  }
-}
-
-/* ================= STATUS TRANSITIONS ================= */
-.call-status.status-connected .status-text {
-  color: var(--color-accent);
-  text-shadow: 0 0 10px rgba(5, 150, 105, 0.3);
-}
-
-.call-status.status-listening .status-text {
-  color: var(--color-primary);
-  text-shadow: 0 0 10px rgba(220, 38, 38, 0.3);
-  animation: textGlow 2s ease-in-out infinite;
-}
-
-.call-status.status-processing .status-text {
-  color: var(--color-secondary);
-  text-shadow: 0 0 10px rgba(30, 64, 175, 0.3);
-}
-
-.call-status.status-speaking .status-text {
-  color: var(--color-accent);
-  text-shadow: 0 0 10px rgba(5, 150, 105, 0.3);
-  animation: textGlow 1.5s ease-in-out infinite;
-}
-
-@keyframes textGlow {
-  0%, 100% {
-    opacity: 1;
-    text-shadow: 0 0 10px currentColor;
-  }
-  50% {
-    opacity: 0.9;
-    text-shadow: 0 0 20px currentColor;
-  }
-}
-
-/* ================= RESPONSIVE ADJUSTMENTS ================= */
-@media (max-width: 768px) {
-  .call-status {
-    font-size: 18px;
-    gap: var(--space-2);
-  }
-  
-  .status-text {
-    font-size: 16px;
-    letter-spacing: 1.5px;
-  }
-  
-  .listening-bars {
-    height: 16px;
-  }
-  
-  .listening-bars .bar {
-    width: 2px;
-  }
-  
-  .listening-bars .bar:nth-child(1) { height: 6px; }
-  .listening-bars .bar:nth-child(2) { height: 12px; }
-  .listening-bars .bar:nth-child(3) { height: 9px; }
-  .listening-bars .bar:nth-child(4) { height: 14px; }
-  
-  .processing-dots .dot {
-    width: 5px;
-    height: 5px;
-  }
-  
-  .audio-visualizer {
-    height: 32px;
-  }
-  
-  .audio-bar {
-    width: 4px;
-  }
+/* Applied when no state class is active (i.e. "connected" state) */
+.call-avatar:not(.listening):not(.processing):not(.speaking) {
+    animation: avatarIdle 2.8s ease-in-out infinite;
 }
 
 /* ================= ACCESSIBILITY ================= */
 @media (prefers-reduced-motion: reduce) {
-  .status-indicator.pulse,
-  .status-indicator.listening-wave,
-  .status-indicator.processing-spinner,
-  .status-indicator.speaking-pulse,
-  .listening-bars .bar,
-  .processing-dots .dot,
-  .audio-bar,
-  .call-avatar.speaking,
-  .call-status .status-text {
-    animation: none !important;
-  }
-  
-  .status-indicator.listening-wave::before,
-  .status-indicator.listening-wave::after,
-  .status-indicator.speaking-pulse::before {
-    animation: none !important;
-  }
+    .status-indicator, .call-avatar, .audio-bar { animation: none !important; }
 }

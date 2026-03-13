@@ -98,6 +98,7 @@ class SessionInfo(BaseModel):
     session_id: str
     title: str
     created_at: str
+    last_message_at: Optional[str] = None
     pinned: bool = False
     message_count: Optional[int] = None
 

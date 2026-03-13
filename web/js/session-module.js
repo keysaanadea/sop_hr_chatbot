@@ -4,6 +4,9 @@
  * 🔥 NEW: Restore "stopped response" messages from history WITHOUT action buttons
  */
 
+// Persistent flag — tetap true setelah pengguna klik "Lihat lainnya"
+let _recentsExpanded = false;
+
 async function togglePinSession(sessionId, event) {
   event.stopPropagation();
   try {
@@ -49,7 +52,9 @@ async function loadSessions() {
     
     const pinnedSessions = filteredSessions.filter(s => s.pinned);
     const recentSessions = filteredSessions.filter(s => !s.pinned);
-    
+
+    const activeId = window.CoreApp?.activeChatId;
+
     if (pinnedSessions.length > 0) {
       const starredSection = document.createElement("div"); starredSection.className = "session-section";
       starredSection.innerHTML = `<div class="section-header">Starred</div><div class="session-list starred-list"></div>`;
@@ -60,11 +65,40 @@ async function loadSessions() {
     
     if (recentSessions.length > 0) {
       const recentsSection = document.createElement("div"); recentsSection.className = "session-section";
-      recentsSection.innerHTML = `<div class="section-header">Recents</div><div class="session-list recents-list"></div>`;
+      recentsSection.innerHTML = `<div class="section-header">Terakhir</div><div class="session-list recents-list"></div>`;
       list.appendChild(recentsSection);
       const recentsList = recentsSection.querySelector('.recents-list');
-      recentSessions.forEach(s => recentsList.appendChild(createSessionItem(s)));
+      const MAX_VISIBLE = 5;
+      const hiddenSessions = recentSessions.slice(MAX_VISIBLE);
+
+      if (_recentsExpanded || hiddenSessions.length === 0) {
+        // Tampilkan semua
+        recentSessions.forEach(s => recentsList.appendChild(createSessionItem(s)));
+        if (hiddenSessions.length > 0) {
+          const hideBtn = document.createElement("button");
+          hideBtn.className = "btn-show-more-sessions";
+          hideBtn.textContent = "Sembunyikan";
+          hideBtn.onclick = () => { _recentsExpanded = false; loadSessions(); };
+          recentsList.appendChild(hideBtn);
+        }
+      } else {
+        // Tampilkan 5 pertama + tombol "Lihat lainnya"
+        recentSessions.slice(0, MAX_VISIBLE).forEach(s => recentsList.appendChild(createSessionItem(s)));
+        const showMoreBtn = document.createElement("button");
+        showMoreBtn.className = "btn-show-more-sessions";
+        showMoreBtn.textContent = `Lihat lainnya (${hiddenSessions.length})`;
+        showMoreBtn.onclick = () => { _recentsExpanded = true; loadSessions(); };
+        recentsList.appendChild(showMoreBtn);
+      }
     }
+    // Scroll ke item aktif agar terlihat di sidebar
+    if (activeId) {
+      setTimeout(() => {
+        const activeEl = document.querySelector('.session-item.active');
+        if (activeEl) activeEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      }, 50);
+    }
+
   } catch (err) { console.error("Failed to load sessions:", err); }
 }
 
@@ -105,7 +139,7 @@ async function loadSession(sessionId) {
           const textForHistory = m.role === "user" ? m.message : window.CoreApp.stripHtml(m.message);
           window.CoreApp.conversationHistory.push({
             role: m.role, message: textForHistory, timestamp: m.timestamp || new Date().toISOString(),
-            sql_query: m.sql_query, sql_explanation: m.sql_explanation
+            sql_query: m.sql_query, sql_explanation: m.sql_explanation, query: m.query
           });
         }
       });
@@ -182,18 +216,19 @@ async function scanAndRenderHiddenPayloads(sessionId) {
             }
             chatBubble.setAttribute('data-analytics-restored', 'true');
 
-            const avatar = chatBubble.querySelector('.avatar');
-            if (avatar) avatar.style.display = 'none';
+            // 🔥 FIX: Restructure DOM to move data outside bubble
+            let bubbleElement = chatBubble.querySelector('.bubble');
+            let chatColumn = chatBubble.querySelector('.chat-column');
 
-            chatBubble.style.setProperty('max-width', '100%', 'important');
-            chatBubble.style.setProperty('width', '100%', 'important');
-
-            const bubbleElement = chatBubble.querySelector('.bubble');
-            if (bubbleElement) {
-                bubbleElement.classList.add('hr-analytics-bubble');
-                bubbleElement.style.cssText = 'background: transparent !important; border: none !important; box-shadow: none !important; padding: 0 !important; max-width: 100% !important; width: 100% !important;';
+            // If we have a bubble but no chat-column, create the structure
+            if (bubbleElement && !chatColumn) {
+                chatColumn = document.createElement('div');
+                chatColumn.className = 'chat-column';
+                bubbleElement.parentNode.insertBefore(chatColumn, bubbleElement);
+                chatColumn.appendChild(bubbleElement);
             }
 
+            // Fallback for targeting content
             const contentBox = chatBubble.querySelector('.msg-content') || bubbleElement || chatBubble;
             const rawHtml = contentBox.innerHTML;
             
@@ -217,63 +252,43 @@ async function scanAndRenderHiddenPayloads(sessionId) {
 
             const messageId = chatBubble.id ? chatBubble.id.replace('msg-', '') : `rec-${Date.now()}-${index}`;
             
+            // 1. Update BUBBLE content (Text Only)
             const textHTML = currentHtml ? `<div style="background: white; padding: 16px 20px; border-radius: 12px; border: 1px solid #e5e7eb; margin-bottom: 12px;">${currentHtml}</div>` : '';
             contentBox.innerHTML = `
                 ${textHTML}
-                <div class="restored-indicator" style="margin: 0 0 10px 5px; font-size: 12px; color: #6b7280; display: flex; align-items: center; gap: 5px;">
-                    <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
-                    Dipulihkan dari riwayat percakapan
+                <div class="chat-system-note">
+                    ↻ Dipulihkan dari riwayat percakapan
                 </div>
-                <div id="analytics-container-${messageId}" class="analytics-recovery-container" style="width: 100%;"></div>
             `;
             
-            const targetContainer = contentBox.querySelector(`#analytics-container-${messageId}`);
+            // 2. Create DATA CONTAINER (Sibling to Bubble)
+            const dataContainer = document.createElement('div');
+            dataContainer.id = `analytics-container-${messageId}`;
+            dataContainer.className = 'data-result';
             
+            if (chatColumn) {
+                chatColumn.appendChild(dataContainer);
+            } else {
+                chatBubble.appendChild(dataContainer); // Fallback
+            }
+
             if (window.HRAnalyticsRenderer) {
-                const reconstructedResponse = { 
+                const reconstructedResponse = {
                     answer: "", data: recoveredData,
                     sql_query: extractedSql || recoveredData.sql_query,
                     sql_explanation: extractedExp || recoveredData.sql_explanation
                 };
-                window.HRAnalyticsRenderer.render(reconstructedResponse, messageId, targetContainer);
+                window.HRAnalyticsRenderer.render(reconstructedResponse, messageId, dataContainer);
             }
-            
+
             if (window.VisualizationModule) {
+                // Register contentBox as viz bubble target so it renders inside the bubble
+                window._hrVizBubbleMap = window._hrVizBubbleMap || {};
+                // FIX: Map to chatColumn so charts render as siblings
+                window._hrVizBubbleMap[messageId] = chatColumn || chatBubble;
+
                 window.VisualizationModule.setAnalyticsData(messageId, recoveredData);
                 window.VisualizationModule.renderVisualizationOffer(sessionId, messageId);
-                
-                await new Promise((resolve) => {
-                    let attempts = 0;
-                    const pollViz = setInterval(() => {
-                        attempts++;
-                        const chatContainer = document.querySelector('.messages') || document.body;
-                        const allChildren = Array.from(chatContainer.children);
-                        
-                        let nyasarVizBubble = allChildren.reverse().find(el => 
-                            el.innerText && (el.innerText.includes('Galeri Visualisasi') || el.innerText.includes('Alternatif Visualisasi')) && !el.hasAttribute('data-moved')
-                        );
-                        
-                        if (nyasarVizBubble) {
-                            clearInterval(pollViz);
-                            nyasarVizBubble.setAttribute('data-moved', 'true');
-                            
-                            const vAvatar = nyasarVizBubble.querySelector('.avatar');
-                            if (vAvatar) vAvatar.style.display = 'none';
-
-                            nyasarVizBubble.style.setProperty('max-width', '100%', 'important');
-                            nyasarVizBubble.style.setProperty('width', '100%', 'important');
-                            
-                            const vizBubbleInner = nyasarVizBubble.querySelector('.bubble');
-                            if (vizBubbleInner) {
-                                vizBubbleInner.style.cssText = 'background: transparent !important; border: none !important; box-shadow: none !important; padding: 0 !important;';
-                            }
-                            chatBubble.insertAdjacentElement('afterend', nyasarVizBubble);
-                            resolve(); 
-                        } else if (attempts > 50) { 
-                            clearInterval(pollViz); resolve();
-                        }
-                    }, 100);
-                });
             }
         } catch (e) { console.error("❌ Gagal memulihkan payload:", e); }
         if (span.parentNode) span.remove();

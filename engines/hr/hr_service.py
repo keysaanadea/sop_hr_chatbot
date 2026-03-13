@@ -215,7 +215,11 @@ class HRService:
             return query_result
             
         except Exception as e:
-            self.logger.error(f"❌ Query execution flow failed: {e}")
+            err_msg = str(e)
+            if "INVALID_QUERY" in err_msg:
+                self.logger.warning(f"⚠️ Query rejected (non-DB/simulasi): {err_msg}")
+            else:
+                self.logger.error(f"❌ Query execution flow failed: {err_msg}")
             return None
     
     def _generate_sql_explanation(self, sql_query: str, user_question: str) -> str:

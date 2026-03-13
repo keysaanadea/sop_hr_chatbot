@@ -16,13 +16,13 @@
 }
 
 .thinking-bubble {
-  background: linear-gradient(135deg, #1e3a8a 0%, #1e40af 100%);
-  border: 1px solid rgba(59, 130, 246, 0.3);
-  border-radius: 16px;
+  background: #ffffff;
+  border: 1px solid #e5e7eb;
+  border-radius: 14px;
   padding: 20px;
   min-width: 320px;
   max-width: 500px;
-  box-shadow: 0 8px 32px rgba(59, 130, 246, 0.2);
+  box-shadow: 0 15px 40px rgba(0, 0, 0, 0.12);
   position: relative;
   overflow: hidden;
 }
@@ -34,7 +34,7 @@
   left: -100%;
   width: 100%;
   height: 100%;
-  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.1), transparent);
+  background: linear-gradient(90deg, transparent, rgba(59, 130, 246, 0.06), transparent);
   animation: shimmer 2s infinite;
 }
 
@@ -50,13 +50,13 @@
   gap: 12px;
   margin-bottom: 16px;
   padding-bottom: 16px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  border-bottom: 1px solid #e5e7eb;
 }
 
 .thinking-icon {
   width: 24px;
   height: 24px;
-  color: #60a5fa;
+  color: #2563eb;
   animation: pulse 2s ease-in-out infinite;
 }
 
@@ -79,7 +79,7 @@
 .thinking-text {
   font-size: 16px;
   font-weight: 600;
-  color: #fff;
+  color: #111827;
   letter-spacing: 0.3px;
 }
 
@@ -92,7 +92,7 @@
 .thinking-dots span {
   width: 6px;
   height: 6px;
-  background: #60a5fa;
+  background: #2563eb;
   border-radius: 50%;
   animation: bounce 1.4s ease-in-out infinite;
 }
@@ -133,25 +133,25 @@
   align-items: center;
   gap: 12px;
   padding: 10px 12px;
-  background: rgba(255, 255, 255, 0.05);
+  background: #f9fafb;
   border-radius: 8px;
   transition: all 0.3s ease;
-  opacity: 0.4;
+  opacity: 0.5;
   transform: scale(0.98);
 }
 
 .thinking-step.active {
   opacity: 1;
   transform: scale(1);
-  background: rgba(96, 165, 250, 0.15);
-  border-left: 3px solid #60a5fa;
+  background: rgba(37, 99, 235, 0.07);
+  border-left: 3px solid #2563eb;
   animation: slideInRight 0.3s ease-out;
 }
 
 .thinking-step.completed {
-  opacity: 0.6;
-  background: rgba(34, 197, 94, 0.1);
-  border-left: 3px solid #22c55e;
+  opacity: 0.7;
+  background: rgba(16, 185, 129, 0.07);
+  border-left: 3px solid #10b981;
 }
 
 @keyframes slideInRight {
@@ -172,13 +172,13 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(255, 255, 255, 0.1);
+  background: #f3f4f6;
   border-radius: 6px;
   flex-shrink: 0;
 }
 
 .thinking-step.active .step-icon {
-  background: rgba(96, 165, 250, 0.2);
+  background: rgba(37, 99, 235, 0.12);
   animation: iconPulse 1s ease-in-out infinite;
 }
 
@@ -193,12 +193,12 @@
 
 .thinking-step span {
   font-size: 14px;
-  color: #e5e7eb;
+  color: #6b7280;
   font-weight: 500;
 }
 
 .thinking-step.active span {
-  color: #fff;
+  color: #111827;
   font-weight: 600;
 }
 
@@ -206,10 +206,10 @@
 .cancel-btn {
   width: 100%;
   padding: 10px 16px;
-  background: rgba(239, 68, 68, 0.15);
-  border: 1px solid rgba(239, 68, 68, 0.3);
+  background: rgba(239, 68, 68, 0.08);
+  border: 1px solid rgba(239, 68, 68, 0.25);
   border-radius: 8px;
-  color: #fca5a5;
+  color: #dc2626;
   font-size: 14px;
   font-weight: 600;
   cursor: pointer;
@@ -226,9 +226,9 @@
 }
 
 .cancel-btn:hover {
-  background: rgba(239, 68, 68, 0.25);
-  border-color: rgba(239, 68, 68, 0.5);
-  color: #fff;
+  background: rgba(239, 68, 68, 0.15);
+  border-color: rgba(239, 68, 68, 0.4);
+  color: #b91c1c;
   transform: translateY(-1px);
 }
 
@@ -446,81 +446,6 @@
   }
 }
 
-/* ================= DARK MODE COMPATIBILITY ================= */
-
-@media (prefers-color-scheme: light) {
-  .thinking-bubble {
-    background: linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%);
-    border-color: rgba(14, 165, 233, 0.3);
-    box-shadow: 0 8px 32px rgba(14, 165, 233, 0.15);
-  }
-  
-  .thinking-text,
-  .thinking-step span {
-    color: #1e3a8a;
-  }
-  
-  .thinking-step.active span {
-    color: #0c4a6e;
-  }
-  
-  .thinking-step {
-    background: rgba(14, 165, 233, 0.05);
-  }
-  
-  .thinking-step.active {
-    background: rgba(14, 165, 233, 0.15);
-  }
-  
-  .cancel-btn {
-    background: rgba(220, 38, 38, 0.1);
-    border-color: rgba(220, 38, 38, 0.3);
-    color: #dc2626;
-  }
-  
-  .cancel-btn:hover {
-    background: rgba(220, 38, 38, 0.2);
-    color: #991b1b;
-  }
-  
-  .system-notice {
-    background: rgba(251, 191, 36, 0.15) !important;
-    color: #92400e !important;
-  }
-  
-  /* 🔥 NEW: Light mode for stopped response */
-  .stopped-response-bubble {
-    background: rgba(241, 245, 249, 0.8) !important;
-    border-color: rgba(100, 116, 139, 0.3) !important;
-  }
-  
-  .stopped-text {
-    color: #64748b;
-  }
-  
-  .regenerate-btn {
-    background: rgba(59, 130, 246, 0.1);
-    border-color: rgba(59, 130, 246, 0.3);
-    color: #2563eb;
-  }
-  
-  .regenerate-btn:hover {
-    background: rgba(59, 130, 246, 0.2);
-    color: #1e40af;
-  }
-  
-  .dismiss-btn {
-    background: rgba(148, 163, 184, 0.1);
-    border-color: rgba(148, 163, 184, 0.3);
-    color: #64748b;
-  }
-  
-  .dismiss-btn:hover {
-    background: rgba(220, 38, 38, 0.1);
-    border-color: rgba(220, 38, 38, 0.3);
-    color: #dc2626;
-  }
-}
 
 /* ================= ACCESSIBILITY IMPROVEMENTS ================= */
 

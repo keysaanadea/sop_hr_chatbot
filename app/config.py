@@ -47,6 +47,11 @@ GOOGLE_MAPS_API_KEY = os.getenv("GOOGLE_MAPS_API_KEY")
 
 # ElevenLabs (Natural TTS)
 ELEVENLABS_API_KEY = os.getenv("ELEVENLABS_API_KEY")
+
+# Langfuse (Observability & Tracing)
+LANGFUSE_SECRET_KEY = os.getenv("LANGFUSE_SECRET_KEY")
+LANGFUSE_PUBLIC_KEY = os.getenv("LANGFUSE_PUBLIC_KEY")
+LANGFUSE_BASE_URL = os.getenv("LANGFUSE_BASE_URL", "https://cloud.langfuse.com")
 ELEVENLABS_VOICE_ID_INDONESIAN = os.getenv("ELEVENLABS_VOICE_ID_INDONESIAN", "iWydkXKoiVtvdn4vLKp9")
 
 # ======================================================
@@ -190,6 +195,8 @@ if not GOOGLE_MAPS_API_KEY:
 if not ELEVENLABS_API_KEY:
     print("⚠️ ElevenLabs not configured - using OpenAI TTS fallback")
 # Tambahkan ini:
+if not LANGFUSE_SECRET_KEY or not LANGFUSE_PUBLIC_KEY:
+    print("⚠️ Langfuse not configured - observability/tracing will be disabled")
 if not UPSTASH_REDIS_URL or not UPSTASH_REDIS_TOKEN:
     print("⚠️ Upstash Redis not configured - chat history caching will use Supabase fallback")
 if not SUPABASE_DB_PASSWORD and not SUPABASE_CONNECTION_STRING:

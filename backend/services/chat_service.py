@@ -14,7 +14,21 @@ import time
 import os
 import sys
 from typing import Optional, List, Dict, Any, Literal, Union, Callable
-from openai import OpenAI
+
+try:
+    from app.langfuse_client import LANGFUSE_ENABLED
+    if LANGFUSE_ENABLED:
+        from langfuse.openai import OpenAI
+    else:
+        from openai import OpenAI
+except Exception:
+    from openai import OpenAI
+
+try:
+    from langfuse import observe
+except Exception:
+    def observe(func=None, **_kw):
+        return func if func else (lambda f: f)
 
 project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, project_root)
@@ -566,12 +580,13 @@ Balas HANYA dengan JSON valid:
             "intent": intent
         }
     
+    @observe(name="chat_process_question")
     async def process_question(
-        self, 
-        question: str, 
-        user_role: str, 
-        session_id: str, 
-        history: List[Dict[str, Any]] = None, 
+        self,
+        question: str,
+        user_role: str,
+        session_id: str,
+        history: List[Dict[str, Any]] = None,
         mode: str = "chat",
         cancellation_check: Optional[Callable] = None
     ) -> Dict[str, Any]:

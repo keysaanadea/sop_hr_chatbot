@@ -30,6 +30,15 @@ from engines.sop.templates_engine import SimpleTemplateEngine
 from engines.sop.policy_injector import HRTravelPolicy
 from engines.sop.rag_interceptor import ConstraintInterceptor
 
+try:
+    from langfuse import observe
+    from app.langfuse_client import LANGFUSE_ENABLED, get_langchain_callback
+except Exception:
+    LANGFUSE_ENABLED = False
+    def observe(func=None, **_kw):
+        return func if func else (lambda f: f)
+    def get_langchain_callback(): return None
+
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
@@ -145,10 +154,13 @@ class RAGEngine:
         
     def initialize(self):
         if self.initialized: return
-        
+
+        lf_callback = get_langchain_callback()
+        lf_callbacks = [lf_callback] if lf_callback else []
+
         self.llm = ChatOpenAI(
             model=LLM_MODEL, temperature=LLM_TEMPERATURE, openai_api_key=OPENAI_API_KEY,
-            timeout=20, max_retries=3
+            timeout=20, max_retries=3, callbacks=lf_callbacks
         )
         self.embeddings = OpenAIEmbeddings(
             model=EMBEDDING_MODEL, openai_api_key=OPENAI_API_KEY,
@@ -208,8 +220,9 @@ async def retrieve_global_knowledge_async(question: str) -> str:
 # 🔥 LAYER 6: SYNTHESIS WITH CANCELLATION SUPPORT
 # =====================
 
+@observe(name="rag_answer_question")
 async def answer_question_async(
-    question: str, 
+    question: str,
     session_id: str,
     cancellation_check: Optional[Callable] = None  # 🔥 NEW parameter
 ) -> str:

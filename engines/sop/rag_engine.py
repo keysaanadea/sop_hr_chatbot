@@ -31,21 +31,22 @@ from engines.sop.policy_injector import HRTravelPolicy
 from engines.sop.rag_interceptor import ConstraintInterceptor
 
 try:
-    from langfuse import observe
-    from app.langfuse_client import LANGFUSE_ENABLED, get_langchain_callback
+    from app.langfuse_client import LANGFUSE_ENABLED, get_langchain_callback, langfuse_observation
 except Exception:
     LANGFUSE_ENABLED = False
-    def observe(func=None, **_kw):
-        return func if func else (lambda f: f)
     def get_langchain_callback(): return None
+    from contextlib import nullcontext as _nc
+    def langfuse_observation(name: str, **kwargs):  # type: ignore[misc]
+        return _nc(None)
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
 from app.config import (
-    OPENAI_API_KEY, PINECONE_API_KEY, PINECONE_INDEX, PINECONE_GLOBAL_INDEX,
+    OPENAI_API_KEY, PINECONE_API_KEY, PINECONE_INDEX,
     EMBEDDING_MODEL, COHERE_API_KEY, COHERE_MODEL,
-    RAG_TOP_K, RAG_RETRIEVAL_K, LLM_MODEL, LLM_TEMPERATURE
+    RAG_TOP_K, RAG_RETRIEVAL_K, RAG_MIN_SCORE, LLM_MODEL, LLM_TEMPERATURE,
+    PINECONE_NAMESPACE
 )
 
 # =====================
@@ -168,8 +169,6 @@ class RAGEngine:
         )
         pc = Pinecone(api_key=PINECONE_API_KEY)
         self.index = pc.Index(PINECONE_INDEX)
-        self.global_index = pc.Index(PINECONE_GLOBAL_INDEX) if PINECONE_GLOBAL_INDEX else None
-        
         self.query_analyzer = FastQueryAnalyzer(self.llm)
         self.cohere_reranker = ContextEnrichedCohereReranker(COHERE_API_KEY, COHERE_MODEL) if COHERE_API_KEY else None
         self.travel_analyzer = TravelAnalyzer(llm_client=self.llm)
@@ -186,7 +185,7 @@ async def retrieve_context_async(query: str, search_keywords: str, scope: str, d
     query_vector = await rag_engine.embeddings.aembed_query(search_keywords)
     
     def _run_pinecone_query(vector, filter_dict):
-        return rag_engine.index.query(vector=vector, top_k=RAG_RETRIEVAL_K, filter=filter_dict, include_metadata=True, namespace="documents")
+        return rag_engine.index.query(vector=vector, top_k=RAG_RETRIEVAL_K, filter=filter_dict, include_metadata=True, namespace=PINECONE_NAMESPACE)
 
     base_filter = {"doc_type": {"$eq": doc_type}} if doc_type and doc_type != "general" else None
 
@@ -208,27 +207,21 @@ async def retrieve_context_async(query: str, search_keywords: str, scope: str, d
         chunks = await rag_engine.cohere_reranker.rerank_async(query=query, chunks=chunks, top_k=RAG_TOP_K)
     return chunks
 
-async def retrieve_global_knowledge_async(question: str) -> str:
-    if not rag_engine.global_index: return ""
-    query_vector = await rag_engine.embeddings.aembed_query(question)
-    res = await asyncio.to_thread(rag_engine.global_index.query, vector=query_vector, top_k=3, include_metadata=True, namespace="documents")
-    metrics.gkl_fallback_calls += 1
-    return "\n".join([m.metadata.get('text', '') for m in res.matches])
-
 
 # =====================
 # 🔥 LAYER 6: SYNTHESIS WITH CANCELLATION SUPPORT
 # =====================
 
-@observe(name="rag_answer_question")
 async def answer_question_async(
     question: str,
     session_id: str,
-    cancellation_check: Optional[Callable] = None  # 🔥 NEW parameter
+    cancellation_check: Optional[Callable] = None,
 ) -> str:
     """
     🔥 ENHANCED with 8 cancellation checkpoints.
-    
+    Langfuse v4: semua child span dibuat via langfuse_observation() yang otomatis
+    menggunakan OTel context yang aktif (ditetapkan oleh chat_service → route_a_rag).
+
     Args:
         question: User query
         session_id: Session ID
@@ -270,12 +263,19 @@ async def answer_question_async(
         await check_cancelled()
         
         print("🚩 [RADAR 4] Menembak LLM Analyzer (FastQueryAnalyzer)...")
-        
+
         # 🔥 CHECKPOINT 3: Before LLM Analyzer
         await check_cancelled()
-        
-        analysis = await rag_engine.query_analyzer.analyze_async(question)
-        
+
+        with langfuse_observation("query_analysis", input={"question": question}) as _sp_analysis:
+            analysis = await rag_engine.query_analyzer.analyze_async(question)
+            if _sp_analysis:
+                _sp_analysis.update(output={
+                    "keywords": analysis.get("search_keywords"),
+                    "scope": analysis.get("scope"),
+                    "template_type": analysis.get("template_type"),
+                })
+
         print("🚩 [RADAR 5] LLM Analyzer selesai!")
         
         # 🔥 CHECKPOINT 4: After LLM Analyzer
@@ -294,8 +294,19 @@ async def answer_question_async(
                     f"📝 Template Type    : {template_type}\n" +
                     "🔮" * 25)
 
-        matches = await retrieve_context_async(question, keywords, scope, doc_type)
-        
+        with langfuse_observation("vector_retrieval", input={"keywords": keywords, "scope": scope, "doc_type": doc_type}) as _sp_ret:
+            matches = await retrieve_context_async(question, keywords, scope, doc_type)
+
+            # Filter chunks dengan Cohere relevance score di bawah threshold
+            before_filter = len(matches)
+            filtered = [m for m in matches if m.get('score', 0.0) >= RAG_MIN_SCORE]
+            # Jaga minimal 1 chunk agar tidak kosong
+            matches = filtered if filtered else matches[:1]
+            logger.info(f"🔽 Score filter: {before_filter} → {len(matches)} chunks (threshold={RAG_MIN_SCORE})")
+
+            if _sp_ret:
+                _sp_ret.update(output={"chunks_returned": len(matches), "chunks_before_filter": before_filter})
+
         # 🔥 CHECKPOINT 5: After retrieval
         await check_cancelled()
         
@@ -347,8 +358,6 @@ async def answer_question_async(
                 else:
                     tool_info = HRTravelPolicy.get_domestic_policy_injection(route_str, dist_km, dur_hrs)
 
-        global_context = await retrieve_global_knowledge_async(question) if len(matches) < 2 else ""
-        
         # 🔥 CHECKPOINT 6: Before template building
         await check_cancelled()
 
@@ -396,7 +405,6 @@ Anda adalah Asisten Profesional HRD PT Semen Indonesia.
 
 === KNOWLEDGE BASE ===
 {context_str}
-{global_context}
 
 === USER QUESTION ===
 {question}
@@ -406,11 +414,15 @@ Anda adalah Asisten Profesional HRD PT Semen Indonesia.
         
         # 🔥 CHECKPOINT 7: Before final LLM call
         await check_cancelled()
-        
-        response = await rag_engine.llm.ainvoke(prompt)
-        
-        # 🔥 CHECKPOINT 8: After LLM call
-        await check_cancelled()
+
+        with langfuse_observation("llm_generation", input={"prompt_length": len(prompt), "model": LLM_MODEL}) as _sp_gen:
+            response = await rag_engine.llm.ainvoke(prompt)
+
+            # 🔥 CHECKPOINT 8: After LLM call
+            await check_cancelled()
+
+            if _sp_gen:
+                _sp_gen.update(output={"response_length": len(response.content)})
         
         cleaned_response = re.sub(r'\*\*(.*?)\*\*', r'<strong>\1</strong>', response.content.replace('```html', '').replace('```', '').strip())
     
@@ -442,9 +454,184 @@ def get_engine_metrics() -> Dict:
         "version": "v7.2.0 (CANCELLATION EDITION)"
     }
     
-# Entry point wrapper untuk menjaga kompatibilitas
+# Entry point wrapper
 async def answer_question(question: str, session_id: str, cancellation_check=None) -> str:
     return await answer_question_async(question, session_id, cancellation_check)
+
+
+# =====================
+# STREAMING VERSION
+# =====================
+async def answer_question_stream(
+    question: str,
+    session_id: str,
+    cancellation_check: Optional[Callable] = None,
+    out_context: Optional[dict] = None,
+):
+    """
+    Async generator version of answer_question_async.
+    Yields raw text chunks (tokens) from the LLM for streaming responses.
+    All preprocessing is identical; only the final LLM call uses astream().
+    """
+    async def check_cancelled():
+        if cancellation_check:
+            try:
+                if await cancellation_check():
+                    metrics.cancelled_requests += 1
+                    raise asyncio.CancelledError()
+            except asyncio.CancelledError:
+                raise
+            except Exception as e:
+                logger.warning(f"⚠️ Cancellation check error: {e}")
+
+    if not rag_engine.initialized:
+        rag_engine.initialize()
+
+    await check_cancelled()
+    start_time = time.time()
+    metrics.queries += 1
+
+    try:
+        is_valid, err_msg = validate_input(question)
+        if not is_valid:
+            yield f"<h3>⚠️ Error</h3><p>{err_msg}</p>"
+            return
+
+        await check_cancelled()
+
+        with langfuse_observation("query_analysis", input={"question": question}) as _sp_analysis:
+            analysis = await rag_engine.query_analyzer.analyze_async(question)
+            if _sp_analysis:
+                _sp_analysis.update(output={
+                    "keywords": analysis.get("search_keywords"),
+                    "scope": analysis.get("scope"),
+                    "template_type": analysis.get("template_type"),
+                })
+
+        await check_cancelled()
+
+        keywords = " ".join([str(k) for k in analysis.get('search_keywords', question)]) if isinstance(analysis.get('search_keywords'), list) else analysis.get('search_keywords', question)
+        scope = analysis.get('scope', 'general')
+        doc_type = analysis.get('doc_type', 'general')
+        template_type = analysis.get('template_type', 'general')
+
+        with langfuse_observation("vector_retrieval", input={"keywords": keywords, "scope": scope, "doc_type": doc_type}) as _sp_ret:
+            matches = await retrieve_context_async(question, keywords, scope, doc_type)
+            before_filter = len(matches)
+            filtered = [m for m in matches if m.get('score', 0.0) >= RAG_MIN_SCORE]
+            matches = filtered if filtered else matches[:1]
+            logger.info(f"🔽 Score filter: {before_filter} → {len(matches)} chunks (threshold={RAG_MIN_SCORE})")
+            if _sp_ret:
+                _sp_ret.update(output={"chunks_returned": len(matches), "chunks_before_filter": before_filter})
+
+        await check_cancelled()
+
+        context_parts = []
+        relevant_filenames = []
+        for m in matches:
+            text = m['metadata'].get('text', '').strip()[:2000]
+            source = m['metadata'].get('filename') or m['metadata'].get('source_file') or 'Unknown'
+            parent = m['metadata'].get('parent_section') or m['metadata'].get('heading') or 'Tidak spesifik'
+            if source != 'Unknown':
+                relevant_filenames.append(source)
+            context_parts.append(f"[FILE: {source} | BAB: {parent}]\n{text}")
+
+        context_str = "\n\n---\n\n".join(context_parts)
+        if out_context is not None:
+            out_context["context"] = context_str
+
+        tool_info = ""
+        travel_data = {}
+        kota_asal = analysis.get('kota_asal', '')
+        kota_tujuan = analysis.get('kota_tujuan', '')
+        kota_asal = str(kota_asal[0]) if isinstance(kota_asal, list) else str(kota_asal).strip()
+        kota_tujuan = str(kota_tujuan[0]) if isinstance(kota_tujuan, list) else str(kota_tujuan).strip()
+        is_valid_destination = bool(kota_tujuan and kota_tujuan.lower() not in ["", "none", "null", "-", "tidak ada"])
+
+        if analysis.get('butuh_kalkulasi_jarak', False) or is_valid_destination:
+            travel_data = await rag_engine.travel_analyzer.process_decision_query_async(origin=kota_asal, destination=kota_tujuan, scope=scope)
+            if travel_data.get('processed'):
+                route_str = travel_data.get('route', 'Tidak diketahui')
+                dist_km = travel_data.get('distance_km', 0)
+                dur_hrs = travel_data.get('duration_hours', 0)
+                if scope == 'international':
+                    tool_info = HRTravelPolicy.get_international_policy_injection(route_str, dur_hrs)
+                else:
+                    tool_info = HRTravelPolicy.get_domestic_policy_injection(route_str, dist_km, dur_hrs)
+
+        await check_cancelled()
+
+        html_template = rag_engine.template_engine.get_template(template_type, question)
+        if travel_data.get('processed') and scope == 'domestic' and 0 < travel_data.get('distance_km', 0) < 120:
+            html_template = """<h3>Informasi Perjalanan Dinas</h3>\n<p>[Tulis rute dan jarak asli dari INFO SISTEM. Berdasarkan regulasi perusahaan, perjalanan kurang dari 120 km BUKAN termasuk Perjalanan Dinas.]</p>\n<h3>Ketentuan Kelayakan Fasilitas</h3>\n<p>[Tuliskan TEGAS bahwa seluruh fasilitas standar perjalanan dinas TIDAK BERLAKU untuk perjalanan ini. 🚫 DILARANG KERAS MENAMPILKAN DAFTAR TABEL HARGA!]</p>"""
+
+        enforcement_instructions = rag_engine.template_engine.get_enforcement_instructions(html_template)
+        guardrails = await satpam_aturan.generate_guardrail_prompt_async(relevant_filenames)
+
+        detail_enforcer = ""
+        if "singkat" not in question.lower():
+            detail_enforcer = "8. 📝 KEDALAMAN JAWABAN: Anda WAJIB menjabarkan aturan, nominal, rincian, dan tata cara secara SANGAT DETAIL, TERSTRUKTUR, dan LENGKAP. Jangan ada poin penting dari KNOWLEDGE BASE yang disembunyikan!"
+
+        prompt = f"""=== SYSTEM ROLE ===
+Anda adalah Asisten Profesional HRD PT Semen Indonesia.
+
+=== CRITICAL RULES ===
+1. Jawab HANYA menggunakan informasi dari [KNOWLEDGE BASE].
+2. 🚨 CEK KELAYAKAN (ELIGIBILITY) SEBELUM MENGHITUNG: Anda WAJIB memeriksa apakah user berhak atas fasilitas tersebut berdasarkan aturan di [KNOWLEDGE BASE].
+   - Contoh: Upah Kerja Lembur HANYA diberikan untuk karyawan Job Grade 10 ke bawah atau Band 5.
+   - JIKA user menyebutkan ia adalah Band 1, 2, 3, atau 4 dan meminta hitungan lembur, Anda DILARANG KERAS memberikan hitungan/rumus. Anda WAJIB menolak dengan sopan dan menjelaskan bahwa sesuai aturan, Band tersebut tidak mendapatkan upah lembur.
+3. 🚨 KESEIMBANGAN ANTI-HALUSINASI & KELENTURAN (SANGAT KRITIS):
+   - CEK TOPIK ALIEN: Coba lihat [KNOWLEDGE BASE]. Apakah topik yang ditanyakan (misal: Pensiun, Cuti Melahirkan, Resign) SAMA SEKALI TIDAK DITULIS di sana? JIKA YA (Topik Alien), Anda WAJIB BERHENTI dan HANYA MENGELUARKAN KODE INI TANPA TAMBAHAN TEKS LAIN:
+[DATA_TIDAK_DITEMUKAN_DI_SOP]
+   - CEK TOPIK RELEVAN TAPI KURANG DATA: JIKA topik yang ditanyakan ADA (misal: Lembur, Perjalanan Dinas, Hari Libur), tetapi Anda merasa data di [KNOWLEDGE BASE] tidak cukup detail untuk melakukan hitungan matematika/angka pasti yang diminta user, JANGAN GUNAKAN KODE ERROR! Anda WAJIB tetap menjawab dengan ramah berdasarkan aturan/definisi yang tersedia, dan sampaikan secara profesional bahwa Anda membutuhkan data tambahan (seperti gaji pokok, dsb) untuk menghitung angka pastinya.
+4. DILARANG KERAS merangkai atau memaksakan aturan dari topik A untuk menjawab topik B (Topik harus match!).
+5. Angka tarif, jarak, dan durasi HARUS persis sama dengan dokumen.
+6. 🔥 TUGAS KALKULASI: JIKA ADA angka jarak (km) atau durasi (jam) dari [INFO SISTEM & INSTRUKSI MUTLAK], WAJIB gunakan angka tersebut.
+7. 🚨 KEPATUHAN FORMAT: WAJIB MEMATUHI SEMUA PERINTAH di dalam [INFO SISTEM & INSTRUKSI MUTLAK] TANPA TERKECUALI!
+{detail_enforcer}
+
+{enforcement_instructions}
+
+{guardrails}
+
+=== INFO SISTEM & INSTRUKSI MUTLAK ===
+{tool_info}
+
+=== KNOWLEDGE BASE ===
+{context_str}
+
+=== USER QUESTION ===
+{question}
+
+=== YOUR RESPONSE ===
+"""
+
+        await check_cancelled()
+
+        full_response = ""
+        with langfuse_observation("llm_generation", input={"prompt_length": len(prompt), "model": LLM_MODEL}) as _sp_gen:
+            async for chunk in rag_engine.llm.astream(prompt):
+                if chunk.content:
+                    cleaned_chunk = chunk.content.replace('```html', '').replace('```', '')
+                    full_response += cleaned_chunk
+                    yield cleaned_chunk
+
+            if _sp_gen:
+                _sp_gen.update(output={"response_length": len(full_response)})
+
+        metrics.successful_responses += 1
+        metrics.avg_response_time = ((metrics.avg_response_time * (metrics.queries - 1)) + (time.time() - start_time)) / metrics.queries
+        logger.info(f"✅ Stream Success in {time.time() - start_time:.2f}s")
+
+    except asyncio.CancelledError:
+        logger.warning(f"🛑 RAG stream cancelled for session {session_id}")
+        metrics.failed_responses += 1
+        metrics.cancelled_requests += 1
+        raise
+    except Exception as e:
+        logger.error(f"❌ Stream Error: {e}", exc_info=True)
+        metrics.failed_responses += 1
+        yield "<h3>⚠️ Terjadi Kesalahan Sistem</h3><p>Mohon maaf, sistem sedang sibuk.</p>"
 
 if __name__ == "__main__":
     async def main_test():

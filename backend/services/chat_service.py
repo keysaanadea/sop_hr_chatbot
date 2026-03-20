@@ -16,19 +16,18 @@ import sys
 from typing import Optional, List, Dict, Any, Literal, Union, Callable
 
 try:
-    from app.langfuse_client import LANGFUSE_ENABLED
+    from app.langfuse_client import LANGFUSE_ENABLED, langfuse_observation
     if LANGFUSE_ENABLED:
         from langfuse.openai import OpenAI
     else:
         from openai import OpenAI
 except Exception:
+    LANGFUSE_ENABLED = False
     from openai import OpenAI
+    from contextlib import nullcontext as _nc
 
-try:
-    from langfuse import observe
-except Exception:
-    def observe(func=None, **_kw):
-        return func if func else (lambda f: f)
+    def langfuse_observation(name: str, **kwargs):  # type: ignore[misc]
+        return _nc(None)
 
 project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, project_root)
@@ -38,26 +37,11 @@ from app.config import (
     API_TIMEOUT_DEFAULT, API_TIMEOUT_CALL_MODE,
     CALL_MODE_TEMPERATURE, CHAT_MODE_TEMPERATURE,
     CALL_MODE_MAX_TOKENS, CHAT_MODE_MAX_TOKENS,
-    SEMANTIC_ROUTER_ENABLED, SEMANTIC_ROUTER_THRESHOLD, SEMANTIC_ROUTER_ENCODER,
     INTENT_CLASSIFIER_MODEL, INTENT_CLASSIFIER_TEMPERATURE, INTENT_CLASSIFIER_MAX_TOKENS
 )
 
 logger = logging.getLogger(__name__)
 client = OpenAI(api_key=OPENAI_API_KEY)
-
-# =====================================
-# SEMANTIC ROUTER SETUP  
-# =====================================
-try:
-    from semantic_router import Route
-    from semantic_router.routers import SemanticRouter
-    from semantic_router.encoders import OpenAIEncoder
-    from semantic_router.index.local import LocalIndex
-    SEMANTIC_ROUTER_AVAILABLE = True
-    logger.info("✅ Semantic Router module imported successfully")
-except ImportError as e:
-    SEMANTIC_ROUTER_AVAILABLE = False
-    logger.warning(f"⚠️ semantic-router tidak tersedia: {e}. Fallback ke LLM Judge.")
 
 # =====================================
 # DYNAMIC TOOLS ROUTING
@@ -105,114 +89,6 @@ def generate_chart_hints(domain: str, columns: List[str], rows: List[List[Any]])
     return None
 
 # =====================================
-# ✨ SEMANTIC INTENT CLASSIFIER
-# =====================================
-class SemanticIntentClassifier:
-    def __init__(self):
-        self.route_layer = None
-        if SEMANTIC_ROUTER_AVAILABLE and SEMANTIC_ROUTER_ENABLED:
-            try:
-                if OPENAI_API_KEY:
-                    os.environ["OPENAI_API_KEY"] = OPENAI_API_KEY
-
-                encoder = OpenAIEncoder(name="text-embedding-3-small", score_threshold=0.0)
-                
-                sop_route = Route(
-                    name="sop_documents",
-                    utterances=[
-                        "bagaimana aturan perusahaan mengenai hal ini",
-                        "apa syarat untuk bisa mengajukan hal tersebut",
-                        "jelaskan prosedur atau langkah-langkahnya",
-                        "apakah ada kebijakan yang mengatur masalah ini",
-                        "saya mau tahu ketentuan dan regulasi dari perusahaan",
-                        "bolehkah saya melakukan ini menurut buku panduan",
-                        "bagaimana cara klaim atau mengajukan permohonan",
-                        "apa hak dan kewajiban karyawan dalam situasi ini",
-                        "bantu jelaskan pedoman operasional standar untuk proses ini",
-                        "apakah hal ini diperbolehkan oleh aturan HR",
-                        "dimana saya bisa membaca panduan tentang hal ini",
-                        "apa sanksi atau konsekuensi jika melanggar aturan ini"
-                    ]
-                )
-
-                hr_database_route = Route(
-                    name="hr_database",
-                    utterances=[
-                        "berapa total jumlah karyawan yang ada di kriteria ini",
-                        "tampilkan daftar nama orang-orang yang masuk kategori ini",
-                        "hitung total biaya atau pengeluaran untuk periode ini",
-                        "siapa saja yang memiliki status atau level ini",
-                        "berapa rata-rata dari data tersebut",
-                        "tolong rincikan penyebaran atau distribusi datanya",
-                        "kelompokkan data ini berdasarkan divisinya",
-                        "tolong tarik data historis untuk kejadian ini",
-                        "filter data yang nilainya di atas atau di bawah angka ini",
-                        "carikan karyawan dengan spesifikasi atau kualifikasi seperti ini",
-                        "berikan laporan statistik mengenai hal ini",
-                        "coba jumlahkan semua record yang sesuai"
-                    ]
-                )
-
-                local_index = LocalIndex()
-                self.route_layer = SemanticRouter(
-                    encoder=encoder,
-                    routes=[sop_route, hr_database_route],
-                    index=local_index
-                )
-
-                if hasattr(self.route_layer, "index") and len(self.route_layer.index) == 0:
-                    logger.warning("⚙️ Index Semantic Router kosong! Memaksa sinkronisasi manual...")
-                    self.route_layer.add(routes=[sop_route, hr_database_route])
-                    logger.info("✅ Sinkronisasi manual selesai.")
-                
-                logger.info(f"✅ Semantic Router Layer initialized (Threshold: {SEMANTIC_ROUTER_THRESHOLD})")
-                
-            except Exception as e:
-                logger.error(f"❌ Failed to initialize RouteLayer: {e}")
-                self.route_layer = None
-
-    def classify(self, query: str) -> Optional[Literal["A", "B"]]:
-        if not self.route_layer:
-            return None
-        
-        try:
-            route_choice = self.route_layer(query)
-            
-            if not route_choice:
-                logger.info(f"⚠️ No confident match for: '{query[:50]}...'")
-                return None
-            
-            score = getattr(route_choice, 'similarity_score', getattr(route_choice, 'score', 0.0))
-            route_name = route_choice.name or "None"
-            
-            logger.info(f"📊 [SEMANTIC] Rute: '{route_name}' | Score: {score:.4f} | Threshold: {SEMANTIC_ROUTER_THRESHOLD}")
-            
-            if score < SEMANTIC_ROUTER_THRESHOLD:
-                logger.info(f"⚠️ Score {score:.4f} below threshold. Fallback to LLM.")
-                return None
-                
-            route_map = {"sop_documents": "A", "hr_database": "B"}
-            intent = route_map.get(route_name)
-            
-            if intent:
-                logger.info(f"⚡ Semantic Match: '{query[:50]}...' → {intent}")
-                return intent
-            
-            logger.warning(f"⚠️ Unknown route: {route_name}")
-            return None
-            
-        except Exception as e:
-            logger.error(f"❌ Semantic Routing error: {e}")
-            return None
-
-try:
-    semantic_classifier = SemanticIntentClassifier()
-    logger.info("✅ Semantic classifier ready")
-except Exception as e:
-    logger.error(f"❌ Failed to init semantic classifier: {e}")
-    semantic_classifier = None
-
-# =====================================
 # ✨ UNIFIED CLASSIFIER (Greeting + Intent in ONE!)
 # =====================================
 async def classify_intent_unified(
@@ -229,16 +105,6 @@ async def classify_intent_unified(
         "A" - SOP/Policy questions
         "B" - HR Database queries
     """
-    
-    # Try Semantic Router first (free, no LLM call!)
-    if semantic_classifier:
-        intent = await asyncio.to_thread(semantic_classifier.classify, question)
-        if intent:
-            # Semantic Router only returns A or B
-            logger.info(f"⚡ Semantic Router Result: {intent}")
-            return intent
-    
-    # Fallback to Unified LLM Classifier
     try:
         context_text = ""
         if history and len(history) > 0:
@@ -510,10 +376,10 @@ Balas HANYA dengan JSON valid:
             return {"run_a": True, "run_b": False, "query_a": question, "query_b": ""}
 
     async def _execute_intent_flow(
-        self, intent: str, question: str, user_role: str, session_id: str, 
-        history: List[Dict[str, Any]], mode: str, cancellation_check: Optional[Callable]
+        self, intent: str, question: str, user_role: str, session_id: str,
+        history: List[Dict[str, Any]], mode: str, cancellation_check: Optional[Callable],
     ) -> Dict[str, Any]:
-        
+
         if intent == "B" and user_role.lower() not in ['hr', 'admin', 'manager']:
             logger.warning(f"🔒 HR DATA ACCESS DENIED: role={user_role}")
             return {
@@ -521,19 +387,19 @@ Balas HANYA dengan JSON valid:
                 "authorized": False,
                 "intent": intent
             }
-        
+
         tools = get_current_tools_schema(user_role, intent) if self.tools_available else []
         messages = self._prepare_messages(question, history, mode)
-        
+
         completion = await self._run_completion(messages, tools, mode)
-        
+
         if completion.choices[0].message.tool_calls:
             tool_call = completion.choices[0].message.tool_calls[0]
             function_name = tool_call.function.name
-            
+
             result = await self._execute_tool(
                 tool_call, session_id, user_role, question, mode,
-                cancellation_check=cancellation_check
+                cancellation_check=cancellation_check,
             )
             
             if isinstance(result, dict) and result.get("data"):
@@ -580,7 +446,6 @@ Balas HANYA dengan JSON valid:
             "intent": intent
         }
     
-    @observe(name="chat_process_question")
     async def process_question(
         self,
         question: str,
@@ -588,7 +453,7 @@ Balas HANYA dengan JSON valid:
         session_id: str,
         history: List[Dict[str, Any]] = None,
         mode: str = "chat",
-        cancellation_check: Optional[Callable] = None
+        cancellation_check: Optional[Callable] = None,
     ) -> Dict[str, Any]:
         try:
             is_hr_user = user_role.lower() in ['hr', 'admin', 'manager']
@@ -600,9 +465,13 @@ Balas HANYA dengan JSON valid:
                 standalone_question = question
                 run_a, run_b = True, False
                 query_for_a = question
+                query_for_b = ""
             else:
-                # ✨ STEP 1: UNIFIED Classification (Greeting + Intent in ONE!)
-                classification = await classify_intent_unified(question, history)
+                # ✨ STEP 1: UNIFIED Classification — OTel context otomatis di-inherit
+                with langfuse_observation("intent_classification", input={"question": question}) as _sp:
+                    classification = await classify_intent_unified(question, history)
+                    if _sp:
+                        _sp.update(output={"classification": classification})
 
                 # Handle greeting
                 if classification == "greeting":
@@ -626,17 +495,23 @@ Balas HANYA dengan JSON valid:
                         "is_casual_chat": True
                     }
 
-                # ✨ STEP 2: Smart Paraphrase (SKIP if clear!)
-                standalone_question = await self._smart_contextualize(question, history)
+                # ✨ STEP 2: Smart Paraphrase
+                with langfuse_observation("query_contextualization", input={"question": question}) as _sp:
+                    standalone_question = await self._smart_contextualize(question, history)
+                    if _sp:
+                        _sp.update(output={"standalone": standalone_question})
 
-                # ✨ STEP 3: Master Orchestrator — decides which routes to activate
-                orchestration = await self._decompose_query(standalone_question)
-                run_a = orchestration["run_a"]
-                run_b = orchestration["run_b"]
-                query_for_a = orchestration["query_a"]
-                query_for_b = orchestration["query_b"]
+                # ✨ STEP 3: Master Orchestrator
+                with langfuse_observation("orchestration", input={"question": standalone_question}) as _sp:
+                    orchestration = await self._decompose_query(standalone_question)
+                    run_a = orchestration["run_a"]
+                    run_b = orchestration["run_b"]
+                    query_for_a = orchestration["query_a"]
+                    query_for_b = orchestration["query_b"]
+                    if _sp:
+                        _sp.update(output={"run_a": run_a, "run_b": run_b})
 
-                # Safety gatekeeper (belt-and-suspenders for HR path edge cases)
+                # Safety gatekeeper
                 if run_b and not is_hr_user:
                     logger.warning(
                         f"🔒 [GATEKEEPER] Route B blocked | role='{user_role}' | "
@@ -648,24 +523,33 @@ Balas HANYA dengan JSON valid:
                         query_for_a = standalone_question
                     gatekeeper_redirected = True
 
-            # ✨ STEP 4: Selective Parallel Execution (only launch what's needed)
-            active_tasks: Dict[str, asyncio.Task] = {}
-            if run_a:
-                active_tasks["a"] = asyncio.create_task(
-                    self._execute_intent_flow(
+            # ✨ STEP 4: Selective Parallel Execution
+            # Bungkus setiap route dengan langfuse_observation agar semua child span
+            # (RAG engine, LangChain calls, OpenAI calls) otomatis menjadi nested.
+            # asyncio.create_task meng-copy OTel context saat task dibuat, sehingga
+            # context "chat_interaction" diteruskan ke setiap task.
+
+            async def _run_route_a():
+                with langfuse_observation("route_a_rag", input={"query": query_for_a}):
+                    return await self._execute_intent_flow(
                         intent="A", question=query_for_a, user_role=user_role,
                         session_id=session_id, history=history, mode=mode,
-                        cancellation_check=cancellation_check
+                        cancellation_check=cancellation_check,
                     )
-                )
-            if run_b:
-                active_tasks["b"] = asyncio.create_task(
-                    self._execute_intent_flow(
+
+            async def _run_route_b():
+                with langfuse_observation("route_b_database", input={"query": query_for_b}):
+                    return await self._execute_intent_flow(
                         intent="B", question=query_for_b, user_role=user_role,
                         session_id=session_id, history=history, mode=mode,
-                        cancellation_check=cancellation_check
+                        cancellation_check=cancellation_check,
                     )
-                )
+
+            active_tasks: Dict[str, asyncio.Task] = {}
+            if run_a:
+                active_tasks["a"] = asyncio.create_task(_run_route_a())
+            if run_b:
+                active_tasks["b"] = asyncio.create_task(_run_route_b())
 
             logger.info(f"⚡ Launching routes: {list(active_tasks.keys())}")
             raw_results = await asyncio.gather(*active_tasks.values(), return_exceptions=True)
@@ -692,6 +576,12 @@ Balas HANYA dengan JSON valid:
                 elif "structured_data" in result_b:
                     b_content_for_llm += f"\n[RAW DATA: {result_b['structured_data']}]"
 
+                # Save pre-synthesis context for LLM Judge
+                _eval_ctx = (
+                    f"SOP Answer:\n{str(result_a.get('answer', ''))}"
+                    f"\n\nDatabase Answer:\n{b_content_for_llm}"
+                )
+
                 merged_answer = await self._synthesize_results(
                     question=standalone_question,
                     answer_a=str(result_a.get("answer", "")),
@@ -705,10 +595,12 @@ Balas HANYA dengan JSON valid:
                 )
                 if b_has_analytics:
                     result_b["answer"] = merged_answer
+                    result_b["_eval_context"] = _eval_ctx
                     logger.info("✅ MERGE: A + B (Used B as base due to analytics)")
                     return result_b
                 else:
                     result_a["answer"] = merged_answer
+                    result_a["_eval_context"] = _eval_ctx
                     logger.info("✅ MERGE: A + B (Used A as base, no analytics in B)")
                     return result_a
 
@@ -721,11 +613,13 @@ Balas HANYA dengan JSON valid:
                         "Berikut adalah informasi berdasarkan pedoman SOP perusahaan:\n\n"
                         + original_answer
                     )
+                result_a["_eval_context"] = str(result_a.get("answer", ""))
                 logger.info("✅ Returning A (RAG/SOP)")
                 return result_a
 
             # SCENARIO 3: B succeeded (A not run, or A failed)
             if not b_failed:
+                result_b["_eval_context"] = str(result_b.get("answer", ""))
                 logger.info("✅ Returning B (Database)")
                 return result_b
 
@@ -753,6 +647,186 @@ Balas HANYA dengan JSON valid:
             logger.error(f"❌ Chat processing error: {e}", exc_info=True)
             return {"error": f"Maaf, terjadi gangguan: {str(e)}", "authorized": True}
     
+    async def run_ab_parallel_for_stream(
+        self,
+        question: str,
+        user_role: str,
+        session_id: str,
+        history: List[Dict[str, Any]] = None,
+        mode: str = "chat",
+        cancellation_check: Optional[Callable] = None,
+    ) -> Optional[Dict[str, Any]]:
+        """
+        If this is an A+B (merge) query, runs both routes in parallel and returns
+        pre-synthesis data so the caller can stream the synthesis step.
+        Returns None for non-A+B queries (caller falls back to process_question).
+
+        OPTIMIZED: Calls search_sop and query_hr_database directly — skips the
+        _run_completion LLM call inside _execute_intent_flow (which was a no-op:
+        tool_choice was always forced and the generated args were always overridden).
+        """
+        if user_role.lower() not in ['hr', 'admin', 'manager']:
+            return None  # Non-HR: always route A only
+
+        with langfuse_observation("query_contextualization", input={"question": question}) as _sp:
+            standalone_question = await self._smart_contextualize(question, history)
+            if _sp:
+                _sp.update(output={"standalone": standalone_question})
+
+        with langfuse_observation("orchestration", input={"question": standalone_question}) as _sp:
+            orchestration = await self._decompose_query(standalone_question)
+            run_a = orchestration["run_a"]
+            run_b = orchestration["run_b"]
+            query_for_a = orchestration["query_a"]
+            query_for_b = orchestration["query_b"]
+            if _sp:
+                _sp.update(output={"run_a": run_a, "run_b": run_b})
+
+        from app.tools import search_sop, query_hr_database, StructuredResponse as _SR
+
+        def _process_b_result(raw, q_b: str) -> Dict[str, Any]:
+            """Convert query_hr_database output to a standard result dict."""
+            if isinstance(raw, _SR) and raw.data_type == "analytics":
+                sd = raw.structured_data or {}
+                cols = ["category" if c == "Undefined" else c for c in sd.get("columns", [])]
+                rows = sd.get("rows", [])
+                title = f'<h3 class="analytics-query-title">{q_b.title()}</h3>'
+                viz = (raw.visualization_available and 2 <= len(rows) <= 500 and len(cols) >= 2)
+                result = build_analytics_response(
+                    domain="hr", text=title, columns=cols, rows=rows,
+                    session_id=session_id, visualization_available=viz,
+                    chart_hints=generate_chart_hints("hr", cols, rows) if viz else None,
+                    sql_query=raw.sql_query,
+                    sql_explanation=raw.sql_explanation,
+                )
+                result["answer"] = title
+                return result
+            return {"answer": str(raw), "authorized": True}
+
+        # ── B-only: single direct HR query, no A involved ──────────────────
+        if run_b and not run_a:
+            logger.info(f"⚡ [STREAM B-only] Direct tool call: B={query_for_b[:50]}")
+            with langfuse_observation("route_b_database", input={"query": query_for_b}):
+                try:
+                    raw_b = await query_hr_database(
+                        question=query_for_b, user_role=user_role, session_id=session_id
+                    )
+                    result_b = _process_b_result(raw_b, query_for_b)
+                except Exception as e:
+                    result_b = {"error": str(e), "answer": "maaf, terjadi kesalahan", "authorized": True}
+
+            if self._is_failure(result_b):
+                return None
+            return {"mode": "b_only", "result_b": result_b}
+
+        # ── A+B merge: both routes in parallel ──────────────────────────────
+        if not (run_a and run_b):
+            return None  # edge case: orchestrator said A-only despite classify→B
+
+        async def _run_route_a():
+            with langfuse_observation("route_a_rag", input={"query": query_for_a}):
+                sop_answer = await search_sop(
+                    question=query_for_a,
+                    session_id=session_id,
+                    cancellation_check=cancellation_check,
+                )
+                return {"answer": sop_answer, "authorized": True}
+
+        async def _run_route_b_parallel():
+            with langfuse_observation("route_b_database", input={"query": query_for_b}):
+                raw = await query_hr_database(
+                    question=query_for_b, user_role=user_role, session_id=session_id
+                )
+                return _process_b_result(raw, query_for_b)
+
+        logger.info(f"⚡ [STREAM A+B] Direct tool calls: A={query_for_a[:40]} | B={query_for_b[:40]}")
+        raw_results = await asyncio.gather(
+            asyncio.create_task(_run_route_a()),
+            asyncio.create_task(_run_route_b_parallel()),
+            return_exceptions=True,
+        )
+        result_a, result_b = raw_results
+
+        if isinstance(result_a, Exception):
+            result_a = {"error": str(result_a), "answer": "maaf, terjadi kesalahan", "authorized": True}
+        if isinstance(result_b, Exception):
+            result_b = {"error": str(result_b), "answer": "maaf, terjadi kesalahan", "authorized": True}
+
+        if self._is_failure(result_a) or self._is_failure(result_b):
+            return None
+
+        b_content = str(result_b.get("answer", ""))
+        if result_b.get("message_type") == "analytics_result" and "data" in result_b:
+            b_data = result_b["data"]
+            b_content += f"\n[RAW DATA: Kolom={b_data.get('columns')}, Baris={b_data.get('rows')}]"
+
+        eval_ctx = (
+            f"SOP Answer:\n{str(result_a.get('answer', ''))}"
+            f"\n\nDatabase Answer:\n{b_content}"
+        )
+        b_has_analytics = result_b.get("message_type") == "analytics_result"
+        return {
+            "mode": "ab",
+            "standalone_question": standalone_question,
+            "answer_a": str(result_a.get("answer", "")),
+            "answer_b_content": b_content,
+            "eval_ctx": eval_ctx,
+            "result_base": result_b if b_has_analytics else result_a,
+        }
+
+    async def _synthesize_results_stream(
+        self,
+        question: str,
+        answer_a: str,
+        answer_b: str,
+        mode: str = "chat",
+    ):
+        """Async generator: streams synthesis of A+B results token by token."""
+        from openai import AsyncOpenAI as _AsyncOpenAI
+        async_client = _AsyncOpenAI(api_key=OPENAI_API_KEY)
+        temperature = CALL_MODE_TEMPERATURE if mode == "call" else CHAT_MODE_TEMPERATURE
+        max_tokens = CALL_MODE_MAX_TOKENS if mode == "call" else CHAT_MODE_MAX_TOKENS
+
+        system_content = (
+            "Anda adalah DEN.AI, Senior HR Data Analyst. Tugas Anda adalah mensintesis aturan SOP dan Data Faktual ke dalam satu kesimpulan analisis (Insight) yang komprehensif.\n\n"
+            "ATURAN MUTLAK:\n"
+            "1. DILARANG menggunakan Markdown (seperti **, ###, atau LaTeX \\[ \\]). WAJIB gunakan HANYA tag HTML bersih (seperti <h3>, <strong>, <ul>, <li>, <p>, <br>).\n"
+            "2. WAJIB PERTAHANKAN DETAIL: Jangan membuang informasi penting dari Data A (SOP).\n"
+            "3. Jika ini adalah pertanyaan simulasi biaya, Anda WAJIB melakukan kalkulasi matematika sampai ketemu estimasi TOTAL RUPIAH.\n"
+            "4. Jika user TIDAK menyebutkan nominal gaji (untuk kasus lembur), WAJIB buat ASUMSI (misal: 'Asumsi rata-rata gaji pokok adalah Rp 5.000.000').\n"
+            "5. Struktur HTML Anda harus terdiri dari 4 bagian:\n"
+            "   <h3>Aturan & Kebijakan</h3>\n"
+            "   <h3>Data Faktual</h3>\n"
+            "   <h3>Simulasi & Insight Biaya</h3>\n"
+            "   <h3>Rujukan Dokumen</h3>\n\n"
+            "Gunakan bahasa Indonesia yang profesional."
+        )
+        user_content = (
+            f"Pertanyaan User: {question}\n\n"
+            f"Data dari Buku Panduan/SOP (Data A):\n{answer_a}\n\n"
+            f"Data dari Database HR (Data B):\n{answer_b}\n\n"
+            "Berikan laporan analisis HTML Anda sekarang."
+        )
+
+        try:
+            stream = await async_client.chat.completions.create(
+                model=self.model,
+                messages=[
+                    {"role": "system", "content": system_content},
+                    {"role": "user", "content": user_content},
+                ],
+                temperature=temperature,
+                max_tokens=max_tokens,
+                stream=True,
+            )
+            async for chunk in stream:
+                content = chunk.choices[0].delta.content
+                if content:
+                    yield content
+        except Exception as e:
+            logger.error(f"❌ Synthesis stream error: {e}")
+            yield f"<p><strong>Berdasarkan Panduan/SOP:</strong></p>{answer_a}<p><strong>Berdasarkan Data Aktual:</strong></p>{answer_b}"
+
     async def _synthesize_results(
         self,
         question: str,
@@ -847,34 +921,34 @@ Balas HANYA dengan JSON valid:
             raise
     
     async def _execute_tool(
-        self, 
-        tool_call: Any, 
-        session_id: str, 
-        user_role: str, 
-        original_question: str, 
+        self,
+        tool_call: Any,
+        session_id: str,
+        user_role: str,
+        original_question: str,
         mode: str = "chat",
-        cancellation_check: Optional[Callable] = None
+        cancellation_check: Optional[Callable] = None,
     ) -> Union[str, Dict[str, Any]]:
         if not self.tools_available: return "Maaf, tools tidak tersedia."
-        
+
         function_name = tool_call.function.name
         try:
             function_args = json.loads(tool_call.function.arguments)
         except json.JSONDecodeError:
             return "Maaf, terjadi kesalahan parsing argumen."
-        
+
         if function_name not in TOOL_FUNCTIONS:
             return "Maaf, fungsi tidak tersedia."
-        
+
         try:
             tool_function = TOOL_FUNCTIONS[function_name]
-                
+
             function_args["session_id"] = session_id
-            
+
             if "question" in function_args:
                 function_args["question"] = original_question
                 logger.info(f"🛡️ OVERRIDE: Mengirim teks mentah ke {function_name}")
-            
+
             if cancellation_check and "cancellation_check" in tool_function.__code__.co_varnames:
                 function_args["cancellation_check"] = cancellation_check
                 logger.info(f"🔥 Threading cancellation check to {function_name}")

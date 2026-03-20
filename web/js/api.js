@@ -8,95 +8,193 @@
 
 /* ================= CORE API COMMUNICATION ================= */
 async function askBackend(text) {
-  // Guard clause: prevent double submission
   if (window.CoreApp?.isWaitingForResponse && !window.isCallModeActive) return;
-  
+
   window.CoreApp?.setInputState(true);
 
-  // 🔥 NEW: Create AbortController for this request
   const controller = new AbortController();
-  if (window.CoreApp) {
-    window.CoreApp.currentRequestController = controller;
-  }
+  if (window.CoreApp) window.CoreApp.currentRequestController = controller;
 
-  // 🔥 NEW: Show thinking animation instead of simple loading
   let thinkingMessage = null;
   if (!window.isCallModeActive && window.CoreApp) {
     thinkingMessage = window.CoreApp.showThinkingAnimation();
   }
 
-  // Audio feedback
   if (window.CoreApp && !window.CoreApp.isTextOnlyMode && !window.CoreApp.isVoiceToTextMode) {
     window.SpeechModule?.playProcessingFeedback();
   }
-  
+
   const payload = {
     question: text,
     session_id: window.CoreApp?.activeChatId || null,
     user_role: window.CoreApp?.userRole || "Employee"
   };
 
+  let streamingBubble = null;
+
   try {
-    // 🔥 ENHANCED: Use 120s timeout + AbortController
     const timeoutId = setTimeout(() => controller.abort(), 120000);
 
-    const res = await fetch(`${window.API_URL}/ask`, {
+    const res = await fetch(`${window.API_URL}/ask/stream`, {
       method: "POST",
-      headers: { "Content-Type": "application/json", "Accept": "application/json" },
+      headers: { "Content-Type": "application/json", "Accept": "text/event-stream" },
       body: JSON.stringify(payload),
-      signal: controller.signal // 🔥 NEW: Connect to AbortController
+      signal: controller.signal
     });
 
     clearTimeout(timeoutId);
     window.SpeechModule?.stopProcessingFeedback();
-    
-    // 🔥 NEW: Remove thinking animation on success
-    if (window.CoreApp) {
-      window.CoreApp.removeThinkingAnimation();
-    }
 
     if (!res.ok) {
       if (res.status === 429) throw new Error("Rate Limit: Terlalu banyak permintaan.");
       throw new Error(`HTTP ${res.status}: ${res.statusText}`);
     }
 
-    const data = await res.json();
-    console.log("📡 API SUCCESS:", data.message_type || "Text Response");
-    
-    handleBackendResponse(data);
-    
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+    let fullAnswer = "";
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      buffer += decoder.decode(value, { stream: true });
+      const parts = buffer.split("\n\n");
+      buffer = parts.pop(); // keep incomplete trailing chunk
+
+      for (const part of parts) {
+        if (!part.startsWith("data: ")) continue;
+        let event;
+        try { event = JSON.parse(part.slice(6)); } catch { continue; }
+
+        if (event.type === "token") {
+          // First token: remove thinking animation, create streaming bubble
+          if (thinkingMessage) {
+            window.CoreApp?.removeThinkingAnimation();
+            thinkingMessage = null;
+            streamingBubble = _createStreamingBubble();
+          }
+          fullAnswer += event.content;
+          if (streamingBubble) {
+            streamingBubble.innerHTML = fullAnswer;
+            const msgs = document.getElementById("messages");
+            if (msgs) msgs.scrollTop = msgs.scrollHeight;
+          }
+
+        } else if (event.type === "done") {
+          window.CoreApp?.removeThinkingAnimation();
+
+          if (event.answer) {
+            // Non-streaming path (greeting / HR analytics)
+            if (streamingBubble) { streamingBubble.closest(".msg")?.remove(); streamingBubble = null; }
+            handleBackendResponse({
+              answer: event.answer,
+              session_id: event.session_id,
+              authorized: event.authorized ?? true,
+              message_type: event.message_type,
+              data: event.data,
+              trace_id: event.trace_id,
+            });
+          } else {
+            // Streaming path: finalize bubble
+            _finalizeStreamingBubble(streamingBubble, fullAnswer, event.trace_id);
+            streamingBubble = null;
+            scheduleAutoSpeech(fullAnswer);
+
+            // A+B merge: render analytics table from route B (after synthesis streamed)
+            if (event.message_type === "analytics_result" && event.data) {
+              window.CoreApp?.addMessage("bot", "", false, {
+                message_type: event.message_type,
+                data: event.data,
+                trace_id: event.trace_id,
+                turn_id: event.turn_id,
+                conversation_id: event.conversation_id,
+                visualization_available: event.visualization_available,
+              });
+              if (event.visualization_available && event.turn_id) {
+                window.VisualizationModule?.renderVisualizationOffer(event.conversation_id, event.turn_id);
+              }
+            }
+          }
+
+        } else if (event.type === "error") {
+          window.CoreApp?.removeThinkingAnimation();
+          if (streamingBubble) { streamingBubble.closest(".msg")?.remove(); streamingBubble = null; }
+          window.CoreApp?.addMessage("bot", `❌ ${event.message}`);
+
+        } else if (event.type === "cancelled") {
+          if (streamingBubble) { streamingBubble.closest(".msg")?.remove(); streamingBubble = null; }
+        }
+      }
+    }
+
   } catch (err) {
     window.SpeechModule?.stopProcessingFeedback();
-    
-    // 🔥 NEW: Remove thinking animation on error
-    if (window.CoreApp) {
-      window.CoreApp.removeThinkingAnimation();
-    }
-    
-    // 🔥 NEW: Handle abort separately from other errors
-    if (err.name === 'AbortError') {
-      console.log('🛑 Request was cancelled by user');
-      // Don't show error message - user intentionally cancelled
+    window.CoreApp?.removeThinkingAnimation();
+    if (streamingBubble) { streamingBubble.closest(".msg")?.remove(); streamingBubble = null; }
+
+    if (err.name === "AbortError") {
+      console.log("🛑 Request was cancelled by user");
       return;
     }
-    
-    const errorMessage = err.message.includes('Failed to fetch') 
+    const errorMessage = err.message.includes("Failed to fetch")
       ? "❌ Connection Error: Unable to reach server."
       : `❌ ${err.message}`;
-    
     window.CoreApp?.addMessage("bot", errorMessage);
-    
+
   } finally {
-    // 🔥 NEW: Clear controller reference
-    if (window.CoreApp) {
-      window.CoreApp.currentRequestController = null;
-    }
-    
+    if (window.CoreApp) window.CoreApp.currentRequestController = null;
     window.CoreApp?.setInputState(false);
     if (!window.isCallModeActive) window.CoreApp?.chatInput?.focus();
-    
-    // Refresh sessions silently
     window.SessionModule?.loadSessions();
+  }
+}
+
+function _createStreamingBubble() {
+  const messages = document.getElementById("messages");
+  if (!messages) return null;
+
+  const msgDiv = document.createElement("div");
+  msgDiv.className = "msg bot";
+
+  const avatar = document.createElement("div");
+  avatar.className = "avatar";
+  avatar.textContent = "AI";
+
+  const bubble = document.createElement("div");
+  bubble.className = "bubble";
+
+  // Cursor sebagai elemen TERPISAH di luar bubble — tidak ikut masuk ke innerHTML
+  const cursor = document.createElement("span");
+  cursor.className = "stream-cursor";
+  cursor.textContent = "▌";
+  cursor.dataset.streamCursor = "1";
+
+  msgDiv.appendChild(avatar);
+  msgDiv.appendChild(bubble);
+  msgDiv.appendChild(cursor);
+  messages.appendChild(msgDiv);
+  messages.scrollTop = messages.scrollHeight;
+
+  return bubble;
+}
+
+function _finalizeStreamingBubble(bubble, fullAnswer, traceId) {
+  if (!bubble) return;
+  const cleaned = fullAnswer.replace(/\*\*(.*?)\*\*/g, "<strong>$1</strong>");
+  bubble.innerHTML = cleaned;
+
+  // Hapus cursor yang ada di luar bubble
+  const msgDiv = bubble.closest(".msg");
+  if (msgDiv) {
+    msgDiv.querySelector("[data-stream-cursor]")?.remove();
+  }
+
+  // Gunakan _buildFeedbackButtons dari CoreApp agar konsisten dengan regular messages
+  if (traceId && window.CoreApp?._buildFeedbackButtons) {
+    const msgDiv = bubble.closest(".msg");
+    if (msgDiv) msgDiv.appendChild(window.CoreApp._buildFeedbackButtons(traceId));
   }
 }
 
@@ -105,9 +203,10 @@ function handleBackendResponse(data) {
   // 1. Security & Error Gates
   if (data.error) return window.CoreApp?.addMessage("bot", `❌ Error: ${data.error}`);
   if (data.authorized === false) return window.CoreApp?.addMessage("bot", `🔒 Access Denied: ${data.answer}`);
-  
+
   const textResponse = data.answer || "";
   const isAnalytics = data.message_type === "analytics_result";
+  const traceId = data.trace_id || null;   // 🔥 Capture for human feedback
 
   // 2. Authoritative Routing
   if (window.CoreApp) {
@@ -120,20 +219,21 @@ function handleBackendResponse(data) {
         visualization_available: data.visualization_available,
         conversation_id: data.conversation_id,
         turn_id: data.turn_id,
-        sql_query: data.sql_query,           
+        sql_query: data.sql_query,
         sql_explanation: data.sql_explanation,
-        query: data.query
+        query: data.query,
+        trace_id: traceId,               // 🔥 Pass through for feedback buttons
       });
-      
+
       // Visualization trigger (Dumb Trigger Principle)
       if (data.visualization_available && data.turn_id) {
         window.VisualizationModule?.renderVisualizationOffer(data.conversation_id, data.turn_id);
       }
     } else {
-      window.CoreApp.addMessage("bot", textResponse, true);
+      window.CoreApp.addMessage("bot", textResponse, true, { trace_id: traceId });
     }
   }
-  
+
   // TTS Trigger
   scheduleAutoSpeech(textResponse);
 }

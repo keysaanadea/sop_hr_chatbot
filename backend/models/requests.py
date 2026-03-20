@@ -52,7 +52,12 @@ class QuestionResponse(BaseModel):
     tool_called: Optional[str] = None
     intent: Optional[str] = None
     error: Optional[str] = None
-    
+    cancelled: Optional[bool] = None
+    session_id: Optional[str] = None
+
+    # Langfuse trace ID — returned to frontend for human feedback
+    trace_id: Optional[str] = None
+
     # 🌟 NEW UNIVERSAL ANALYTICS FIELDS (From chat_service.py)
     message_type: Optional[str] = None
     domain: Optional[str] = None

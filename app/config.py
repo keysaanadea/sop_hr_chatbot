@@ -32,7 +32,6 @@ SUPABASE_CONNECTION_STRING = os.getenv("SUPABASE_CONNECTION_STRING")
 # Pinecone (SOP RAG)
 PINECONE_API_KEY = os.getenv("PINECONE_API_KEY")
 PINECONE_INDEX = os.getenv("PINECONE_INDEX")
-PINECONE_GLOBAL_INDEX = os.getenv("PINECONE_GLOBAL_INDEX", "global-knowledge")
 
 # ⚡ Upstash Redis (Chat History Cache)
 UPSTASH_REDIS_URL = os.getenv("UPSTASH_REDIS_URL")
@@ -117,6 +116,8 @@ RAG_CACHE_MAX_SIZE = int(os.getenv("RAG_CACHE_MAX_SIZE", 100))
 
 RAG_MAX_CONTEXT_LENGTH = int(os.getenv("RAG_MAX_CONTEXT_LENGTH", 6500))
 RAG_MAX_CHUNK_LENGTH = int(os.getenv("RAG_MAX_CHUNK_LENGTH", 1800))
+
+RAG_MIN_SCORE = float(os.getenv("RAG_MIN_SCORE", "0.01"))  # Buang chunk Cohere score < threshold
 
 RAG_ENABLE_RERANKING = os.getenv("RAG_ENABLE_RERANKING", "true").lower() == "true"
 RAG_RERANK_MULTIPLIER = float(os.getenv("RAG_RERANK_MULTIPLIER", 3.0))

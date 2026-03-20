@@ -41,15 +41,50 @@ except Exception as e:
 def get_langchain_callback():
     """
     Buat LangChain CallbackHandler baru untuk satu trace/request.
-    Langfuse v4: from langfuse.langchain import CallbackHandler
+    Langfuse v4: CallbackHandler tanpa trace_context akan otomatis menggunakan
+    OTel context yang aktif saat ini (ditetapkan oleh langfuse_observation()).
     Kembalikan None jika Langfuse tidak aktif.
     """
     if not LANGFUSE_ENABLED:
         return None
     try:
         from langfuse.langchain import CallbackHandler
-        # v4: CallbackHandler membaca LANGFUSE_* dari env vars yang sudah di-set di atas
         return CallbackHandler()
     except Exception as e:
         logger.warning(f"⚠️ Tidak bisa membuat LangChain CallbackHandler: {e}")
         return None
+
+
+try:
+    from contextlib import contextmanager as _contextmanager
+
+    @_contextmanager
+    def langfuse_observation(name: str, **kwargs):
+        """
+        Langfuse v4 span helper — context manager yang membuat observation baru
+        sebagai OTel context aktif. Semua panggilan LLM di dalam blok ini
+        (langfuse.openai, LangChain CallbackHandler) otomatis menjadi child span.
+        No-op jika Langfuse tidak diaktifkan.
+
+        Contoh pemakaian:
+            with langfuse_observation("intent_classification", input={...}) as span:
+                result = await classify_intent(...)
+                if span:
+                    span.update(output={"result": result})
+        """
+        if not LANGFUSE_ENABLED:
+            yield None
+            return
+        try:
+            from langfuse import get_client
+            with get_client().start_as_current_observation(name=name, **kwargs) as span:
+                yield span
+        except Exception as _e:
+            logger.debug(f"langfuse_observation '{name}' skipped: {_e}")
+            yield None
+
+except Exception:
+    # Fallback no-op jika contextlib tidak tersedia (harusnya tidak terjadi)
+    def langfuse_observation(name: str, **kwargs):  # type: ignore[misc]
+        from contextlib import nullcontext
+        return nullcontext(None)

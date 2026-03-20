@@ -135,18 +135,17 @@ def _get_hr_tools() -> List[Dict[str, Any]]:
 # =====================
 
 async def search_sop(
-    question: str, 
+    question: str,
     session_id: str = "default",
-    cancellation_check: Optional[Callable] = None  # 🔥 NEW parameter
+    cancellation_check: Optional[Callable] = None,
 ) -> str:
-    """
-    🔥 ENHANCED: Search SOP with cancellation support
-    """
+    """Search SOP documents via the RAG engine with full observability."""
     try:
         logger.info(f"📖 Executing SOP search for: {question[:50]}...")
         if USE_SOP_ENGINE:
-            # 🔥 Pass cancellation_check to RAG engine
-            result = await answer_question(question, session_id, cancellation_check)
+            result = await answer_question(
+                question, session_id, cancellation_check
+            )
             logger.info(f"✅ SOP search completed ({len(result)} chars)")
             return result
         else:

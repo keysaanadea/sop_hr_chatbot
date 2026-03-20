@@ -52,3 +52,6 @@ test_db.py
 test_network.py
 thinking-demo.html
 zilliz-cloud-Free-01-username-password.txt
+
+.DS_Store
+.claude/

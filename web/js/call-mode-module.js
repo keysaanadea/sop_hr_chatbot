@@ -85,6 +85,7 @@ function endCallMode() {
   
   if (window.SpeechModule?.isListening) window.SpeechModule.stopRecognition();
   if (window.SpeechModule?.isSpeaking) window.SpeechModule.stopTextToSpeech();
+  window.SpeechModule?.clearTTSQueue();
   
   callModeOverlay?.classList.remove('active');
   showAudioVisualization(false);

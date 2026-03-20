@@ -21,6 +21,10 @@ let hasInitialized = false;
 let finalTranscriptTimer = null;
 const SPEECH_PAUSE_DELAY = 1500; // 1.5 detik delay sebelum processing
 
+// Sentence-level TTS queue (call mode streaming)
+const ttsQueue = [];    // Array of { text, audioPromise }
+let isQueueActive = false;
+
 const volumeIndicator = document.getElementById("volumeIndicator");
 const landingSpeechBtn = document.getElementById("landingSpeechBtn");
 const chatSpeechBtn = document.getElementById("chatSpeechBtn");
@@ -262,6 +266,83 @@ function showSpeechError(message) {
   setTimeout(() => { if (errorDiv) errorDiv.style.display = 'none'; }, 5000);
 }
 
+/* ================= SENTENCE-LEVEL TTS QUEUE (CALL MODE STREAMING) ================= */
+// Queue a sentence: immediately starts fetching audio in parallel, plays in order.
+async function queueSentenceForTTS(text) {
+  if (!text || text.trim().length < 5) return;
+
+  // Start TTS fetch immediately (pipeline: fetch sentence N+1 while sentence N plays)
+  const audioPromise = _fetchTTSAudio(text.trim());
+  ttsQueue.push({ text, audioPromise });
+
+  if (!isQueueActive) {
+    isQueueActive = true;
+    _playQueueNext();
+  }
+}
+
+async function _fetchTTSAudio(text) {
+  const response = await fetch(`${window.API_URL}/speech/text-to-speech`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ text, language: 'id', voice: 'indonesian', slow: false })
+  });
+  if (!response.ok) throw new Error(`TTS ${response.status}`);
+  return response.blob();
+}
+
+async function _playQueueNext() {
+  if (ttsQueue.length === 0) {
+    isQueueActive = false;
+    isSpeaking = false;
+    // All sentences done — restart mic
+    if (window.isCallModeActive && window.continuousListening) {
+      setTimeout(() => {
+        window.isProcessingCall = false;
+        window.CallModeModule?.setCallStatus('listening');
+        const interimEl = document.getElementById("callInterimText");
+        if (interimEl) interimEl.textContent = '';
+        restartCallListening();
+      }, 500);
+    }
+    return;
+  }
+
+  const { audioPromise } = ttsQueue.shift();
+  isSpeaking = true;
+  stopRecognition(); // mic lock
+
+  try {
+    const blob = await audioPromise; // already fetching, likely ready
+    const audioUrl = URL.createObjectURL(blob);
+
+    if (currentAudio) { currentAudio.pause(); currentAudio = null; }
+    currentAudio = new Audio(audioUrl);
+    currentAudio.volume = 1.0;
+
+    currentAudio.onended = () => {
+      URL.revokeObjectURL(audioUrl);
+      currentAudio = null;
+      _playQueueNext(); // chain to next sentence
+    };
+    currentAudio.onerror = () => {
+      URL.revokeObjectURL(audioUrl);
+      currentAudio = null;
+      _playQueueNext(); // skip failed, continue
+    };
+
+    await currentAudio.play();
+  } catch (err) {
+    console.error('[TTS Queue] Playback error:', err);
+    _playQueueNext();
+  }
+}
+
+function clearTTSQueue() {
+  ttsQueue.length = 0;
+  isQueueActive = false;
+}
+
 /* ================= TEXT-TO-SPEECH SYSTEM (ANTI-ECHO) ================= */
 async function speakText(text, options = {}) {
   if (window.CoreApp?.isTextOnlyMode || window.CoreApp?.isVoiceToTextMode) return null;
@@ -475,6 +556,8 @@ window.SpeechModule = {
   stopProcessingFeedback,
   restartCallListening,
   showSpeechError,
+  queueSentenceForTTS,
+  clearTTSQueue,
   get _speechRecognition() { return speechRecognition; },
   _updateSpeechUI: updateSpeechUI
 };

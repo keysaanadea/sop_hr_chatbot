@@ -545,7 +545,14 @@ function addMessage(role, text, shouldSave = true, responseData = null) {
         if (responseData.turn_id) {
           window._hrVizBubbleMap = window._hrVizBubbleMap || {};
           // Map to chatColumn so visualisations appear as siblings, not children of bubble
-          window._hrVizBubbleMap[responseData.turn_id] = chatColumn; 
+          window._hrVizBubbleMap[responseData.turn_id] = chatColumn;
+        }
+
+        // 🔥 Feedback buttons for HR analytics messages
+        const hrTraceId = responseData?.trace_id;
+        if (hrTraceId) {
+          const feedbackDiv = _buildFeedbackButtons(hrTraceId);
+          chatColumn.appendChild(feedbackDiv);
         }
 
         if (shouldSave) {
@@ -570,34 +577,34 @@ function addMessage(role, text, shouldSave = true, responseData = null) {
   }
   
   // 📝 FOR NON-HR MESSAGES OR FALLBACK: Use regular chat bubble
-  return createRegularMessage(role, text, shouldSave, responseData);
+  return createRegularMessage(role, text, shouldSave, responseData?.trace_id || null);
 }
 
 /**
  * 🔄 REGULAR MESSAGE RENDERING
  */
-function createRegularMessage(role, text, shouldSave = true) {
+function createRegularMessage(role, text, shouldSave = true, traceId = null) {
   const div = document.createElement("div");
   div.className = `msg ${role==="user"?"user-msg user":"bot"}`;
-  
+
   const avatarText = role === "user" ? "YOU" : "AI";
-  
+
   const bubble = document.createElement("div");
   bubble.className = "bubble";
-  
+
   if (role === "user") {
     bubble.textContent = text;
   } else {
     bubble.innerHTML = text;
   }
-  
+
   const avatar = document.createElement("div");
   avatar.className = "avatar";
   avatar.textContent = avatarText;
-  
+
   div.appendChild(avatar);
   div.appendChild(bubble);
-  
+
   if (role === "bot" && !isTextOnlyMode && !window.isCallModeActive) {
     const actions = document.createElement("div");
     actions.className = "message-actions";
@@ -614,6 +621,11 @@ function createRegularMessage(role, text, shouldSave = true) {
       </button>
     `;
     div.appendChild(actions);
+  }
+
+  // Feedback buttons are independent of TTS/voice mode — render whenever traceId is present
+  if (role === "bot" && traceId && !window.isCallModeActive) {
+    div.appendChild(_buildFeedbackButtons(traceId));
   }
   
   if (messages) {
@@ -635,6 +647,155 @@ function createRegularMessage(role, text, shouldSave = true) {
   }
   
   return div;
+}
+
+/**
+ * 🔥 Build a reusable feedback buttons row (used by both regular and HR analytics messages)
+ */
+function _buildFeedbackButtons(traceId) {
+  const wrapper = document.createElement("div");
+  wrapper.className = "feedback-wrapper";
+
+  // ── Baris utama: teks + tombol ──
+  const footer = document.createElement("div");
+  footer.className = "feedback-footer";
+  footer.innerHTML = `
+    <span class="feedback-text">Apakah jawaban ini membantu?</span>
+    <div class="feedback-btns">
+      <button class="feedback-btn thumbs-up" onclick="window.CoreApp.submitFeedback('${traceId}', 1, this)" title="Ya, membantu">
+        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M14 9V5a3 3 0 00-3-3l-4 9v11h11.28a2 2 0 002-1.7l1.38-9a2 2 0 00-2-2.3H14zM7 22H4a2 2 0 01-2-2v-7a2 2 0 012-2h3"></path>
+        </svg>
+      </button>
+      <button class="feedback-btn thumbs-down" onclick="window.CoreApp._showFeedbackBox('${traceId}', this)" title="Tidak membantu">
+        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M10 15v4a3 3 0 003 3l4-9V2H5.72a2 2 0 00-2 1.7l-1.38 9a2 2 0 002 2.3H10zM17 2h2.67A2.31 2.31 0 0122 4v7a2.31 2.31 0 01-2.33 2H17"></path>
+        </svg>
+      </button>
+    </div>
+  `;
+
+  // ── Comment box (hidden by default, muncul saat thumbs-down diklik) ──
+  const commentBox = document.createElement("div");
+  commentBox.className = "feedback-comment-box";
+  commentBox.style.display = "none";
+  commentBox.dataset.traceId = traceId;
+  commentBox.innerHTML = `
+    <p class="feedback-comment-label">Ada yang kurang tepat? Bantu kami memperbaiki:</p>
+    <textarea class="feedback-textarea" placeholder="Tuliskan kesalahan atau saran perbaikan..." rows="3"></textarea>
+    <div class="feedback-comment-actions">
+      <button class="feedback-send-btn" onclick="window.CoreApp._submitFeedbackWithComment('${traceId}', this)">Kirim</button>
+      <button class="feedback-cancel-btn" onclick="window.CoreApp._cancelFeedbackBox(this)">Batal</button>
+    </div>
+  `;
+
+  wrapper.appendChild(footer);
+  wrapper.appendChild(commentBox);
+  return wrapper;
+}
+
+function _showFeedbackBox(_traceId, buttonEl) {
+  const wrapper = buttonEl.closest(".feedback-wrapper");
+  if (!wrapper) return;
+
+  // Highlight tombol thumbs-down
+  buttonEl.classList.add("feedback-selected");
+
+  // Disable kedua tombol
+  wrapper.querySelectorAll(".feedback-btn").forEach(btn => {
+    btn.disabled = true;
+    btn.style.opacity = "0.4";
+    btn.style.cursor = "default";
+  });
+  buttonEl.style.opacity = "1";
+
+  // Tampilkan comment box
+  const commentBox = wrapper.querySelector(".feedback-comment-box");
+  if (commentBox) {
+    commentBox.style.display = "block";
+    commentBox.querySelector("textarea")?.focus();
+  }
+}
+
+function _cancelFeedbackBox(buttonEl) {
+  const wrapper = buttonEl.closest(".feedback-wrapper");
+  if (!wrapper) return;
+
+  // Reset semua ke state awal
+  wrapper.querySelectorAll(".feedback-btn").forEach(btn => {
+    btn.disabled = false;
+    btn.style.opacity = "";
+    btn.style.cursor = "";
+    btn.classList.remove("feedback-selected");
+  });
+
+  const commentBox = wrapper.querySelector(".feedback-comment-box");
+  if (commentBox) {
+    commentBox.style.display = "none";
+    const ta = commentBox.querySelector("textarea");
+    if (ta) ta.value = "";
+  }
+}
+
+async function _submitFeedbackWithComment(traceId, buttonEl) {
+  const wrapper = buttonEl.closest(".feedback-wrapper");
+  const comment = wrapper?.querySelector("textarea")?.value?.trim() || "";
+
+  buttonEl.disabled = true;
+  buttonEl.textContent = "Mengirim...";
+
+  try {
+    const res = await fetch(`${window.API_URL}/feedback`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ trace_id: traceId, score: 0, comment }),
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    console.log(`✅ Feedback (thumbs-down) sent: trace=${traceId}`);
+
+    // Tampilkan konfirmasi
+    const commentBox = wrapper.querySelector(".feedback-comment-box");
+    if (commentBox) {
+      commentBox.innerHTML = `<p class="feedback-sent-msg">✅ Terima kasih! Masukan kamu sudah diterima.</p>`;
+    }
+  } catch (e) {
+    console.error("❌ Failed to send feedback:", e);
+    buttonEl.disabled = false;
+    buttonEl.textContent = "Kirim";
+  }
+}
+
+/**
+ * 🔥 Send human feedback (thumbs up/down) to the /feedback endpoint
+ */
+async function submitFeedback(traceId, score, buttonEl) {
+  if (!traceId) return;
+
+  // Disable both buttons immediately to prevent double-submit
+  const actionsRow = buttonEl.closest('.feedback-footer, .message-actions, .feedback-actions');
+  if (actionsRow) {
+    actionsRow.querySelectorAll('.feedback-btn').forEach(btn => {
+      btn.disabled = true;
+      btn.style.opacity = '0.4';
+      btn.style.cursor = 'default';
+    });
+  }
+
+  // Highlight selected button
+  buttonEl.classList.add('feedback-selected');
+  buttonEl.style.opacity = '1';
+
+  try {
+    const res = await fetch(`${window.API_URL}/feedback`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ trace_id: traceId, score }),
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    console.log(`✅ Feedback sent: trace=${traceId}, score=${score}`);
+  } catch (e) {
+    console.error('❌ Failed to send feedback:', e);
+  }
 }
 
 function createSystemBubble(text = "", className = "") {
@@ -913,6 +1074,11 @@ window.CoreApp = {
   set isVoiceToTextMode(value) { isVoiceToTextMode = value; },
   
   addMessage,
+  submitFeedback,
+  _buildFeedbackButtons,
+  _showFeedbackBox,
+  _cancelFeedbackBox,
+  _submitFeedbackWithComment,
   toggleHRAccess,
   switchRole,
   toggleRoleMenu,

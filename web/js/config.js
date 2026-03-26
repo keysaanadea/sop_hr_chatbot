@@ -1,4 +1,4 @@
-// js/config.js
+/ js/config.js
 // 🎯 MASTER CONFIG: Auto-detects environment (dev vs production)
 (function () {
   const hostname = window.location.hostname;

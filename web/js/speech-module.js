@@ -182,24 +182,16 @@ async function startSpeechRecognition(button, input) {
     return;
   }
 
-  try {
-    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-    stream.getTracks().forEach(track => track.stop());
-  } catch (error) {
-    showSpeechError('Microphone access denied or not found.');
-    return;
-  }
-
   if (isSpeaking) stopTextToSpeech();
 
   currentSpeechButton = button;
   currentInput = input;
-  
+
   if (window.CoreApp) {
-    window.CoreApp.isVoiceToTextMode = true; 
+    window.CoreApp.isVoiceToTextMode = true;
     window.CoreApp.isTextOnlyMode = false;
   }
-  
+
   speechRecognition.continuous = false;
   speechRecognition.interimResults = true;
 

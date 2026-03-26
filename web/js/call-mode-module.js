@@ -36,9 +36,6 @@ async function startCallMode() {
   }
 
   try {
-    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-    stream.getTracks().forEach(track => track.stop());
-    
     isCallModeActive = true;
     continuousListening = true;
     isProcessingCall = false;

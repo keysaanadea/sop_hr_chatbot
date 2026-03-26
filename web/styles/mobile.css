@@ -14,7 +14,14 @@
    ================================================================ */
 .flex.h-screen.overflow-hidden {
     padding-top: env(safe-area-inset-top);
-    padding-bottom: env(safe-area-inset-bottom);
+}
+
+/* ================================================================
+   iOS Fix: Prevent auto-zoom on input focus
+   iOS Safari zoom-in ketika input font-size < 16px.
+   ================================================================ */
+input, textarea, select {
+    font-size: 16px !important;
 }
 
 @media (max-width: 767px) {
@@ -113,6 +120,63 @@
        ================================================================ */
     .chat-disclaimer {
         display: none;
+    }
+
+
+    /* ================================================================
+       iPhone Safe Area — BOTTOM
+       Pastikan input area tidak tertutup home indicator iPhone.
+       ================================================================ */
+    .chat-input-area {
+        padding-bottom: calc(1.25rem + env(safe-area-inset-bottom));
+    }
+
+
+    /* ================================================================
+       HR STAT CARD — kecilkan angka besar di mobile
+       ================================================================ */
+
+    /* Angka utama (misal "1.354") dari 56px → 36px */
+    .hr-stat-value {
+        font-size: 36px !important;
+    }
+
+    .hr-stat-card-inner {
+        padding: 14px 16px 0;
+    }
+
+    .hr-stat-label-text {
+        font-size: 11px;
+        margin-bottom: 5px;
+    }
+
+
+    /* ================================================================
+       VISUALIZATION PANEL — kompres lebih kecil di mobile
+       ================================================================ */
+
+    .viz-offer-header {
+        padding: 14px 16px 12px;
+    }
+
+    .viz-offer-title {
+        font-size: 15px;
+        margin-bottom: 2px;
+    }
+
+    .viz-offer-subtitle {
+        font-size: 11px;
+        line-height: 1.4;
+    }
+
+    .viz-offer-eyebrow {
+        font-size: 8px;
+        padding: 2px 8px;
+        margin-bottom: 6px;
+    }
+
+    .viz-section {
+        padding: 10px 16px;
     }
 
 

@@ -175,8 +175,6 @@ function showTableDetail(index) {
   });
 
   const tableName  = table.name || table.full_name.split('.').pop() || table.full_name;
-  const schemaName = (table.schema || table.full_name.split('.')[0] || 'public').toUpperCase();
-  const fullNameUpper = table.full_name.toUpperCase();
 
   const overlay = schemaDetailOverlay;
   overlay.className = 'schema-detail-overlay';
@@ -188,7 +186,6 @@ function showTableDetail(index) {
         </div>
         <div>
           <div class="schema-detail-title">${escapeHtml(tableName)}</div>
-          <div class="schema-detail-subtitle">${escapeHtml(schemaName)} &nbsp;•&nbsp; ${escapeHtml(fullNameUpper)}</div>
         </div>
       </div>
       <button class="schema-detail-close" onclick="closeTableDetail()">

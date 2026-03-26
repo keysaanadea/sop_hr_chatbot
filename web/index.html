@@ -2,7 +2,7 @@
 <html lang="id" class="light">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
     <title>DENAI AI | Asisten Pengetahuan Perusahaan</title>
 
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -203,10 +203,15 @@
                 <button class="call-control-btn end-call flex items-center gap-3 px-8 py-4 btn-gradient text-white font-bold rounded-full shadow-lg shadow-primary/20 hover:scale-105 active:scale-95 transition-all"
                         id="endCallBtn" title="Akhiri Panggilan">
                     <span class="material-symbols-outlined" style="font-variation-settings:'FILL' 1;">call_end</span>
-                    <span>Akhiri</span>
+                    <span class="call-end-label">Akhiri</span>
                 </button>
 
             </div>
+        </div>
+
+        <!-- Mobile mini transcript (hanya terlihat di mobile, desktop tersembunyi) -->
+        <div id="callMobileTranscript" class="call-mobile-transcript">
+            <p class="call-mobile-hint">Mulai berbicara...</p>
         </div>
     </section>
 
@@ -483,7 +488,7 @@
                         </button>
                     </div>
                 </div>
-                <p class="text-center text-[10px] text-slate-400 mt-3 uppercase tracking-tight font-medium">
+                <p class="chat-disclaimer text-center text-[10px] text-slate-400 mt-3 uppercase tracking-tight font-medium">
                     DENAI dapat memberikan estimasi. Verifikasi dengan sumber resmi.
                 </p>
             </div>

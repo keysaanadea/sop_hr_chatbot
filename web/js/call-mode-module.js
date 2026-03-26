@@ -238,6 +238,17 @@ function appendCallTranscript(role, text) {
   `;
   callTranscriptLog.appendChild(line);
   callTranscriptLog.scrollTop = callTranscriptLog.scrollHeight;
+
+  // Update mobile mini transcript (only last message shown)
+  const mobileTx = document.getElementById('callMobileTranscript');
+  if (mobileTx) {
+    mobileTx.innerHTML = `
+      <div class="call-mobile-msg">
+        <span class="call-mobile-label">${role === 'user' ? 'Anda' : 'Denai'}</span>
+        <p class="call-mobile-text">${text.trim()}</p>
+      </div>
+    `;
+  }
 }
 
 /* ================= EVENT LISTENERS SETUP ================= */

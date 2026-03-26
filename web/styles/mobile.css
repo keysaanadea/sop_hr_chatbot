@@ -4,6 +4,19 @@
    Tidak ada satu pun rule yang mempengaruhi tampilan desktop (≥768px).
    ================================================================ */
 
+/* Elemen khusus mobile — tersembunyi di desktop */
+.call-mobile-transcript { display: none; }
+
+/* ================================================================
+   iPhone Safe Area (notch / Dynamic Island)
+   viewport-fit=cover membuat konten extend ke bawah notch,
+   env() memberi padding agar konten tidak tertutup.
+   ================================================================ */
+.flex.h-screen.overflow-hidden {
+    padding-top: env(safe-area-inset-top);
+    padding-bottom: env(safe-area-inset-bottom);
+}
+
 @media (max-width: 767px) {
 
     /* ================================================================
@@ -94,6 +107,187 @@
     /* ================================================================
        HEADER
        ================================================================ */
+
+    /* ================================================================
+       DISCLAIMER — sembunyikan di chat mobile
+       ================================================================ */
+    .chat-disclaimer {
+        display: none;
+    }
+
+
+    /* ================================================================
+       CALL MODE — TOMBOL AKHIRI (icon only, no text)
+       ================================================================ */
+
+    /* Sembunyikan teks "Akhiri", biarkan hanya icon */
+    .call-end-label {
+        display: none;
+    }
+
+    /* Ubah jadi lingkaran merah */
+    #endCallBtn {
+        width: 60px;
+        height: 60px;
+        padding: 0;
+        border-radius: 50%;
+        gap: 0;
+        justify-content: center;
+        align-items: center;
+    }
+
+    /* Pill container: cukup tampung icon saja */
+    .call-controls .flex {
+        padding-left: 1.25rem;
+        padding-right: 1.25rem;
+    }
+
+
+    /* ================================================================
+       CALL MODE — MOBILE MINI TRANSCRIPT
+       ================================================================ */
+
+    /* Tampilkan mini transcript di mobile (desktop: display:none via rule di bawah) */
+    .call-mobile-transcript {
+        display: block;
+        width: calc(100% - 2rem);
+        max-width: 320px;
+        margin: 1.25rem auto 0;
+        padding: 14px 16px;
+        background: rgba(255, 255, 255, 0.75);
+        backdrop-filter: blur(12px);
+        -webkit-backdrop-filter: blur(12px);
+        border-radius: 16px;
+        border: 1px solid rgba(228, 190, 185, 0.2);
+        min-height: 56px;
+        text-align: center;
+    }
+
+    .call-mobile-hint {
+        font-size: 13px;
+        color: #5b403d;
+        font-style: italic;
+        margin: 0;
+    }
+
+    .call-mobile-msg .call-mobile-label {
+        font-size: 9px;
+        font-weight: 800;
+        letter-spacing: 0.15em;
+        text-transform: uppercase;
+        color: #5b403d;
+        display: block;
+        margin-bottom: 5px;
+    }
+
+    .call-mobile-msg .call-mobile-text {
+        font-size: 14px;
+        color: #191c1e;
+        line-height: 1.45;
+        margin: 0;
+    }
+
+
+    /* ================================================================
+       VISUALIZATION — Fix "Not Recommended" badge terpotong
+       ================================================================ */
+
+    /* Sembunyikan label teks panjang, biarkan badge tampil utuh */
+    .viz-section-lbl {
+        display: none;
+    }
+
+    /* Pastikan badge tidak terpotong */
+    .viz-section-badge {
+        white-space: nowrap;
+        flex-shrink: 0;
+    }
+
+
+    /* ================================================================
+       SCHEMA MODAL — Mobile friendly
+       ================================================================ */
+
+    /* Nama tabel panjang: truncate dengan ellipsis */
+    .schema-table-name {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        max-width: 180px;
+    }
+
+    /* Table list item: pastikan icon & teks rata */
+    .schema-table-left {
+        overflow: hidden;
+        min-width: 0;
+    }
+
+    /* Detail overlay: header lebih kompak */
+    .schema-detail-header {
+        padding: 14px 16px;
+    }
+
+    .schema-detail-icon {
+        width: 38px;
+        height: 38px;
+    }
+
+    .schema-detail-title {
+        font-size: 14px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        max-width: 160px;
+    }
+
+    .schema-detail-subtitle {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        max-width: 160px;
+    }
+
+    /* Sub-info strip: padding lebih kecil */
+    .schema-detail-subinfo {
+        padding: 10px 16px;
+        gap: 8px;
+    }
+
+    /* Tabel detail: 2 kolom saja (Name + Type), sembunyikan Sample Value */
+    .schema-detail-table th:nth-child(3),
+    .schema-detail-table td:nth-child(3) {
+        display: none;
+    }
+
+    .schema-detail-table th,
+    .schema-detail-table td {
+        padding: 10px 14px;
+        font-size: 12px;
+    }
+
+    /* Kolom Name: lebih lebar */
+    .schema-detail-table th:nth-child(1),
+    .schema-detail-table td:nth-child(1) {
+        width: 55%;
+    }
+
+    /* Kolom Type: sisanya */
+    .schema-detail-table th:nth-child(2),
+    .schema-detail-table td:nth-child(2) {
+        width: 45%;
+    }
+
+    /* Footer detail: padding lebih kecil */
+    .schema-detail-footer {
+        padding: 12px 16px;
+        flex-wrap: wrap;
+        gap: 8px;
+    }
+
+    .schema-detail-footer-info {
+        font-size: 11px;
+    }
+
 
     /* Kurangi padding kiri/kanan header */
     header.flex-shrink-0 {
@@ -198,11 +392,42 @@
        SCHEMA MODAL
        ================================================================ */
 
-    /* Pastikan modal tidak overflow ke luar layar */
+    /* Backdrop: pastikan tidak bisa scroll keluar modal */
+    .schema-modal {
+        align-items: flex-end;
+        padding: 0;
+        overflow: hidden;
+    }
+
+    /* Container: full-width sheet dari bawah, max 90% tinggi layar */
     .schema-modal-container {
-        margin: 0.5rem;
-        max-height: calc(100vh - 1rem);
-        border-radius: 16px;
+        width: 100%;
+        max-width: 100%;
+        max-height: 90vh;
+        border-radius: 20px 20px 0 0;
+        margin: 0;
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+    }
+
+    /* Body harus bisa scroll secara internal */
+    .schema-modal-body {
+        flex: 1;
+        overflow-y: auto;
+        -webkit-overflow-scrolling: touch;
+        min-height: 0;
+    }
+
+    /* Footer selalu tampil di bawah */
+    .schema-modal-footer {
+        flex-shrink: 0;
+    }
+
+    /* Saat detail overlay terbuka, container tetap fit layar */
+    .schema-modal-container.schema-detail-open {
+        min-height: unset;
+        height: 90vh;
     }
 
 

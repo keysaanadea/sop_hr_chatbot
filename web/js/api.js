@@ -95,23 +95,37 @@ async function askBackend(text) {
               message_type: event.message_type,
               data: event.data,
               trace_id: event.trace_id,
+              turn_id: event.turn_id,
+              conversation_id: event.conversation_id,
+              visualization_available: event.visualization_available,
+              chart_hints: event.chart_hints,
+              sql_query: event.sql_query,
+              sql_explanation: event.sql_explanation,
             });
           } else {
-            // Streaming path: finalize bubble
-            _finalizeStreamingBubble(streamingBubble, fullAnswer, event.trace_id);
+            // Streaming path: finalize bubble, get msgDiv back
+            const finishedMsgDiv = _finalizeStreamingBubble(streamingBubble, fullAnswer, event.trace_id);
             streamingBubble = null;
             scheduleAutoSpeech(fullAnswer);
 
-            // A+B merge: render analytics table from route B (after synthesis streamed)
+            // A+B merge: append analytics table INSIDE the same chat bubble
             if (event.message_type === "analytics_result" && event.data) {
-              window.CoreApp?.addMessage("bot", "", false, {
+              const analyticsPayload = {
                 message_type: event.message_type,
                 data: event.data,
                 trace_id: event.trace_id,
                 turn_id: event.turn_id,
                 conversation_id: event.conversation_id,
                 visualization_available: event.visualization_available,
-              });
+                chart_hints: event.chart_hints,
+                sql_query: event.sql_query,
+                sql_explanation: event.sql_explanation,
+              };
+              const merged = _appendAnalyticsToMessage(finishedMsgDiv, analyticsPayload);
+              if (!merged) {
+                // fallback: separate message if renderer unavailable
+                window.CoreApp?.addMessage("bot", "", false, analyticsPayload);
+              }
               if (event.visualization_available && event.turn_id) {
                 window.VisualizationModule?.renderVisualizationOffer(event.conversation_id, event.turn_id);
               }
@@ -181,21 +195,62 @@ function _createStreamingBubble() {
 }
 
 function _finalizeStreamingBubble(bubble, fullAnswer, traceId) {
-  if (!bubble) return;
+  if (!bubble) return null;
   const cleaned = fullAnswer.replace(/\*\*(.*?)\*\*/g, "<strong>$1</strong>");
   bubble.innerHTML = cleaned;
 
-  // Hapus cursor yang ada di luar bubble
   const msgDiv = bubble.closest(".msg");
   if (msgDiv) {
     msgDiv.querySelector("[data-stream-cursor]")?.remove();
   }
 
-  // Gunakan _buildFeedbackButtons dari CoreApp agar konsisten dengan regular messages
-  if (traceId && window.CoreApp?._buildFeedbackButtons) {
-    const msgDiv = bubble.closest(".msg");
-    if (msgDiv) msgDiv.appendChild(window.CoreApp._buildFeedbackButtons(traceId));
+  if (traceId && window.CoreApp?._buildFeedbackButtons && msgDiv) {
+    msgDiv.appendChild(window.CoreApp._buildFeedbackButtons(traceId));
   }
+
+  return msgDiv; // return so caller can append analytics into same message
+}
+
+function _appendAnalyticsToMessage(msgDiv, eventData) {
+  if (!msgDiv || !window.HRAnalyticsRenderer) return false;
+
+  // Wrap bubble in chat-column so viz offer can append below (not as flex-row sibling)
+  let chatColumn = msgDiv.querySelector(".chat-column");
+  if (!chatColumn) {
+    chatColumn = document.createElement("div");
+    chatColumn.className = "chat-column";
+    const existingBubble   = msgDiv.querySelector(".bubble");
+    const existingFeedback = msgDiv.querySelector(".feedback-wrapper");
+    if (existingBubble)   chatColumn.appendChild(existingBubble);
+    if (existingFeedback) chatColumn.appendChild(existingFeedback);
+    msgDiv.appendChild(chatColumn);
+  }
+
+  // Render analytics INSIDE the bubble card (same white box)
+  const bubble = chatColumn.querySelector(".bubble");
+  if (!bubble) return false;
+
+  const dataResult = document.createElement("div");
+  dataResult.className = "data-result data-result--inline";
+  const messageId = Date.now();
+
+  const renderSuccess = window.HRAnalyticsRenderer.render(eventData, messageId, dataResult);
+  if (!renderSuccess) return false;
+
+  const sep = document.createElement("hr");
+  sep.className = "bubble-analytics-sep";
+  bubble.appendChild(sep);
+  bubble.appendChild(dataResult);
+
+  // viz map → chatColumn so viz offer appends as a column sibling (below bubble)
+  if (eventData.turn_id) {
+    window._hrVizBubbleMap = window._hrVizBubbleMap || {};
+    window._hrVizBubbleMap[eventData.turn_id] = chatColumn;
+  }
+
+  const msgs = document.getElementById("messages");
+  if (msgs) msgs.scrollTop = msgs.scrollHeight;
+  return true;
 }
 
 /* ================= UNIVERSAL ANALYTICS RESPONSE HANDLER ================= */

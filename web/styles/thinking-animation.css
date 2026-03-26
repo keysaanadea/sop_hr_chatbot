@@ -1,32 +1,28 @@
-/* ================= 🔥 NEW: GEMINI-STYLE THINKING ANIMATION ================= */
+/* ================= THINKING ANIMATION — DENAI DESIGN SYSTEM ================= */
 
 .thinking-msg {
   animation: fadeInUp 0.3s ease-out;
 }
 
 @keyframes fadeInUp {
-  from {
-    opacity: 0;
-    transform: translateY(20px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
+  from { opacity: 0; transform: translateY(12px); }
+  to   { opacity: 1; transform: translateY(0); }
 }
 
+/* ===== Card ===== */
 .thinking-bubble {
   background: #ffffff;
-  border: 1px solid #e5e7eb;
+  border: 1px solid #e7e8eb;
   border-radius: 14px;
-  padding: 20px;
-  min-width: 320px;
-  max-width: 500px;
-  box-shadow: 0 15px 40px rgba(0, 0, 0, 0.12);
+  padding: 18px 20px;
+  min-width: 300px;
+  max-width: 480px;
+  box-shadow: 0 4px 16px rgba(25, 28, 30, 0.07);
   position: relative;
   overflow: hidden;
 }
 
+/* Subtle shimmer using brand red, not blue */
 .thinking-bubble::before {
   content: '';
   position: absolute;
@@ -34,201 +30,245 @@
   left: -100%;
   width: 100%;
   height: 100%;
-  background: linear-gradient(90deg, transparent, rgba(59, 130, 246, 0.06), transparent);
-  animation: shimmer 2s infinite;
+  background: linear-gradient(90deg, transparent, rgba(183, 19, 26, 0.04), transparent);
+  animation: shimmer 2.4s infinite;
+  pointer-events: none;
 }
 
 @keyframes shimmer {
-  0% { left: -100%; }
+  0%   { left: -100%; }
   100% { left: 100%; }
 }
 
-/* Thinking Header */
+/* ===== Header ===== */
 .thinking-header {
   display: flex;
   align-items: center;
-  gap: 12px;
-  margin-bottom: 16px;
-  padding-bottom: 16px;
-  border-bottom: 1px solid #e5e7eb;
+  gap: 10px;
+  margin-bottom: 14px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid #f0f1f4;
 }
 
+/* Spinning ring around icon */
 .thinking-icon {
-  width: 24px;
-  height: 24px;
-  color: #2563eb;
-  animation: pulse 2s ease-in-out infinite;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  border: 2px solid rgba(183, 19, 26, 0.15);
+  border-top-color: #b7131a;
+  animation: spinRing 0.9s linear infinite;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  position: relative;
 }
 
-.thinking-icon svg {
-  width: 100%;
-  height: 100%;
+.thinking-icon .material-symbols-outlined {
+  font-size: 14px;
+  color: #b7131a;
+  position: absolute;
+  animation: none; /* icon stays still, ring spins */
 }
 
-@keyframes pulse {
-  0%, 100% {
-    opacity: 1;
-    transform: scale(1);
-  }
-  50% {
-    opacity: 0.7;
-    transform: scale(1.1);
-  }
+@keyframes spinRing {
+  to { transform: rotate(360deg); }
 }
 
 .thinking-text {
-  font-size: 16px;
-  font-weight: 600;
-  color: #111827;
-  letter-spacing: 0.3px;
+  font-size: 14px;
+  font-weight: 700;
+  color: #191c1e;
+  letter-spacing: 0.2px;
+  flex: 1;
 }
 
+/* "MEMPROSES" badge replacing dots */
 .thinking-dots {
-  display: flex;
-  gap: 4px;
-  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 8px;
+  background: rgba(183, 19, 26, 0.07);
+  border-radius: 999px;
+  gap: 0;
 }
 
 .thinking-dots span {
-  width: 6px;
-  height: 6px;
-  background: #2563eb;
-  border-radius: 50%;
-  animation: bounce 1.4s ease-in-out infinite;
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: #b7131a;
+  /* override bounce animation from old CSS */
+  animation: badgePulse 2s ease-in-out infinite;
+  width: auto;
+  height: auto;
+  background: none;
+  border-radius: 0;
 }
 
-.thinking-dots span:nth-child(1) {
-  animation-delay: 0s;
-}
-
-.thinking-dots span:nth-child(2) {
-  animation-delay: 0.2s;
-}
-
+/* Only show first span as text badge */
+.thinking-dots span:nth-child(2),
 .thinking-dots span:nth-child(3) {
-  animation-delay: 0.4s;
+  display: none;
 }
 
-@keyframes bounce {
-  0%, 80%, 100% {
-    transform: translateY(0);
-    opacity: 0.7;
-  }
-  40% {
-    transform: translateY(-8px);
-    opacity: 1;
-  }
+@keyframes badgePulse {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.6; }
 }
 
-/* Thinking Steps */
+/* ===== Steps ===== */
 .thinking-steps {
   display: flex;
   flex-direction: column;
-  gap: 12px;
-  margin-bottom: 16px;
+  gap: 4px;
+  margin-bottom: 14px;
 }
 
 .thinking-step {
   display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 10px 12px;
-  background: #f9fafb;
-  border-radius: 8px;
-  transition: all 0.3s ease;
-  opacity: 0.5;
-  transform: scale(0.98);
+  align-items: flex-start;
+  gap: 10px;
+  padding: 9px 12px;
+  border-radius: 9px;
+  border: 1px solid transparent;
+  transition: background 0.25s ease, border-color 0.25s ease, opacity 0.25s ease;
+  opacity: 0.45;
+  background: transparent;
 }
 
 .thinking-step.active {
   opacity: 1;
-  transform: scale(1);
-  background: rgba(37, 99, 235, 0.07);
-  border-left: 3px solid #2563eb;
-  animation: slideInRight 0.3s ease-out;
+  background: rgba(183, 19, 26, 0.04);
+  border-color: rgba(183, 19, 26, 0.15);
+  animation: stepSlideIn 0.3s ease-out;
 }
 
 .thinking-step.completed {
-  opacity: 0.7;
-  background: rgba(16, 185, 129, 0.07);
-  border-left: 3px solid #10b981;
+  opacity: 0.65;
+  background: rgba(22, 163, 74, 0.04);
+  border-color: rgba(22, 163, 74, 0.12);
 }
 
-@keyframes slideInRight {
-  from {
-    opacity: 0;
-    transform: translateX(-10px) scale(0.98);
-  }
-  to {
-    opacity: 1;
-    transform: translateX(0) scale(1);
-  }
+@keyframes stepSlideIn {
+  from { opacity: 0; transform: translateX(-8px); }
+  to   { opacity: 1; transform: translateX(0); }
 }
 
+/* Step icon wrapper */
 .thinking-step .step-icon {
-  font-size: 20px;
-  width: 28px;
-  height: 28px;
+  width: 22px;
+  height: 22px;
   display: flex;
   align-items: center;
   justify-content: center;
-  background: #f3f4f6;
-  border-radius: 6px;
   flex-shrink: 0;
+  margin-top: 1px;
 }
 
-.thinking-step.active .step-icon {
-  background: rgba(37, 99, 235, 0.12);
-  animation: iconPulse 1s ease-in-out infinite;
+.thinking-step .step-icon .material-symbols-outlined {
+  font-size: 18px;
+  color: #9CA3AF;
+}
+
+/* Active step: pulsing dot */
+.thinking-step.active .step-icon .material-symbols-outlined {
+  color: #b7131a;
+  animation: iconPulse 1.2s ease-in-out infinite;
+}
+
+/* Completed step: green check */
+.thinking-step.completed .step-icon .material-symbols-outlined {
+  color: #16a34a;
+  animation: none;
 }
 
 @keyframes iconPulse {
-  0%, 100% {
-    transform: scale(1);
-  }
-  50% {
-    transform: scale(1.15);
-  }
+  0%, 100% { transform: scale(1); opacity: 1; }
+  50%       { transform: scale(1.15); opacity: 0.8; }
+}
+
+/* Step text group */
+.thinking-step .step-body {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
 }
 
 .thinking-step span {
-  font-size: 14px;
-  color: #6b7280;
+  font-size: 13px;
   font-weight: 500;
+  color: #9CA3AF;
+  line-height: 1.4;
 }
 
 .thinking-step.active span {
-  color: #111827;
+  color: #191c1e;
   font-weight: 600;
 }
 
-/* Cancel Button */
+.thinking-step.completed span {
+  color: #5b403d;
+}
+
+/* Active step progress bar */
+.thinking-step .step-progress {
+  height: 2px;
+  background: rgba(183, 19, 26, 0.12);
+  border-radius: 999px;
+  overflow: hidden;
+  display: none;
+}
+
+.thinking-step.active .step-progress {
+  display: block;
+}
+
+.thinking-step .step-progress-fill {
+  height: 100%;
+  width: 60%;
+  background: #b7131a;
+  border-radius: 999px;
+  animation: progressSlide 1.6s ease-in-out infinite;
+}
+
+@keyframes progressSlide {
+  0%   { width: 15%; margin-left: 0; }
+  50%  { width: 50%; margin-left: 20%; }
+  100% { width: 15%; margin-left: 85%; }
+}
+
+/* ===== Cancel / Hentikan Button ===== */
 .cancel-btn {
   width: 100%;
-  padding: 10px 16px;
-  background: rgba(239, 68, 68, 0.08);
-  border: 1px solid rgba(239, 68, 68, 0.25);
-  border-radius: 8px;
-  color: #dc2626;
-  font-size: 14px;
+  padding: 9px 16px;
+  background: transparent;
+  border: 1.5px solid rgba(183, 19, 26, 0.3);
+  border-radius: 9px;
+  color: #b7131a;
+  font-size: 13px;
   font-weight: 600;
+  font-family: 'Plus Jakarta Sans', sans-serif;
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition: background 0.18s ease, border-color 0.18s ease, transform 0.12s ease;
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 8px;
+  gap: 6px;
+  letter-spacing: 0.2px;
 }
 
-.cancel-btn svg {
-  width: 16px;
-  height: 16px;
+.cancel-btn .material-symbols-outlined {
+  font-size: 16px;
 }
 
 .cancel-btn:hover {
-  background: rgba(239, 68, 68, 0.15);
-  border-color: rgba(239, 68, 68, 0.4);
-  color: #b91c1c;
+  background: rgba(183, 19, 26, 0.06);
+  border-color: rgba(183, 19, 26, 0.5);
   transform: translateY(-1px);
 }
 
@@ -236,152 +276,100 @@
   transform: translateY(0);
 }
 
-/* ================= STOP BUTTON (SEND BUTTON TRANSFORMATION) ================= */
-
+/* ===== STOP BUTTON (send button transformation) ===== */
 .stop-btn {
-  background: linear-gradient(135deg, #dc2626 0%, #b91c1c 100%) !important;
-  border-color: #dc2626 !important;
+  background: #b7131a !important;
+  border-color: #b7131a !important;
   color: #fff !important;
-  position: relative;
-  overflow: hidden;
-}
-
-.stop-btn::before {
-  content: '';
-  position: absolute;
-  top: 0;
-  left: -100%;
-  width: 100%;
-  height: 100%;
-  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.2), transparent);
-  animation: stopShimmer 1.5s infinite;
-}
-
-@keyframes stopShimmer {
-  0% { left: -100%; }
-  100% { left: 100%; }
 }
 
 .stop-btn:hover {
-  background: linear-gradient(135deg, #b91c1c 0%, #991b1b 100%) !important;
-  transform: translateY(-2px);
-  box-shadow: 0 6px 20px rgba(220, 38, 38, 0.4);
+  background: #db322f !important;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 14px rgba(183, 19, 26, 0.35);
 }
 
-.stop-btn svg {
-  animation: pulse 1s ease-in-out infinite;
-}
-
-/* ================= SYSTEM NOTICE (CANCELLATION MESSAGE) ================= */
-
-.system-notice {
-  background: rgba(251, 191, 36, 0.1) !important;
-  border-left: 4px solid #fbbf24 !important;
-  color: #fef3c7 !important;
-  font-size: 14px;
-  padding: 12px 16px !important;
-  border-radius: 8px !important;
-  animation: fadeInSlideDown 0.3s ease-out;
-}
-
-@keyframes fadeInSlideDown {
-  from {
-    opacity: 0;
-    transform: translateY(-10px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-/* ================= 🔥 NEW: GEMINI-STYLE "YOU STOPPED THIS RESPONSE" ================= */
-
+/* ===== STOPPED RESPONSE ===== */
 .stopped-response-msg {
-  animation: fadeInSlideDown 0.3s ease-out;
+  animation: fadeInUp 0.3s ease-out;
 }
 
 .stopped-response-bubble {
-  background: rgba(148, 163, 184, 0.08) !important;
-  border: 1px solid rgba(148, 163, 184, 0.2) !important;
+  background: #f8f9fc !important;
+  border: 1px solid #e7e8eb !important;
   border-radius: 12px !important;
   padding: 14px 18px !important;
-  min-width: 280px;
-  max-width: 500px;
+  min-width: 240px;
+  max-width: 480px;
 }
 
 .stopped-header {
   display: flex;
   align-items: center;
-  gap: 10px;
-  margin-bottom: 12px;
-  padding-bottom: 12px;
-  border-bottom: 1px solid rgba(148, 163, 184, 0.15);
+  gap: 8px;
+  margin-bottom: 10px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid #f0f1f4;
 }
 
 .stopped-header::before {
-  content: '⏹️';
-  font-size: 18px;
-  opacity: 0.9;
+  content: '⏹';
+  font-size: 16px;
+  opacity: 0.7;
 }
 
 .stopped-text {
-  font-size: 15px;
+  font-size: 14px;
   font-weight: 500;
-  color: #94a3b8;
+  color: #9CA3AF;
   font-style: italic;
-  letter-spacing: 0.2px;
 }
 
 .stopped-actions {
   display: flex;
-  gap: 10px;
+  gap: 8px;
   align-items: center;
 }
 
 .regenerate-btn {
   flex: 1;
-  padding: 8px 14px;
-  background: rgba(59, 130, 246, 0.12);
-  border: 1px solid rgba(59, 130, 246, 0.25);
+  padding: 7px 12px;
+  background: rgba(183, 19, 26, 0.06);
+  border: 1px solid rgba(183, 19, 26, 0.2);
   border-radius: 8px;
-  color: #93c5fd;
-  font-size: 13px;
+  color: #b7131a;
+  font-size: 12px;
   font-weight: 600;
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition: all 0.18s ease;
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 6px;
+  gap: 5px;
+  font-family: 'Plus Jakarta Sans', sans-serif;
 }
 
 .regenerate-btn svg {
-  width: 15px;
-  height: 15px;
+  width: 14px;
+  height: 14px;
 }
 
 .regenerate-btn:hover {
-  background: rgba(59, 130, 246, 0.2);
-  border-color: rgba(59, 130, 246, 0.4);
-  color: #dbeafe;
+  background: rgba(183, 19, 26, 0.12);
+  border-color: rgba(183, 19, 26, 0.35);
   transform: translateY(-1px);
 }
 
-.regenerate-btn:active {
-  transform: translateY(0);
-}
-
 .dismiss-btn {
-  width: 32px;
-  height: 32px;
+  width: 30px;
+  height: 30px;
   padding: 0;
-  background: rgba(148, 163, 184, 0.1);
-  border: 1px solid rgba(148, 163, 184, 0.2);
+  background: transparent;
+  border: 1px solid #e7e8eb;
   border-radius: 6px;
-  color: #94a3b8;
+  color: #9CA3AF;
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition: all 0.18s ease;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -389,90 +377,36 @@
 }
 
 .dismiss-btn svg {
-  width: 14px;
-  height: 14px;
+  width: 13px;
+  height: 13px;
 }
 
 .dismiss-btn:hover {
-  background: rgba(239, 68, 68, 0.15);
-  border-color: rgba(239, 68, 68, 0.3);
-  color: #fca5a5;
-  transform: scale(1.05);
+  background: rgba(183, 19, 26, 0.07);
+  border-color: rgba(183, 19, 26, 0.2);
+  color: #b7131a;
 }
 
-.dismiss-btn:active {
-  transform: scale(0.95);
-}
-
-/* ================= RESPONSIVE ADJUSTMENTS ================= */
-
-@media (max-width: 768px) {
-  .thinking-bubble {
-    min-width: auto;
-    max-width: 100%;
-    padding: 16px;
-  }
-  
-  .thinking-header {
-    margin-bottom: 12px;
-    padding-bottom: 12px;
-  }
-  
-  .thinking-text {
-    font-size: 15px;
-  }
-  
-  .thinking-steps {
-    gap: 10px;
-  }
-  
-  .thinking-step {
-    padding: 8px 10px;
-  }
-  
-  .thinking-step span {
-    font-size: 13px;
-  }
-  
-  .thinking-step .step-icon {
-    font-size: 18px;
-    width: 24px;
-    height: 24px;
-  }
-  
-  .cancel-btn {
-    padding: 9px 14px;
-    font-size: 13px;
-  }
-}
-
-
-/* ================= ACCESSIBILITY IMPROVEMENTS ================= */
-
-.thinking-bubble:focus-within,
-.cancel-btn:focus {
-  outline: 2px solid #60a5fa;
-  outline-offset: 2px;
-}
-
+/* ===== ACCESSIBILITY ===== */
 .cancel-btn:focus-visible {
-  outline: 2px solid #dc2626;
+  outline: 2px solid #b7131a;
   outline-offset: 2px;
 }
 
-/* Reduced motion for accessibility */
 @media (prefers-reduced-motion: reduce) {
   .thinking-msg,
   .thinking-bubble::before,
   .thinking-icon,
   .thinking-dots span,
   .thinking-step,
-  .cancel-btn,
-  .stop-btn::before {
-    animation: none;
-  }
-  
-  .thinking-step.active {
-    transform: none;
+  .stop-btn { animation: none; }
+}
+
+/* ===== RESPONSIVE ===== */
+@media (max-width: 768px) {
+  .thinking-bubble {
+    min-width: auto;
+    max-width: 100%;
+    padding: 14px 16px;
   }
 }

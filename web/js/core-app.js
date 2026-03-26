@@ -298,44 +298,41 @@ function showThinkingAnimation() {
     <div class="bubble thinking-bubble">
       <div class="thinking-header">
         <div class="thinking-icon">
-          <svg viewBox="0 0 24 24" fill="none">
-            <path d="M12 2L2 7L12 12L22 7L12 2Z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-            <path d="M2 17L12 22L22 17" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-            <path d="M2 12L12 17L22 12" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-          </svg>
+          <span class="material-symbols-outlined">psychology</span>
         </div>
-        <span class="thinking-text">Thinking</span>
+        <span class="thinking-text">Sedang Memproses</span>
         <div class="thinking-dots">
-          <span></span>
+          <span>MEMPROSES</span>
           <span></span>
           <span></span>
         </div>
       </div>
       <div class="thinking-steps">
         <div class="thinking-step active" data-step="1">
-          <div class="step-icon">🔍</div>
-          <span>Analyzing your question...</span>
+          <div class="step-icon"><span class="material-symbols-outlined">manage_search</span></div>
+          <div class="step-body">
+            <span>Memahami pertanyaan Anda</span>
+            <div class="step-progress"><div class="step-progress-fill"></div></div>
+          </div>
         </div>
         <div class="thinking-step" data-step="2">
-          <div class="step-icon">📚</div>
-          <span>Searching knowledge base...</span>
+          <div class="step-icon"><span class="material-symbols-outlined">folder_open</span></div>
+          <div class="step-body">
+            <span>Mengambil dokumen relevan</span>
+            <div class="step-progress"><div class="step-progress-fill"></div></div>
+          </div>
         </div>
         <div class="thinking-step" data-step="3">
-          <div class="step-icon">🧮</div>
-          <span>Processing business rules...</span>
-        </div>
-        <div class="thinking-step" data-step="4">
-          <div class="step-icon">✨</div>
-          <span>Generating response...</span>
+          <div class="step-icon"><span class="material-symbols-outlined">edit_note</span></div>
+          <div class="step-body">
+            <span>Menyusun jawaban</span>
+            <div class="step-progress"><div class="step-progress-fill"></div></div>
+          </div>
         </div>
       </div>
       <button class="cancel-btn" onclick="window.CoreApp.cancelCurrentRequest()">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <circle cx="12" cy="12" r="10"></circle>
-          <line x1="15" y1="9" x2="9" y2="15"></line>
-          <line x1="9" y1="9" x2="15" y2="15"></line>
-        </svg>
-        Cancel
+        <span class="material-symbols-outlined">stop_circle</span>
+        Hentikan
       </button>
     </div>
   `;
@@ -360,7 +357,7 @@ function showThinkingAnimation() {
     
     // Activate next step
     currentStep++;
-    if (currentStep <= 4) {
+    if (currentStep <= 3) {
       const nextStep = thinkingDiv.querySelector(`.thinking-step[data-step="${currentStep}"]`);
       if (nextStep) {
         nextStep.classList.add('active');

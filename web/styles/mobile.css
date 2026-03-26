@@ -1,292 +1,388 @@
 /* ================================================================
-   DENAI AI — Mobile Responsive Stylesheet
-   Applies only to screens ≤ 767px (mobile) and ≤ 479px (small mobile)
-   Desktop layout (≥ 768px) is NOT affected.
+   DENAI AI — Mobile Styles
+   Seluruh rule ada di dalam media query ≤767px.
+   Tidak ada satu pun rule yang mempengaruhi tampilan desktop (≥768px).
    ================================================================ */
 
-/* --- HAMBURGER BUTTON: hidden on desktop, shown on mobile --- */
-.hamburger-btn {
-    display: none;
-    width: 40px;
-    height: 40px;
-    align-items: center;
-    justify-content: center;
-    background: transparent;
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    cursor: pointer;
-    color: var(--text-2);
-    flex-shrink: 0;
-    transition: background .15s, color .15s;
-}
-.hamburger-btn:hover { background: var(--bg-hover); color: var(--text-1); }
-
-/* --- SIDEBAR OVERLAY: background dim, hidden on desktop --- */
-.sidebar-overlay {
-    display: none;
-    position: fixed;
-    inset: 0;
-    background: rgba(0, 0, 0, 0.45);
-    z-index: 999;
-    backdrop-filter: blur(2px);
-    -webkit-backdrop-filter: blur(2px);
-}
-.sidebar-overlay.open { display: block; }
-
-/* ================================================================
-   MOBILE: ≤ 767px
-   ================================================================ */
 @media (max-width: 767px) {
 
-    /* Body font size */
-    body { font-size: 14px; }
-
-    /* --- HAMBURGER: show on mobile --- */
-    .hamburger-btn { display: flex; }
-
-    /* --- SIDEBAR: off-canvas drawer --- */
-    .sidebar {
-        position: fixed;
-        top: 0;
-        left: 0;
-        height: 100%;
-        height: 100dvh;
-        z-index: 1000;
-        width: 272px;
-        transform: translateX(-100%);
-        transition: transform 0.28s cubic-bezier(0.4, 0, 0.2, 1);
-        box-shadow: 4px 0 24px rgba(0, 0, 0, 0.14);
-    }
-    .sidebar.open { transform: translateX(0); }
-
-    /* --- APP CONTAINER: full width since sidebar is off-canvas --- */
-    .app-container { position: relative; }
-    .main-content { width: 100%; }
-
-    /* --- TOP HEADER --- */
-    .top-header {
-        padding: 0.6rem 0.875rem;
-        gap: 0.5rem;
-    }
-    .header-search {
-        flex: 1;
-        max-width: none;
-        padding: 0.4rem 0.75rem;
-    }
-    .search-input { font-size: 13px; }
-    .header-btn {
-        padding: 0.5rem 0.5rem;
-        gap: 0;
-    }
-    .header-btn span { display: none; }
-    .user-profile { width: 32px; height: 32px; }
-
-    /* --- LANDING PAGE --- */
-    .landing-page {
-        padding: 1rem 0.875rem;
-        align-items: flex-start;
-    }
-    .landing-center { gap: 18px; }
-    .welcome-card {
-        padding: 1.25rem;
-        border-radius: 1rem;
-    }
-    .card-layout {
+    /* ================================================================
+       CALL MODE OVERLAY
+       Masalah: layout flex-row dengan aside.w-80 (320px) membuat
+       section visualizer hanya ~55px di layar 375px.
+       Fix: sembunyikan panel transkrip, buat visualizer full-screen.
+       ================================================================ */
+    #callModeOverlay {
         flex-direction: column;
-        align-items: center;
-        gap: 1rem;
-        text-align: center;
     }
-    .robot-placeholder { width: 100%; display: flex; justify-content: center; }
-    .robot-image-container { width: 110px; height: 110px; padding: 10px; }
-    .welcome-heading { font-size: 22px; }
-    .welcome-desc { font-size: 14px; }
-    .ask-label { font-size: 13px; }
-    .landing-search-box {
-        padding: 0.4rem 0.4rem 0.4rem 0.875rem;
-        min-height: 50px;
-        margin-top: 1rem;
+
+    /* Sembunyikan panel transkrip kanan di mobile */
+    #callModeOverlay > aside {
+        display: none !important;
     }
-    .landing-search-input { font-size: 14px; }
-    .action-section-label { margin-top: 1.25rem; }
-    .action-grid {
-        grid-template-columns: repeat(2, 1fr);
-        gap: 0.625rem;
-    }
-    .action-item {
-        padding: 0.875rem;
-        gap: 0.5rem;
-    }
-    .action-title { font-size: 13px; }
-    .action-desc { font-size: 11px; }
-    .action-icon-red, .action-icon-blue,
-    .action-icon-green, .action-icon-purple {
-        width: 36px;
-        height: 36px;
-    }
-    .suggestion-items {
-        flex-direction: column;
-        align-items: stretch;
-    }
-    .suggestion-pill {
-        text-align: left;
+
+    /* Visualizer mengisi seluruh layar */
+    #callModeOverlay > section {
         width: 100%;
+        flex: 1;
+        padding-bottom: 2rem;
     }
 
-    /* --- CHAT VIEW --- */
+    /* Kurangi padding waveform agar tidak terpotong */
+    #audioVisualizer {
+        padding-left: 1.5rem;
+        padding-right: 1.5rem;
+        height: 10rem;
+    }
+
+    /* Kurangi margin atas call controls */
+    .call-controls {
+        margin-top: 2rem !important;
+    }
+
+    /* Kurangi jarak antar metadata call */
+    #callModeOverlay .mt-14 {
+        margin-top: 2rem;
+    }
+
+    /* Heading call mode lebih kecil */
+    #callModeOverlay h2 {
+        font-size: 1.75rem;
+    }
+
+
+    /* ================================================================
+       LANDING PAGE
+       ================================================================ */
+
+    /* Heading utama terlalu besar (text-5xl = 3rem) di layar kecil */
+    #landing h2 {
+        font-size: 2rem;
+        line-height: 1.2;
+        margin-bottom: 1.5rem;
+    }
+
+    /* Kurangi margin landing input group */
+    #landing .input-glow-group {
+        margin-bottom: 1.25rem;
+    }
+
+    /* Padding landing input internal */
+    #landing #landingInput {
+        padding-top: 1rem;
+        padding-bottom: 1rem;
+        font-size: 0.9375rem;
+    }
+
+    /* Quick action cards: kurangi padding di HP kecil */
+    #landing .grid button {
+        padding: 0.875rem;
+    }
+
+    /* FAQ pills: kurangi gap */
+    #landing .flex.flex-wrap {
+        gap: 0.375rem;
+    }
+
+    /* Footer landing */
+    #landing > div:last-child {
+        padding-left: 1rem;
+        padding-right: 1rem;
+    }
+
+
+    /* ================================================================
+       HEADER
+       ================================================================ */
+
+    /* Kurangi padding kiri/kanan header */
+    header.flex-shrink-0 {
+        padding-left: 0.75rem;
+        padding-right: 0.75rem;
+        gap: 0.5rem;
+    }
+
+
+    /* ================================================================
+       MESSAGES / CHAT
+       ================================================================ */
+
+    /* Kurangi padding messages container */
     .messages-container {
         padding: 1rem 0.75rem;
     }
-    .msg { gap: 0.625rem; margin-bottom: 1.25rem; }
-    .avatar { width: 30px; height: 30px; font-size: 11px; }
-    .bubble { padding: 12px 14px; }
-    .msg.bot .bubble {
-        font-size: 14px;
-        max-width: 100%;
-        line-height: 1.55;
-    }
+
+    /* User bubble: kecilkan font sedikit, pastikan tidak overflow */
     .msg.user-msg .bubble {
-        font-size: 14px;
-        max-width: 88%;
+        font-size: 15px;
+        max-width: 100%;
     }
 
-    /* --- TABLES: horizontal scroll --- */
+    /* Bot bubble heading — sedikit lebih kecil di mobile */
+    .msg.bot .bubble h1 { font-size: 19px; }
+    .msg.bot .bubble h2 { font-size: 17px; }
+    .msg.bot .bubble h3 { font-size: 15px; }
+
+    /* Tabel di dalam bot bubble — wajib bisa di-scroll horizontal */
     .msg.bot .bubble table {
         display: block;
-        overflow-x: auto;
-        -webkit-overflow-scrolling: touch;
-        white-space: nowrap;
-        font-size: 13px;
-        border-radius: 4px;
-    }
-    .msg.bot .bubble th,
-    .msg.bot .bubble td {
-        padding: 0.5rem 0.75rem;
-    }
-    /* Data result tables (outside bubble) */
-    .data-result {
-        overflow-x: auto;
-        -webkit-overflow-scrolling: touch;
-    }
-    .data-result table {
-        display: block;
-        overflow-x: auto;
-        -webkit-overflow-scrolling: touch;
-        white-space: nowrap;
-        font-size: 13px;
-    }
-
-    /* --- CHART CONTAINERS: responsive --- */
-    .chart-result {
-        overflow-x: auto;
-        -webkit-overflow-scrolling: touch;
-    }
-    .chart-result canvas {
-        max-width: 100% !important;
-    }
-    /* Chart.js canvas wrapper */
-    .chart-result > div,
-    [id^="chart-"],
-    [class*="chart-wrapper"] {
-        max-width: 100% !important;
-        overflow-x: auto;
-    }
-
-    /* --- CHAT INPUT: sticky at bottom --- */
-    .chat-input-area {
-        flex-shrink: 0;
-        padding: 0.625rem 0.75rem 0.875rem;
-        background: var(--bg-card);
-        border-top: 1px solid var(--border);
-        position: sticky;
-        bottom: 0;
-        z-index: 10;
-    }
-    .chat-input { font-size: 15px; }
-    .input-box { border-radius: 0.75rem; }
-
-    /* --- HR ANALYTICS CONTAINER --- */
-    #hr-analytics-container {
-        overflow-x: auto;
-        -webkit-overflow-scrolling: touch;
-    }
-
-    /* --- VISUALIZATION PICKER (overrides JS-injected styles) --- */
-    .viz-options-grid {
-        grid-template-columns: repeat(2, 1fr) !important;
-        gap: 8px !important;
-    }
-    .viz-options-content {
-        max-height: 420px !important;
-        padding: 12px !important;
-        overflow-y: auto;
-        overflow-x: hidden;
-    }
-    .visualization-offer-bubble {
-        max-width: 100% !important;
-        overflow: hidden;
-    }
-    .viz-chart-title {
-        font-size: 12px !important;
-    }
-    .viz-chart-desc {
-        font-size: 11px !important;
-    }
-    .viz-chart-card {
-        padding: 8px 10px !important;
-    }
-    .viz-icon-wrapper {
-        font-size: 14px !important;
-        padding: 5px !important;
-    }
-    .viz-section-title {
-        font-size: 10px !important;
-    }
-    .viz-btn-cancel {
         width: 100%;
-        padding: 10px 16px !important;
-        font-size: 13px !important;
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
     }
 
-    /* --- CALL INTERFACE --- */
-    .call-interface {
-        padding: 28px 18px;
-        border-radius: 20px;
-        max-width: calc(100vw - 32px);
-        margin: 16px;
+    /* Code block — scroll horizontal */
+    .msg.bot .bubble pre {
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
     }
-    .call-title { font-size: 20px; }
-    .call-avatar { width: 80px; height: 80px; font-size: 26px; }
+
+    /* Feedback text: sembunyikan di mobile jika terlalu panjang */
+    .feedback-text {
+        display: none;
+    }
+
+    /* Feedback footer: align right */
+    .feedback-footer {
+        justify-content: flex-end;
+    }
+
+
+    /* ================================================================
+       CHAT INPUT AREA
+       ================================================================ */
+
+    .chat-input-area {
+        padding-left: 0.75rem;
+        padding-right: 0.75rem;
+        padding-bottom: 1.25rem;
+        padding-top: 0.75rem;
+    }
+
+
+    /* ================================================================
+       THINKING BUBBLE
+       min-width: 300px bisa overflow di layar 320px.
+       ================================================================ */
+    .thinking-bubble {
+        min-width: unset;
+        width: 100%;
+        max-width: 100%;
+        box-sizing: border-box;
+    }
+
+
+    /* ================================================================
+       SESSION SIDEBAR ACTIONS
+       Di touchscreen tidak ada hover state, jadi session-actions
+       yang opacity:0 tidak pernah terlihat.
+       ================================================================ */
+    .session-actions {
+        opacity: 1;
+    }
+
+    /* Session item sedikit lebih besar agar mudah di-tap */
+    .session-item {
+        padding: 11px 10px;
+        margin-bottom: 6px;
+    }
+
+    /* Action button sedikit lebih besar untuk jari */
+    .session-action-btn {
+        width: 28px;
+        height: 28px;
+    }
+
+
+    /* ================================================================
+       SCHEMA MODAL
+       ================================================================ */
+
+    /* Pastikan modal tidak overflow ke luar layar */
+    .schema-modal-container {
+        margin: 0.5rem;
+        max-height: calc(100vh - 1rem);
+        border-radius: 16px;
+    }
+
+
+    /* ================================================================
+       HR ANALYTICS / DATA RESULT
+       ================================================================ */
+
+    /* Wrapper tabel HR — aktifkan momentum scroll di iOS */
+    .hr-table-wrapper-enhanced {
+        -webkit-overflow-scrolling: touch;
+        overflow-x: auto;
+    }
+
+    /* Pastikan card tidak clip konten tabel saat scroll */
+    .hr-table-card-enhanced {
+        overflow: visible;
+    }
+
+    /* Padding header & cell lebih kecil di mobile agar kolom muat */
+    .hr-table-header-enhanced,
+    .hr-table-cell-enhanced {
+        padding: 8px 10px;
+        font-size: 13px;
+    }
+
+    /* SQL Inspector modal */
+    .sql-inspector-content {
+        max-width: calc(100vw - 2rem);
+        max-height: 85vh;
+        border-radius: 16px;
+    }
+
+
+    /* ================================================================
+       VISUALIZATION CHART SELECTION (mobile only)
+       Dari kartu besar vertikal → item horizontal kompak
+       ================================================================ */
+
+    /* Panel utama: kurangi radius & shadow */
+    .viz-offer-panel {
+        border-radius: 14px;
+        margin: 8px 0;
+    }
+
+    /* Header: kurangi padding & font */
+    .viz-offer-header {
+        padding: 16px 18px 14px;
+    }
+    .viz-offer-title {
+        font-size: 17px;
+        margin-bottom: 2px;
+    }
+    .viz-offer-subtitle {
+        font-size: 12px;
+    }
+    .viz-offer-eyebrow {
+        font-size: 9px;
+        padding: 3px 9px;
+        margin-bottom: 8px;
+    }
+
+    /* Section body: kurangi padding */
+    .viz-section {
+        padding: 14px 18px;
+    }
+    .viz-section-hd {
+        margin-bottom: 12px;
+    }
+
+    /* Grid: satu kolom, tiap card jadi baris horizontal */
+    .viz-rec-grid {
+        grid-template-columns: 1fr;
+        gap: 8px;
+    }
+
+    /* Card: layout horizontal — icon kiri, teks kanan */
+    .viz-rec-card {
+        display: flex;
+        flex-direction: row;
+        align-items: center;
+        gap: 12px;
+        padding: 12px 14px;
+        border-radius: 10px;
+    }
+
+    /* Icon lebih kecil, tanpa margin-bottom */
+    .viz-rc-icon {
+        width: 36px;
+        height: 36px;
+        border-radius: 8px;
+        flex-shrink: 0;
+        margin-bottom: 0;
+    }
+    .viz-rc-icon .material-symbols-outlined {
+        font-size: 18px;
+    }
+
+    /* Teks dalam satu kolom di kanan icon */
+    .viz-rc-title {
+        font-size: 13px;
+        margin-bottom: 2px;
+    }
+    .viz-rc-desc {
+        font-size: 11px;
+        line-height: 1.4;
+    }
+
+    /* Checkmark pojok */
+    .viz-rc-chk {
+        font-size: 15px;
+        top: 8px;
+        right: 8px;
+    }
+
+    /* Not-recommended grid juga satu kolom */
+    .viz-not-rec-grid {
+        grid-template-columns: 1fr;
+        gap: 6px;
+    }
+    .viz-nr-card {
+        padding: 10px 12px;
+        border-radius: 9px;
+    }
+
+    /* Footer: kurangi padding, sembunyikan hint teks */
+    .viz-offer-footer {
+        padding: 12px 18px;
+        gap: 10px;
+    }
+    .viz-footer-hint {
+        display: none;
+    }
+    .viz-btn-cancel,
+    .viz-btn-primary {
+        padding: 8px 14px;
+        font-size: 12px;
+    }
+
+    /* Tabel reguler di dalam bot bubble */
+    .msg.bot .bubble table {
+        display: block;
+        width: 100%;
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+    }
+
+    /* Stat cards: pastikan tidak overflow */
+    .hr-stat-card {
+        min-width: 0;
+        word-break: break-word;
+    }
+
 }
 
+
 /* ================================================================
-   SMALL MOBILE: ≤ 479px
+   TAMBAHAN: Layar sangat kecil (≤360px seperti Galaxy A series)
    ================================================================ */
-@media (max-width: 479px) {
+@media (max-width: 360px) {
 
-    .welcome-heading { font-size: 20px; }
-    .welcome-card { padding: 1rem; }
-    .landing-page { padding: 0.75rem; }
-
-    /* Hide search bar on very small screens to save header space */
-    .header-search { display: none; }
-
-    .top-header { gap: 0.375rem; }
-
-    /* 2-col action grid */
-    .action-grid {
-        grid-template-columns: 1fr 1fr;
+    /* Heading landing lebih kecil lagi */
+    #landing h2 {
+        font-size: 1.625rem;
     }
 
-    .msg.bot .bubble { font-size: 13px; }
-    .msg.user-msg .bubble { font-size: 13px; max-width: 92%; }
-
-    .chat-input-area { padding: 0.5rem 0.625rem 0.75rem; }
-
-    /* Viz picker: 2 columns still, but smaller */
-    .viz-options-grid {
-        grid-template-columns: repeat(2, 1fr) !important;
+    /* Bubble font lebih kecil */
+    .bubble {
+        font-size: 14px;
     }
-    .viz-chart-title { font-size: 11px !important; }
-    .viz-chart-desc { font-size: 10px !important; }
+
+    /* Header search: sembunyikan jika sangat sempit */
+    header .bg-surface-container-low {
+        display: none;
+    }
+
+    /* Avatar sedikit lebih kecil */
+    .avatar {
+        width: 28px;
+        height: 28px;
+        font-size: 10px;
+    }
+
 }

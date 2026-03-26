@@ -87,14 +87,14 @@
     50% { box-shadow: 0 0 60px rgba(229,57,53,0.7), 0 0 120px rgba(47,91,255,0.6); transform: scale(1.08); }
 }
 
-/* ================= LIVE INTERIM SPEECH TEXT ================= */
+/* ================= LIVE INTERIM SPEECH TEXT (Light Theme) ================= */
 .call-interim-text {
     min-height: 28px;
     width: 100%;
     text-align: center;
-    font-size: 15px;
+    font-size: 14px;
     font-style: italic;
-    color: rgba(255, 255, 255, 0.65);
+    color: #5b403d;
     line-height: 1.5;
     padding: 0 0.5rem;
     transition: opacity 0.15s ease;
@@ -102,40 +102,49 @@
 }
 .call-interim-text:empty { opacity: 0; }
 .call-interim-text:not(:empty) { opacity: 1; }
-
-/* Blinking cursor at end of interim text */
 .call-interim-text::after {
     content: '|';
     display: inline-block;
     animation: cursorBlink 0.8s step-end infinite;
-    color: rgba(255,255,255,0.5);
+    color: #b7131a;
     margin-left: 2px;
 }
 .call-interim-text:empty::after { display: none; }
+
+/* ================= MUTE BUTTON ACTIVE STATE ================= */
+.call-control-btn.mute .icon-muted   { display: none; }
+.call-control-btn.mute .icon-unmuted { display: block; }
+
+.call-control-btn.mute.active {
+    background: rgba(183,19,26,0.08) !important;
+    color: #b7131a !important;
+    border-color: rgba(183,19,26,0.3) !important;
+}
+.call-control-btn.mute.active .icon-unmuted { display: none; }
+.call-control-btn.mute.active .icon-muted   { display: block; }
 
 @keyframes cursorBlink {
     0%, 100% { opacity: 1; }
     50%       { opacity: 0; }
 }
 
-/* ================= LIVE TRANSCRIPT LOG ================= */
+/* ================= LIVE TRANSCRIPT LOG (Light Theme) ================= */
 .call-transcript-log {
     width: 100%;
-    max-height: 160px;
     overflow-y: auto;
     display: flex;
     flex-direction: column;
-    gap: 0.625rem;
+    gap: 1rem;
     padding: 0 0.25rem;
     scrollbar-width: thin;
-    scrollbar-color: rgba(255,255,255,0.15) transparent;
+    scrollbar-color: #e7e8eb transparent;
 }
 .call-transcript-log::-webkit-scrollbar { width: 4px; }
-.call-transcript-log::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.15); border-radius: 999px; }
+.call-transcript-log::-webkit-scrollbar-thumb { background: #e7e8eb; border-radius: 999px; }
 
 .call-transcript-hint {
-    color: rgba(255,255,255,0.4);
-    font-size: 14px;
+    color: #9CA3AF;
+    font-size: 13px;
     text-align: center;
     font-style: italic;
     padding: 0.5rem 0;
@@ -143,58 +152,107 @@
 
 .transcript-line {
     display: flex;
-    align-items: flex-start;
-    gap: 0.5rem;
+    flex-direction: column;
+    gap: 0.25rem;
     animation: transcriptFadeIn 0.3s ease;
-    text-align: left;
 }
 @keyframes transcriptFadeIn {
     from { opacity: 0; transform: translateY(6px); }
     to   { opacity: 1; transform: translateY(0); }
 }
 
-.transcript-line .t-icon {
-    font-size: 14px;
-    flex-shrink: 0;
-    margin-top: 2px;
-}
+.transcript-line .t-icon { display: none; }
+
 .transcript-line .t-label {
-    font-size: 11px;
+    font-size: 10px;
     font-weight: 700;
-    letter-spacing: 0.04em;
+    letter-spacing: 0.08em;
     text-transform: uppercase;
-    flex-shrink: 0;
-    margin-top: 3px;
     line-height: 1;
 }
 .transcript-line .t-text {
     font-size: 14px;
-    line-height: 1.55;
-    flex: 1;
+    line-height: 1.6;
 }
 
-.transcript-line.user .t-label { color: rgba(255,255,255,0.5); }
-.transcript-line.user .t-text  { color: rgba(255,255,255,0.88); }
+/* User — label abu muted, teks italic */
+.transcript-line.user .t-label { color: #9CA3AF; }
+.transcript-line.user .t-text  { color: #5b403d; font-style: italic; }
 
-.transcript-line.ai .t-label { color: #60a5fa; }
-.transcript-line.ai .t-text  { color: #93c5fd; }
+/* AI — card putih bersih, shadow tipis, label merah kecil */
+.transcript-line.ai {
+    background: #ffffff;
+    border: 1px solid #f0f1f4;
+    border-radius: 10px;
+    padding: 0.625rem 0.875rem;
+    box-shadow: 0 2px 8px rgba(25,28,30,0.05);
+}
+.transcript-line.ai .t-label { color: #b7131a; }
+.transcript-line.ai .t-text  { color: #191c1e; font-weight: 500; }
 
 /* ================= WAVEFORM ANIMATION ================= */
-@keyframes waveBar {
-    0%, 100% { height: 6px;  opacity: 0.45; }
-    50%       { height: 44px; opacity: 1;    }
+
+/* Idle — pelan, amplitudo kecil */
+@keyframes waveIdle {
+    0%, 100% { transform: scaleY(0.25); opacity: 0.35; }
+    50%       { transform: scaleY(0.6);  opacity: 0.6;  }
+}
+/* User berbicara — sedang, amplitudo medium */
+@keyframes waveListen {
+    0%, 100% { transform: scaleY(0.4); opacity: 0.6; }
+    50%       { transform: scaleY(1.0); opacity: 1.0; }
+}
+/* Bot berbicara — cepat, amplitudo besar */
+@keyframes waveSpeak {
+    0%, 100% { transform: scaleY(0.35); opacity: 0.55; }
+    50%       { transform: scaleY(1.15); opacity: 1.0;  }
 }
 
 .audio-bar {
-    animation: waveBar 1.3s ease-in-out infinite;
+    width: 4px;
+    border-radius: 999px;
+    transform-origin: center bottom;
+    animation: waveIdle 2s ease-in-out infinite;
 }
-.audio-bar:nth-child(1) { animation-delay: 0s;     }
-.audio-bar:nth-child(2) { animation-delay: 0.13s;  }
-.audio-bar:nth-child(3) { animation-delay: 0.26s;  }
-.audio-bar:nth-child(4) { animation-delay: 0.39s;  }
-.audio-bar:nth-child(5) { animation-delay: 0.52s;  }
-.audio-bar:nth-child(6) { animation-delay: 0.65s;  }
-.audio-bar:nth-child(7) { animation-delay: 0.78s;  }
+
+/* nth-child delays — spread 21 bars */
+.audio-bar:nth-child(1)  { animation-delay: 0s;      }
+.audio-bar:nth-child(2)  { animation-delay: 0.10s;   }
+.audio-bar:nth-child(3)  { animation-delay: 0.20s;   }
+.audio-bar:nth-child(4)  { animation-delay: 0.30s;   }
+.audio-bar:nth-child(5)  { animation-delay: 0.40s;   }
+.audio-bar:nth-child(6)  { animation-delay: 0.50s;   }
+.audio-bar:nth-child(7)  { animation-delay: 0.40s;   }
+.audio-bar:nth-child(8)  { animation-delay: 0.30s;   }
+.audio-bar:nth-child(9)  { animation-delay: 0.20s;   }
+.audio-bar:nth-child(10) { animation-delay: 0.10s;   }
+.audio-bar:nth-child(11) { animation-delay: 0s;      }
+.audio-bar:nth-child(12) { animation-delay: 0.10s;   }
+.audio-bar:nth-child(13) { animation-delay: 0.20s;   }
+.audio-bar:nth-child(14) { animation-delay: 0.30s;   }
+.audio-bar:nth-child(15) { animation-delay: 0.40s;   }
+.audio-bar:nth-child(16) { animation-delay: 0.50s;   }
+.audio-bar:nth-child(17) { animation-delay: 0.40s;   }
+.audio-bar:nth-child(18) { animation-delay: 0.30s;   }
+.audio-bar:nth-child(19) { animation-delay: 0.20s;   }
+.audio-bar:nth-child(20) { animation-delay: 0.10s;   }
+.audio-bar:nth-child(21) { animation-delay: 0s;      }
+
+/* User berbicara (listening state) */
+#audioVisualizer.state-listening .audio-bar {
+    animation-name: waveListen;
+    animation-duration: 0.7s;
+}
+/* Bot berbicara (speaking state) */
+#audioVisualizer.state-speaking .audio-bar {
+    animation-name: waveSpeak;
+    animation-duration: 0.5s;
+}
+/* Processing — berhenti hampir diam */
+#audioVisualizer.state-processing .audio-bar {
+    animation-name: waveIdle;
+    animation-duration: 3s;
+}
 
 /* ================= AVATAR IDLE GLOW (default state) ================= */
 @keyframes avatarIdle {

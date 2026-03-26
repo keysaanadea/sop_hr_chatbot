@@ -170,9 +170,15 @@ class EnhancedHRAnalyticsRenderer {
     // FIX: Stat card hanya untuk metric simple (<= 2 kolom). Kalau detail banyak kolom, pakai tabel.
     const columns = Object.keys(rows[0]);
     
-    let title = responseData.query
-      ? responseData.query.replace(/\b\w/g, c => c.toUpperCase())
-      : "Data Lengkap";
+    let title = "Hasil Data";
+    if (responseData.query) {
+      title = responseData.query;
+    } else if (responseData.text) {
+      const _tmp = document.createElement('div');
+      _tmp.innerHTML = responseData.text;
+      const _h3 = _tmp.querySelector('.analytics-query-title, h3');
+      if (_h3 && _h3.textContent.trim()) title = _h3.textContent.trim();
+    }
 
     if (rows.length === 1 && columns.length <= 2) {
       return this.renderSingleStatCard(rows[0], messageId, responseData.text || responseData.answer, title);
@@ -223,16 +229,26 @@ class EnhancedHRAnalyticsRenderer {
     const value = valueColumn ? this.formatNumber(row[valueColumn]) : String(Object.values(row)[0]);
     const sqlButtonHtml = this.renderSQLInspectorButton(messageId);
 
-    const cardTitle = (title && title !== "Data Lengkap") ? title : "Ringkasan Data";
+    const rawTitle = (title && title !== "Data Lengkap") ? title : "Ringkasan Data";
+    const cardTitle = rawTitle.length > 72 ? rawTitle.substring(0, 70) + '…' : rawTitle;
 
     card.innerHTML = `
-      <div class="hr-stat-card-header">
-        <div style="display:flex; align-items:center; gap:8px;"><span>📊</span><h4 style="font-size: 13px; line-height: 1.3;">${cardTitle}</h4></div>
-        ${sqlButtonHtml}
-      </div>
-      <div class="hr-stat-card-body">
-        ${label ? `<div class="hr-stat-label">${label}</div>` : ''}
-        <div class="hr-stat-value">${value}</div>
+      <div class="hr-stat-card-inner">
+        <div class="hr-stat-top">
+          <div class="hr-stat-text-group">
+            <span class="hr-stat-label-text">${cardTitle}</span>
+            <div class="hr-stat-number-row">
+              <span class="hr-stat-value">${value}</span>
+            </div>
+            ${label ? `<p class="hr-stat-sublabel">${label}</p>` : ''}
+          </div>
+          <div class="hr-stat-icon-circle">
+            <span class="material-symbols-outlined">query_stats</span>
+          </div>
+        </div>
+        <div class="hr-stat-footer">
+          ${sqlButtonHtml}
+        </div>
       </div>`;
     
     this.attachSQLInspectorHandlers(card, messageId);
@@ -297,18 +313,19 @@ class EnhancedHRAnalyticsRenderer {
       const sortIcon = isSorted ? (currentSort.direction === 'asc' ? ' ↑' : ' ↓') : ' ⇅';
       return `<th class="hr-table-header-enhanced sortable-header ${isSorted ? 'sorted' : ''}" data-column="${col}" data-table-id="${messageId}">${this.getDisplayName(col)}<span class="sort-icon">${sortIcon}</span></th>`;
     }).join('');
-    const dataRows = rows.map(row => `<tr class="hr-table-row-enhanced">${columns.map(col => `<td class="hr-table-cell-enhanced">${this.formatCellValue(row[col], col)}</td>`).join('')}</tr>`).join('');
+    const pctCol = columns.find(col => col.toLowerCase().match(/percent|persentase/));
+    const pctVals = pctCol ? rows.map(r => Number(r[pctCol]) || 0) : [];
+    const pctMin = pctVals.length ? Math.min(...pctVals) : 0;
+    const pctMax = pctVals.length ? Math.max(...pctVals) : 100;
+    const dataRows = rows.map(row => `<tr class="hr-table-row-enhanced">${columns.map(col => `<td class="hr-table-cell-enhanced">${this.formatCellValue(row[col], col, pctMin, pctMax)}</td>`).join('')}</tr>`).join('');
 
     card.innerHTML = `
-      <div class="hr-table-header-section-enhanced" style="flex-direction: column; align-items: flex-start; gap: 2px; padding-bottom: 12px;">
-        <div style="display: flex; justify-content: space-between; width: 100%; align-items: center;">
-            <div class="hr-table-title-section" style="gap: 10px; flex: 1; min-width: 0;">
-                <div class="hr-table-icon-enhanced" style="background: rgba(255,255,255,0.2); width: 28px; height: 28px; display: flex; align-items: center; justify-content: center; border-radius: 6px; flex-shrink: 0;">📊</div>
-                <h4 class="hr-table-title-enhanced" style="font-size: 14px; line-height: 1.3; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${title}</h4>
-            </div>
-            ${this.renderSQLInspectorButton(messageId)}
+      <div class="hr-table-header-section-enhanced">
+        <div class="hr-table-title-section">
+          <span class="material-symbols-outlined" style="font-size:18px; color:rgba(255,255,255,0.7);">table_chart</span>
+          <h4 class="hr-table-title-enhanced">${title.toUpperCase()}</h4>
         </div>
-        <div class="hr-table-subtitle-enhanced" style="font-size: 11px; color: rgba(255,255,255,0.85); margin-left: 38px; font-weight: 500;">Menampilkan ${rows.length} kategori</div>
+        ${this.renderSQLInspectorButton(messageId)}
       </div>
       <div class="hr-table-wrapper-enhanced"><table class="hr-table-main-enhanced"><thead class="hr-table-head-enhanced"><tr>${headerCells}</tr></thead><tbody class="hr-table-body-enhanced">${dataRows}</tbody></table></div>
       <div class="hr-table-footer-enhanced"><span class="hr-table-total-enhanced">Total: <strong>${this.formatNumber(total || 'N/A')}</strong></span></div>`;
@@ -378,9 +395,21 @@ class EnhancedHRAnalyticsRenderer {
       }; 
       return displayMap[columnName.toLowerCase()] || columnName.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase()); 
   }
-  formatCellValue(value, columnName) {
+  _pctGradientColor(value, min, max) {
+    const t = (max === min) ? 1 : Math.max(0, Math.min(1, (value - min) / (max - min)));
+    // red #b7131a (183,19,26) → green #16a34a (22,163,74)
+    const r = Math.round(183 + t * (22 - 183));
+    const g = Math.round(19  + t * (163 - 19));
+    const b = Math.round(26  + t * (74 - 26));
+    return { bg: `rgba(${r},${g},${b},0.10)`, text: `rgb(${r},${g},${b})` };
+  }
+
+  formatCellValue(value, columnName, pctMin = 0, pctMax = 100) {
     if (value == null) return '<span class="hr-null-enhanced">-</span>';
-    if (columnName.toLowerCase().match(/percent|persentase/)) return `<span class="hr-percentage-enhanced">${this.formatPercentage(value)}</span>`;
+    if (columnName.toLowerCase().match(/percent|persentase/)) {
+      const c = this._pctGradientColor(Number(value) || 0, pctMin, pctMax);
+      return `<span class="hr-percentage-enhanced" style="background:${c.bg};color:${c.text}">${this.formatPercentage(value)}</span>`;
+    }
     if (typeof value === 'number' && !columnName.toLowerCase().match(/band|grade/)) return this.formatNumber(value);
     return String(value);
   }
@@ -391,73 +420,125 @@ class EnhancedHRAnalyticsRenderer {
     if (document.getElementById('hr-analytics-enhanced-sortable-styles')) return;
     const style = document.createElement('style'); style.id = 'hr-analytics-enhanced-sortable-styles';
     style.textContent = `
-      .hr-analytics-dashboard-enhanced { display: flex; flex-direction: column; gap: 8px; margin: 0; width: 100%; max-width: none; font-family: 'Inter', system-ui, -apple-system, sans-serif; animation: hrFadeInEnhanced 0.4s ease-out; }
-      .hr-insight-card-enhanced, .hr-facts-card-enhanced { background: #ffffff; border-radius: 10px; overflow: hidden; border: 1px solid #e2e8f0; box-shadow: 0 2px 4px -1px rgb(0 0 0 / 0.07); margin-bottom: 2px; }
-      .hr-table-card-enhanced { background: #ffffff; border-radius: 10px; overflow: hidden; border: 1px solid #e2e8f0; box-shadow: 0 2px 4px -1px rgb(0 0 0 / 0.07); margin-bottom: 2px; width: 100%; }
-      .hr-insight-header-enhanced, .hr-table-header-section-enhanced { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 10px 14px; background: linear-gradient(135deg, #1e40af 0%, #3b82f6 100%); color: #ffffff; }
-      .hr-facts-header-enhanced { display: flex; align-items: center; gap: 8px; padding: 10px 14px; background: linear-gradient(135deg, #dc2626 0%, #ef4444 100%); color: #ffffff; }
-      .hr-insight-icon-enhanced, .hr-facts-icon-enhanced, .hr-table-icon-enhanced { font-size: 15px; }
-      .hr-insight-title-enhanced, .hr-facts-title-enhanced, .hr-table-title-enhanced { margin: 0; font-size: 13px; font-weight: 700; }
-      .hr-insight-content-enhanced, .hr-facts-content-enhanced { padding: 10px 14px 12px; background: #f8fafc; }
-      .hr-insight-summary-enhanced { margin: 0; font-size: 13px; line-height: 1.5; color: #475569; font-weight: 500; }
+      /* ── Layout ── */
+      .hr-analytics-dashboard-enhanced { display: flex; flex-direction: column; gap: 8px; margin: 0; width: 100%; max-width: none; font-family: 'Plus Jakarta Sans', system-ui, sans-serif; animation: hrFadeInEnhanced 0.35s ease-out; }
+
+      /* ── Insight / Facts cards (unchanged content, updated colors) ── */
+      /* ── Insight/Facts — transparent, no card shell — inline like Gemini ── */
+      .hr-insight-card-enhanced, .hr-facts-card-enhanced { background: transparent; border-radius: 0; overflow: visible; border: none; box-shadow: none; margin-bottom: 4px; }
+      .hr-insight-header-enhanced, .hr-facts-header-enhanced { display: flex; align-items: center; gap: 8px; padding: 2px 0 8px; background: transparent; color: #191c1e; border-bottom: 1px solid #e7e8eb; margin-bottom: 8px; }
+      .hr-insight-icon-enhanced, .hr-facts-icon-enhanced { font-size: 15px; }
+      .hr-insight-title-enhanced, .hr-facts-title-enhanced { margin: 0; font-size: 13px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; color: #b7131a; }
+      .hr-insight-content-enhanced, .hr-facts-content-enhanced { padding: 0; background: transparent; }
+      .hr-insight-summary-enhanced { margin: 0; font-size: 15px; line-height: 1.6; color: #374151; font-weight: 500; }
       .hr-facts-list-enhanced { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 6px; }
-      .hr-fact-item-enhanced { display: flex; align-items: flex-start; gap: 8px; padding: 8px 10px; background: #ffffff; border-radius: 6px; border-left: 3px solid #dc2626; font-size: 13px; line-height: 1.4; color: #374151; font-weight: 500; }
-      .hr-fact-item-enhanced:before { content: "✓"; color: #dc2626; font-weight: bold; font-size: 12px; flex-shrink: 0; margin-top: 1px; }
-      .hr-table-title-section { display: flex; align-items: center; gap: 8px; }
-      .hr-badge-enhanced { background: rgba(255, 255, 255, 0.2); color: #ffffff; padding: 3px 9px; border-radius: 24px; font-size: 11px; font-weight: 600; border: 1px solid rgba(255, 255, 255, 0.3); }
+      .hr-fact-item-enhanced { display: flex; align-items: flex-start; gap: 8px; padding: 8px 12px; background: rgba(183,19,26,0.04); border-radius: 8px; border-left: 3px solid #b7131a; font-size: 14px; line-height: 1.5; color: #374151; font-weight: 500; }
+      .hr-fact-item-enhanced:before { content: "✓"; color: #b7131a; font-weight: bold; font-size: 12px; flex-shrink: 0; margin-top: 1px; }
+      .hr-badge-enhanced { background: rgba(183,19,26,0.1); color: #b7131a; padding: 3px 9px; border-radius: 24px; font-size: 11px; font-weight: 600; border: 1px solid rgba(183,19,26,0.2); }
 
-      .hr-table-wrapper-enhanced {
-        overflow-x: auto;
-        max-height: 240px;
-        overflow-y: auto;
-      }
-      .hr-table-wrapper-enhanced::-webkit-scrollbar { height: 6px; width: 6px; }
-      .hr-table-wrapper-enhanced::-webkit-scrollbar-track { background: #f8fafc; }
-      .hr-table-wrapper-enhanced::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
-      .hr-table-wrapper-enhanced::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+      /* ── Single Stat Card ── */
+      .hr-stat-card { background: #ffffff; border-radius: 14px; border: 1px solid #e7e8eb; box-shadow: 0 4px 16px rgba(25,28,30,0.06); overflow: hidden; width: 100%; margin-bottom: 2px; }
+      .hr-stat-card-inner { padding: 20px 22px 0; }
+      .hr-stat-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+      .hr-stat-text-group { flex: 1; }
+      .hr-stat-label-text { font-size: 12px; font-weight: 700; letter-spacing: 0.01em; color: #b7131a; display: block; margin-bottom: 8px; line-height: 1.4; }
+      .hr-stat-number-row { display: flex; align-items: baseline; gap: 0; }
+      .hr-stat-value { font-size: 56px; font-weight: 900; color: #191c1e; line-height: 1; letter-spacing: -0.02em; font-family: 'Plus Jakarta Sans', sans-serif; }
+      .hr-stat-sublabel { font-size: 12px; color: #5b403d; font-weight: 500; margin: 6px 0 0; line-height: 1.4; }
+      .hr-stat-icon-circle { width: 48px; height: 48px; background: rgba(183,19,26,0.07); border-radius: 50%; display: flex; align-items: center; justify-content: center; flex-shrink: 0; margin-top: 2px; }
+      .hr-stat-icon-circle .material-symbols-outlined { font-size: 22px; color: #b7131a; }
+      .hr-stat-footer { margin-top: 16px; padding: 10px 0 12px; border-top: 1px solid #f0f1f4; display: flex; align-items: center; }
 
-      .hr-table-main-enhanced { width: 100%; border-collapse: collapse; font-size: 13px; font-family: 'Inter', system-ui, sans-serif; }
-      .hr-table-header-enhanced { background: #f3f4f6; padding: 8px 14px; text-align: left; font-weight: 700; color: #374151; border-bottom: 2px solid #1e40af; position: sticky; top: 0; z-index: 2; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; white-space: nowrap; user-select: none; transition: background-color 0.2s ease; }
-      .hr-table-header-enhanced.sortable-header:hover { background: #e5e7eb; cursor: pointer; }
-      .hr-table-header-enhanced.sorted { background: #dbeafe !important; color: #1e40af !important; }
-      .sort-icon { margin-left: 4px; font-size: 10px; opacity: 0.6; transition: all 0.2s ease; }
-      .hr-table-header-enhanced.sorted .sort-icon { opacity: 1; color: #1e40af !important; font-weight: bold; }
-      .hr-table-row-enhanced:nth-child(even) { background: #f9fafb; }
-      .hr-table-row-enhanced:hover { background: #e2e8f0; transition: background-color 0.15s ease; }
-      .hr-table-cell-enhanced { padding: 8px 14px; border-bottom: 1px solid #e5e7eb; color: #111827; font-weight: 500; font-size: 13px; vertical-align: middle; }
-      .hr-table-footer-enhanced { padding: 8px 14px; background: #f8fafc; border-top: 2px solid #1e40af; text-align: right; }
-      .hr-table-total-enhanced { font-size: 13px; color: #111827; font-weight: 600; }
-      .hr-table-total-enhanced strong { font-size: 15px; color: #1e40af; font-weight: 700; }
-      .hr-percentage-enhanced { color: #059669; font-weight: 700; background: #ecfdf5; padding: 2px 6px; border-radius: 4px; font-size: 12px; font-family: 'Courier New', monospace; border: 1px solid #a7f3d0; white-space: nowrap; }
-      .sql-inspector-btn { background: rgba(255, 255, 255, 0.15); color: #ffffff; border: 1px solid rgba(255, 255, 255, 0.3); padding: 4px 9px; border-radius: 5px; font-size: 11px; font-weight: 600; cursor: pointer; display: flex; align-items: center; gap: 4px; transition: all 0.2s ease; margin-left: auto; }
-      .sql-inspector-btn:hover { background: rgba(255, 255, 255, 0.25); }
-      .sql-inspector-btn svg { width: 12px; height: 12px; }
-      .sql-inspector-modal { position: fixed; top: 0; left: 0; right: 0; bottom: 0; z-index: 9999; display: flex; align-items: center; justify-content: center; animation: modalFadeIn 0.3s ease-out; }
-      .sql-inspector-backdrop { position: absolute; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0, 0, 0, 0.7); backdrop-filter: blur(4px); }
-      .sql-inspector-content { background: #ffffff; border-radius: 12px; box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3); max-width: 700px; width: 90vw; max-height: 80vh; overflow-y: auto; position: relative; z-index: 10000; animation: modalSlideIn 0.3s ease-out; text-align: left;}
-      .sql-inspector-header { display: flex; justify-content: space-between; align-items: center; padding: 14px 18px; border-bottom: 2px solid #1e40af; background: linear-gradient(135deg, #1e40af 0%, #3b82f6 100%); color: #ffffff; }
-      .sql-inspector-header h3 { margin: 0; font-size: 15px; font-weight: 700; }
-      .sql-inspector-close { background: none; border: none; color: #ffffff; font-size: 20px; font-weight: bold; cursor: pointer; padding: 2px 6px; border-radius: 4px; transition: background-color 0.2s ease; }
-      .sql-inspector-close:hover { background: rgba(255, 255, 255, 0.2); }
-      .sql-explanation-section, .sql-query-section { padding: 14px 18px; background: #f8fafc; border-bottom: 1px solid #e2e8f0; }
-      .sql-explanation-section h4, .sql-query-section h4 { margin: 0 0 8px 0; font-size: 14px; font-weight: 700; color: #1e40af; }
-      .sql-explanation-text { margin: 0; font-size: 13px; line-height: 1.5; color: #374151; background: #ffffff; padding: 12px; border-radius: 6px; border-left: 3px solid #1e40af; }
-      .sql-query-code { background: #1f2937; color: #e5e7eb; padding: 12px; border-radius: 8px; overflow-x: auto; font-family: 'JetBrains Mono', 'Courier New', monospace; font-size: 12px; line-height: 1.5; margin: 0 0 12px 0; border: 1px solid #374151; }
-      .sql-query-code code { color: #10b981; }
-      .sql-copy-btn { background: #1e40af; color: #ffffff; border: none; padding: 7px 14px; border-radius: 6px; font-size: 13px; font-weight: 600; cursor: pointer; transition: all 0.2s ease; display: flex; align-items: center; gap: 6px; }
-      .sql-copy-btn:hover { background: #1d4ed8; }
-      @keyframes modalFadeIn { from { opacity: 0; } to { opacity: 1; } }
-      @keyframes modalSlideIn { from { opacity: 0; transform: scale(0.95) translateY(-10px); } to { opacity: 1; transform: scale(1) translateY(0); } }
-      @keyframes hrFadeInEnhanced { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+      /* ── Table Card ── */
+      .hr-table-card-enhanced { background: #ffffff; border-radius: 14px; overflow: hidden; border: 1px solid #e7e8eb; box-shadow: 0 4px 16px rgba(25,28,30,0.06); margin-bottom: 2px; width: 100%; }
+      .hr-table-header-section-enhanced { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 13px 16px; background: #191c1e; color: #ffffff; }
+      .hr-table-title-section { display: flex; align-items: center; gap: 8px; flex: 1; min-width: 0; }
+      .hr-table-title-enhanced { margin: 0; font-size: 13px; font-weight: 700; letter-spacing: 0.06em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      .hr-table-wrapper-enhanced { overflow-x: auto; overflow-y: auto; max-height: 340px; display: block; }
+      .hr-table-wrapper-enhanced::-webkit-scrollbar { height: 5px; width: 5px; }
+      .hr-table-wrapper-enhanced::-webkit-scrollbar-track { background: #f8f9fc; }
+      .hr-table-wrapper-enhanced::-webkit-scrollbar-thumb { background: #d1d5db; border-radius: 4px; }
+      .hr-table-main-enhanced { width: 100%; border-collapse: collapse; font-size: 14px; font-family: 'Plus Jakarta Sans', system-ui, sans-serif; }
+      .hr-table-head-enhanced tr { background: #f8f9fc; border-bottom: 2px solid #e7e8eb; }
+      .hr-table-header-enhanced { padding: 9px 16px; text-align: left; font-weight: 700; color: #9ca3af; font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; white-space: nowrap; user-select: none; transition: background 0.15s; position: sticky; top: 0; z-index: 2; background: #f8f9fc; }
+      .hr-table-header-enhanced.sortable-header:hover { background: #f0f1f4; cursor: pointer; color: #191c1e; }
+      .hr-table-header-enhanced.sorted { background: rgba(183,19,26,0.05) !important; color: #b7131a !important; }
+      .sort-icon { margin-left: 4px; font-size: 10px; opacity: 0.5; }
+      .hr-table-header-enhanced.sorted .sort-icon { opacity: 1; color: #b7131a; }
+      .hr-table-row-enhanced { border-bottom: 1px solid #f0f1f4; transition: background 0.12s; }
+      .hr-table-row-enhanced:last-child { border-bottom: none; }
+      .hr-table-row-enhanced:hover { background: #fafafa; }
+      .hr-table-cell-enhanced { padding: 10px 16px; color: #191c1e; font-weight: 500; font-size: 14px; vertical-align: middle; }
+      .hr-table-footer-enhanced { padding: 9px 16px; background: #f8f9fc; border-top: 1px solid #e7e8eb; text-align: right; }
+      .hr-table-total-enhanced { font-size: 12px; color: #5b403d; font-weight: 600; }
+      .hr-table-total-enhanced strong { font-size: 14px; color: #b7131a; font-weight: 700; }
+
+      /* ── Percentage pill ── */
+      .hr-percentage-enhanced { font-weight: 700; background: rgba(183,19,26,0.08); color: #b7131a; padding: 3px 9px; border-radius: 999px; font-size: 13px; white-space: nowrap; }
+
+      /* ── SQL button (on dark header) ── */
+      .sql-inspector-btn { background: rgba(255,255,255,0.1); color: #ffffff; border: 1px solid rgba(255,255,255,0.2); padding: 4px 10px; border-radius: 6px; font-size: 10px; font-weight: 700; letter-spacing: 0.05em; cursor: pointer; display: flex; align-items: center; gap: 5px; transition: background 0.15s; margin-left: auto; flex-shrink: 0; font-family: 'Plus Jakarta Sans', sans-serif; }
+      .sql-inspector-btn:hover { background: rgba(255,255,255,0.2); }
+      .sql-inspector-btn svg { width: 11px; height: 11px; }
+
+      /* ── SQL button on stat card footer (light bg) ── */
+      .hr-stat-footer .sql-inspector-btn { background: transparent; color: #b7131a; border-color: rgba(183,19,26,0.25); }
+      .hr-stat-footer .sql-inspector-btn:hover { background: rgba(183,19,26,0.06); }
+
+      /* ── SQL Inspector Modal (redesigned) ── */
+      .sql-inspector-modal { position: fixed; top: 0; left: 0; right: 0; bottom: 0; z-index: 9999; display: flex; align-items: center; justify-content: center; padding: 16px; animation: modalFadeIn 0.2s ease-out; }
+      .sql-inspector-backdrop { position: absolute; inset: 0; background: rgba(15,17,19,0.6); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); }
+      .sql-inspector-content { background: #ffffff; border-radius: 24px; box-shadow: 0 32px 80px rgba(25,28,30,0.25), 0 0 0 1px rgba(25,28,30,0.06); max-width: 660px; width: 100%; max-height: 88vh; display: flex; flex-direction: column; position: relative; z-index: 10000; animation: modalSlideIn 0.22s ease-out; font-family: 'Plus Jakarta Sans', system-ui, sans-serif; overflow: hidden; }
+      .sql-inspector-header { display: flex; align-items: center; justify-content: space-between; padding: 20px 24px 16px; border-bottom: 1px solid #f0f1f4; flex-shrink: 0; }
+      .sql-inspector-header-left { display: flex; align-items: center; gap: 10px; }
+      .sql-inspector-header-icon { width: 36px; height: 36px; background: rgba(183,19,26,0.08); border-radius: 10px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+      .sql-inspector-header-icon .material-symbols-outlined { font-size: 20px; color: #b7131a; }
+      .sql-inspector-header h3 { margin: 0; font-size: 16px; font-weight: 700; color: #191c1e; letter-spacing: -0.01em; }
+      .sql-inspector-close { background: #f0f1f4; border: none; color: #5b6370; width: 32px; height: 32px; border-radius: 50%; display: flex; align-items: center; justify-content: center; cursor: pointer; transition: background 0.15s, color 0.15s; flex-shrink: 0; }
+      .sql-inspector-close:hover { background: #e3e4e8; color: #191c1e; }
+      .sql-inspector-close .material-symbols-outlined { font-size: 18px; }
+      .sql-inspector-body { overflow-y: auto; padding: 20px 24px; display: flex; flex-direction: column; gap: 20px; flex: 1; }
+      .sql-inspector-body::-webkit-scrollbar { width: 5px; }
+      .sql-inspector-body::-webkit-scrollbar-thumb { background: #d1d5db; border-radius: 4px; }
+      /* Section label */
+      .sql-section-label { font-size: 11px; font-weight: 800; letter-spacing: 0.1em; text-transform: uppercase; color: #b7131a; margin-bottom: 10px; }
+      /* Tujuan Bisnis */
+      .sql-tujuan-text { font-size: 15px; line-height: 1.7; color: #374151; background: #f8f9fc; border-radius: 12px; padding: 14px 16px; border-left: 3px solid #b7131a; }
+      .sql-tujuan-text ul { margin: 0; padding-left: 18px; }
+      .sql-tujuan-text li { margin-bottom: 6px; }
+      /* Langkah Logika */
+      .sql-steps-card { background: #f8f9fc; border-radius: 12px; padding: 14px 16px; border: 1px solid #e7e8eb; }
+      .sql-steps-card ol { margin: 0; padding-left: 22px; display: flex; flex-direction: column; gap: 8px; }
+      .sql-steps-card li { font-size: 14px; line-height: 1.6; color: #374151; font-weight: 500; }
+      /* SQL Code */
+      .sql-code-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
+      .sql-db-badge { background: #191c1e; color: #4ade80; font-size: 10px; font-weight: 800; letter-spacing: 0.1em; padding: 3px 9px; border-radius: 6px; font-family: 'JetBrains Mono', monospace; }
+      .sql-code-block { background: #1a1d20; border-radius: 14px; overflow: hidden; border: 1px solid #2e3133; }
+      .sql-code-scroll { overflow-x: auto; padding: 16px; }
+      .sql-code-scroll::-webkit-scrollbar { height: 5px; }
+      .sql-code-scroll::-webkit-scrollbar-thumb { background: #3e4245; border-radius: 4px; }
+      .sql-code-inner { display: flex; gap: 16px; font-family: 'JetBrains Mono', 'Courier New', monospace; font-size: 13px; line-height: 1.8; }
+      .sql-line-numbers { color: #4b5563; user-select: none; text-align: right; flex-shrink: 0; }
+      .sql-code-text { color: #e5e7eb; white-space: pre; }
+      .sql-kw { color: #93c5fd; font-weight: 700; }
+      .sql-fn { color: #fbbf24; }
+      .sql-str { color: #86efac; }
+      .sql-num { color: #f9a8d4; }
+      /* Footer */
+      .sql-inspector-footer { display: flex; align-items: center; justify-content: flex-end; gap: 10px; padding: 16px 24px; border-top: 1px solid #f0f1f4; flex-shrink: 0; background: #ffffff; }
+      .sql-btn-cancel { background: none; border: 1px solid #e7e8eb; color: #5b6370; padding: 9px 20px; border-radius: 10px; font-size: 14px; font-weight: 600; cursor: pointer; font-family: 'Plus Jakarta Sans', sans-serif; transition: background 0.15s; }
+      .sql-btn-cancel:hover { background: #f8f9fc; }
+      .sql-btn-copy { background: linear-gradient(135deg, #b7131a, #e83b3b); color: #ffffff; border: none; padding: 9px 20px; border-radius: 10px; font-size: 14px; font-weight: 700; cursor: pointer; font-family: 'Plus Jakarta Sans', sans-serif; display: flex; align-items: center; gap: 7px; transition: opacity 0.15s; box-shadow: 0 4px 12px rgba(183,19,26,0.25); }
+      .sql-btn-copy:hover { opacity: 0.9; }
+      .sql-btn-copy .material-symbols-outlined { font-size: 17px; }
+
+      /* ── Misc ── */
+      .hr-sql-action-row { display: flex; align-items: center; gap: 8px; padding: 4px 0; }
       .hr-null-enhanced { color: #9ca3af; font-style: italic; font-size: 12px; }
       .hr-no-data-enhanced { text-align: center; color: #6b7280; padding: 24px; font-style: italic; font-size: 13px; background: #f9fafb; }
-      .hr-sql-action-row { display: flex; align-items: center; gap: 8px; padding: 4px 0; }
-      .hr-stat-card { background: #ffffff; border-radius: 10px; border: 1px solid #e2e8f0; box-shadow: 0 2px 4px -1px rgb(0 0 0 / 0.07); overflow: hidden; max-width: 100%; width: 100%; margin-bottom: 2px; }
-      .hr-stat-card-header { padding: 10px 14px; background: linear-gradient(135deg, #1e40af 0%, #3b82f6 100%); color: #ffffff; display: flex; align-items: center; justify-content: space-between; gap: 8px; }
-      .hr-stat-card-header h4 { margin: 0; font-size: 13px; font-weight: 700; }
-      .hr-stat-card-body { padding: 20px 24px; text-align: center; background: #f8fafc; }
-      .hr-stat-label { font-size: 13px; color: #64748b; font-weight: 500; margin-bottom: 8px; line-height: 1.4; }
-      .hr-stat-value { font-size: 36px; font-weight: 800; color: #1e40af; line-height: 1; }
+      @keyframes modalFadeIn { from { opacity: 0; } to { opacity: 1; } }
+      @keyframes modalSlideIn { from { opacity: 0; transform: scale(0.97) translateY(-8px); } to { opacity: 1; transform: scale(1) translateY(0); } }
+      @keyframes hrFadeInEnhanced { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
     `;
     document.head.appendChild(style);
   }
@@ -465,10 +546,7 @@ class EnhancedHRAnalyticsRenderer {
   renderSQLInspectorButton(messageId) {
     return `
       <button class="sql-inspector-btn" data-message-id="${messageId}" title="Lihat Query SQL">
-        <svg width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
-          <path d="M5.5 7a.5.5 0 0 0 0 1h5a.5.5 0 0 0 0-1h-5zM5 9.5a.5.5 0 0 1 .5-.5h5a.5.5 0 0 1 0 1h-5a.5.5 0 0 1-.5-.5zm0 2a.5.5 0 0 1 .5-.5h2a.5.5 0 0 1 0 1h-2a.5.5 0 0 1-.5-.5z"/>
-          <path d="M9.5 0H4a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2V4.5L9.5 0zm0 1v2A1.5 1.5 0 0 0 11 4.5h2V14a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1h5.5z"/>
-        </svg>
+        <span class="material-symbols-outlined" style="font-size:14px;">data_object</span>
         SQL
       </button>
     `;
@@ -486,93 +564,164 @@ class EnhancedHRAnalyticsRenderer {
   }
 
   /**
-   * 🚀 THE ULTIMATE SQL FINDER FIX:
-   * Mampu mencari SQL di lapisan terdalam objek yang direkonstruksi
+   * Parse sql_explanation HTML into { tujuan, logika, teknis } sections
    */
+  _parseSQLExplanation(html) {
+    if (!html) return { tujuan: '', logika: '', teknis: '' };
+    const tmp = document.createElement('div');
+    tmp.innerHTML = html;
+    const bTags = tmp.querySelectorAll('b');
+    const sections = { tujuan: '', logika: '', teknis: '' };
+
+    bTags.forEach(b => {
+      const text = b.textContent.toLowerCase();
+      let ul = b.nextElementSibling;
+      while (ul && ul.tagName !== 'UL') ul = ul.nextElementSibling;
+      const content = ul ? ul.outerHTML : '';
+      if (text.includes('tujuan')) sections.tujuan = content;
+      else if (text.includes('logika')) sections.logika = content;
+      else if (text.includes('teknis')) sections.teknis = content;
+    });
+
+    // Fallback: if no structured sections, put everything in tujuan
+    if (!sections.tujuan && !sections.logika && !sections.teknis) {
+      sections.tujuan = html;
+    }
+    return sections;
+  }
+
+  /**
+   * Convert UL html to ordered list items for "Langkah Logika" section
+   */
+  _ulToOlHtml(ulHtml) {
+    if (!ulHtml) return '';
+    const tmp = document.createElement('div');
+    tmp.innerHTML = ulHtml;
+    const items = Array.from(tmp.querySelectorAll('li')).map(li => `<li>${li.innerHTML}</li>`).join('');
+    return `<ol>${items}</ol>`;
+  }
+
+  /**
+   * Basic SQL syntax highlighting
+   */
+  _highlightSQL(sql) {
+    const keywords = /\b(SELECT|FROM|WHERE|JOIN|LEFT|RIGHT|INNER|OUTER|ON|GROUP BY|ORDER BY|HAVING|LIMIT|OFFSET|AND|OR|NOT|IN|IS|NULL|AS|DISTINCT|COUNT|SUM|AVG|MIN|MAX|OVER|PARTITION|BY|WITH|UNION|ALL|CASE|WHEN|THEN|ELSE|END|INSERT|UPDATE|DELETE|CREATE|DROP|ALTER|TABLE|INDEX|VIEW|SET|VALUES|BETWEEN|LIKE|EXISTS|COALESCE|CAST|EXTRACT|DATE_TRUNC)\b/gi;
+    const escaped = sql.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    return escaped.replace(keywords, m => `<span class="sql-kw">${m.toUpperCase()}</span>`);
+  }
+
+  /**
+   * Render SQL with line numbers
+   */
+  _renderSQLWithLineNumbers(sql) {
+    const lines = sql.trim().split('\n');
+    const numbers = lines.map((_, i) => `${i + 1}`).join('\n');
+    const highlighted = this._highlightSQL(sql.trim());
+    return `
+      <div class="sql-code-inner">
+        <pre class="sql-line-numbers">${numbers}</pre>
+        <pre class="sql-code-text">${highlighted}</pre>
+      </div>`;
+  }
+
   showSQLInspector(messageId) {
     const analytics = this.renderedAnalytics.get(messageId);
     if (!analytics || !analytics.data) return;
-    
+
     const responseData = analytics.data;
-    
-    let sqlQuery = responseData.sql_query || 
-                   (responseData.data && responseData.data.sql_query) || 
+    let sqlQuery = responseData.sql_query ||
+                   (responseData.data && responseData.data.sql_query) ||
                    (responseData.originalData && responseData.originalData.sql_query) || null;
-                   
-    let sqlExplanation = responseData.sql_explanation || 
-                         (responseData.data && responseData.data.sql_explanation) || 
+    let sqlExplanation = responseData.sql_explanation ||
+                         (responseData.data && responseData.data.sql_explanation) ||
                          (responseData.originalData && responseData.originalData.sql_explanation) || null;
 
     if (sqlQuery === 'undefined') sqlQuery = null;
     if (sqlExplanation === 'undefined') sqlExplanation = null;
 
-    // 🚀 AUTO-FORMATTER MAGIC: Menyulap teks ngeyel AI menjadi rapi!
-    let formattedExp = sqlExplanation || '';
-    // Case-insensitive check and improved formatting logic
-    if (formattedExp && !formattedExp.toLowerCase().includes('<ul>') && !formattedExp.toLowerCase().includes('<br>')) {
-        // Jika AI menjawab pakai Markdown biasa, kita ubah jadi HTML cantik
-        const originalExp = formattedExp;
+    const sections = this._parseSQLExplanation(sqlExplanation);
 
-        formattedExp = formattedExp.replace(/\*\*(.*?)\*\*/g, '<strong style="color: #1e40af; display: block; margin-top: 16px; font-size: 16px; border-bottom: 1px solid #e2e8f0; padding-bottom: 4px;">$1</strong>');
-        formattedExp = formattedExp.replace(/(?:\n|^)-\s(.*?)(?=\n|$)/g, '<div style="margin-left: 12px; margin-top: 6px;">🔸 $1</div>');
-        
-        // Fix: Jangan hapus newline jika tidak ada bullet point yang terdeteksi
-        if (formattedExp.includes('🔸') || formattedExp.includes('<strong')) {
-            formattedExp = formattedExp.replace(/\n/g, ''); 
-        } else {
-            // Convert newline to br for readability if it's just paragraphs
-            formattedExp = formattedExp.replace(/\n/g, '<br>');
-        }
-    }
+    const tujuanHTML = sections.tujuan
+      ? `<div class="sql-section">
+           <div class="sql-section-label">Tujuan Bisnis (Untuk HR)</div>
+           <div class="sql-tujuan-text">${sections.tujuan}</div>
+         </div>`
+      : '';
+
+    const logikaItems = sections.logika ? this._ulToOlHtml(sections.logika) : '';
+    const logikaHTML = logikaItems
+      ? `<div class="sql-section">
+           <div class="sql-section-label">Langkah Logika Query (Non-Teknis)</div>
+           <div class="sql-steps-card">${logikaItems}</div>
+         </div>`
+      : '';
+
+    const sqlCodeHTML = sqlQuery
+      ? `<div class="sql-section">
+           <div class="sql-code-header">
+             <div class="sql-section-label" style="margin-bottom:0;">Query SQL</div>
+             <span class="sql-db-badge">POSTGRESQL</span>
+           </div>
+           <div class="sql-code-block">
+             <div class="sql-code-scroll">${this._renderSQLWithLineNumbers(sqlQuery)}</div>
+           </div>
+         </div>`
+      : '';
+
+    const emptyHTML = (!sqlQuery && !sqlExplanation)
+      ? `<div style="padding:8px 0; color:#6b7280; font-style:italic; font-size:14px;">Detail SQL tidak tersedia pada sesi ini.</div>`
+      : '';
 
     const modal = document.createElement('div');
     modal.className = 'sql-inspector-modal';
     modal.innerHTML = `
-      <div class="sql-inspector-backdrop" data-close-modal="true">
-        <div class="sql-inspector-content" data-close-modal="false">
-          <div class="sql-inspector-header">
-            <h3>🔍 Query SQL & Penjelasan</h3>
-            <button class="sql-inspector-close" data-close-modal="true">×</button>
+      <div class="sql-inspector-backdrop" data-close-modal="true"></div>
+      <div class="sql-inspector-content">
+        <div class="sql-inspector-header">
+          <div class="sql-inspector-header-left">
+            <div class="sql-inspector-header-icon">
+              <span class="material-symbols-outlined">description</span>
+            </div>
+            <h3>Query SQL &amp; Penjelasan</h3>
           </div>
-          ${formattedExp ? `
-            <div class="sql-explanation-section">
-              <h4>📝 Penjelasan</h4>
-              <div class="sql-explanation-text" style="padding-top: 0;">${formattedExp}</div>
-            </div>
-          ` : ''}
-          ${sqlQuery ? `
-            <div class="sql-query-section">
-              <h4>💻 Query SQL</h4>
-              <pre class="sql-query-code"><code>${sqlQuery}</code></pre>
-              <button class="sql-copy-btn" data-sql="${this.escapeHtml(sqlQuery)}">
-                📋 Copy SQL
-              </button>
-            </div>
-          ` : ''}
-          ${(!sqlQuery && !formattedExp) ? `
-            <div class="sql-explanation-section">
-              <p style="color: #6b7280; font-style: italic;">⚠️ Detail SQL tidak tersedia pada sesi pemulihan data ini.</p>
-            </div>
-          ` : ''}
+          <button class="sql-inspector-close">
+            <span class="material-symbols-outlined">close</span>
+          </button>
+        </div>
+        <div class="sql-inspector-body">
+          ${tujuanHTML}
+          ${logikaHTML}
+          ${sqlCodeHTML}
+          ${emptyHTML}
+        </div>
+        <div class="sql-inspector-footer">
+          <button class="sql-btn-cancel">Batal</button>
+          ${sqlQuery ? `<button class="sql-btn-copy">
+            <span class="material-symbols-outlined">content_copy</span>
+            Salin Kode SQL
+          </button>` : ''}
         </div>
       </div>
     `;
 
     document.body.appendChild(modal);
 
-    modal.addEventListener('click', (e) => {
-      if (e.target.getAttribute('data-close-modal') === 'true') {
-        document.body.removeChild(modal);
-      }
-    });
+    const closeModal = () => { if (modal.parentNode) document.body.removeChild(modal); };
 
-    const copyBtn = modal.querySelector('.sql-copy-btn');
-    if (copyBtn) {
+    // Close on backdrop click or close/cancel buttons
+    modal.querySelector('.sql-inspector-backdrop').addEventListener('click', closeModal);
+    modal.querySelector('.sql-inspector-close').addEventListener('click', closeModal);
+    const cancelBtn = modal.querySelector('.sql-btn-cancel');
+    if (cancelBtn) cancelBtn.addEventListener('click', closeModal);
+
+    const copyBtn = modal.querySelector('.sql-btn-copy');
+    if (copyBtn && sqlQuery) {
       copyBtn.addEventListener('click', () => {
-        const sql = copyBtn.getAttribute('data-sql');
-        navigator.clipboard.writeText(sql).then(() => {
-          copyBtn.innerHTML = '✅ Copied!';
-          setTimeout(() => copyBtn.innerHTML = '📋 Copy SQL', 2000);
+        navigator.clipboard.writeText(sqlQuery).then(() => {
+          copyBtn.innerHTML = '<span class="material-symbols-outlined">check_circle</span> Tersalin!';
+          setTimeout(() => {
+            copyBtn.innerHTML = '<span class="material-symbols-outlined">content_copy</span> Salin Kode SQL';
+          }, 2000);
         }).catch(() => console.warn('Failed to copy'));
       });
     }

@@ -1,15 +1,18 @@
 <!DOCTYPE html>
-<html lang="id">
+<html lang="id" class="light">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>DENAI AI - Asisten Pengetahuan Perusahaan</title>
+    <title>DENAI AI | Asisten Pengetahuan Perusahaan</title>
 
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet">
 
-    <script src="https://cdn.jsdelivr.net/npm/chart.js@3.9.1/dist/chart.min.js"></script>
+    <script src="js/chart.min.js"></script>
+    <!-- Tailwind CSS — built locally (no CDN) -->
+    <link rel="stylesheet" href="styles/tailwind.css">
 
     <link rel="stylesheet" href="styles/main.css">
     <link rel="stylesheet" href="styles/schema.css">
@@ -17,44 +20,169 @@
     <link rel="stylesheet" href="styles/call-status-animations.css">
     <link rel="stylesheet" href="styles/call-button-enhancements.css">
     <link rel="stylesheet" href="styles/mobile.css">
+
+
+    <style>
+        body {
+            font-family: 'Plus Jakarta Sans', sans-serif;
+            -webkit-font-smoothing: antialiased;
+        }
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+            vertical-align: middle;
+            line-height: 1;
+        }
+
+        /* Gradient CTA */
+        .btn-gradient {
+            background: linear-gradient(135deg, #b7131a 0%, #db322f 100%);
+        }
+
+        /* Glassmorphism */
+        .ether-glass {
+            background: rgba(255, 255, 255, 0.85);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+        }
+
+        /* Ether gradient background for landing */
+        .ether-gradient {
+            background: radial-gradient(circle at 50% -20%, #ffffff 0%, #f2f3f6 100%);
+        }
+
+        /* Call mode overlay */
+        .call-mode-overlay { display: none; }
+        .call-mode-overlay.active { display: flex; }
+
+        /* Role menu */
+        .role-menu { display: none; }
+        .role-menu.open { display: block; }
+
+        /* Waveform bars */
+        .waveform-bar {
+            width: 4px;
+            border-radius: 999px;
+            transition: height 0.1s ease;
+        }
+
+        /* Scrollbar */
+        ::-webkit-scrollbar { width: 5px; }
+        ::-webkit-scrollbar-thumb { background: #e1e2e5; border-radius: 999px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        .no-scrollbar::-webkit-scrollbar { display: none; }
+        .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+
+        /* Stop button state */
+        .stop-btn { background: #191c1e !important; }
+
+        /* Input glow effect */
+        .input-glow-group:focus-within .input-glow-ring {
+            opacity: 1;
+        }
+
+        /* Mobile sidebar */
+        @media (max-width: 767px) {
+            #sidebar {
+                position: fixed;
+                transform: translateX(-100%);
+                transition: transform 0.3s ease;
+                z-index: 50;
+            }
+            #sidebar.open { transform: translateX(0); }
+            .sidebar-overlay {
+                display: none;
+                position: fixed;
+                inset: 0;
+                background: rgba(0,0,0,0.4);
+                z-index: 40;
+            }
+            .sidebar-overlay.open { display: block; }
+            .main-wrapper { margin-left: 0 !important; }
+        }
+
+        /* Role badges */
+        .employee-badge { background: rgba(107,114,128,.12); color: #6b7280; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; padding: 1px 6px; border-radius: 4px; }
+        .hr-badge { background: rgba(22,163,74,.14); color: #16a34a; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; padding: 1px 6px; border-radius: 4px; }
+    </style>
 </head>
-<body>
+<body class="bg-background text-on-surface overflow-hidden h-screen">
 
-    <div class="call-mode-overlay" id="callModeOverlay">
-        <div class="call-interface">
-            
-            <div class="call-top">
-                <div class="call-avatar" id="callAvatar">AI</div>
-                <h2 class="call-title">DENAI AI</h2>
-                <div class="call-status" id="callStatus">
-                    <span class="status-indicator pulse"></span>
-                    <span class="status-text">SIAP</span>
-                </div>
+<!-- ================================================================
+     CALL MODE OVERLAY
+     Kiri: waveform visualizer | Kanan: live transcript
+     ================================================================ -->
+<div class="call-mode-overlay fixed inset-0 z-[10000]" id="callModeOverlay">
+
+    <!-- Kiri: Visualizer -->
+    <section class="flex-1 flex flex-col items-center justify-center relative bg-background overflow-hidden">
+        <!-- Ambient glow -->
+        <div class="absolute inset-0 flex items-center justify-center -z-10 pointer-events-none overflow-hidden">
+            <div class="w-[600px] h-[600px] bg-tertiary-fixed opacity-20 blur-[120px] rounded-full"></div>
+            <div class="absolute w-[400px] h-[400px] bg-secondary-fixed opacity-10 blur-[100px] rounded-full translate-x-20 -translate-y-20"></div>
+        </div>
+
+        <!-- callAvatar tersembunyi — wajib ada untuk JS -->
+        <div id="callAvatar" class="call-avatar" style="position:absolute;width:1px;height:1px;opacity:0;pointer-events:none;"></div>
+
+        <!-- Status -->
+        <div class="mb-10 text-center">
+            <div class="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-surface-container-low border border-outline-variant/10 mb-8">
+                <span class="call-status-dot w-2 h-2 rounded-full bg-green-500 animate-pulse"></span>
+                <span class="call-status text-xs font-bold tracking-widest uppercase text-on-surface-variant" id="callStatus">SIAP</span>
             </div>
+            <h2 class="text-3xl font-bold tracking-tight text-on-surface mb-2">DENAI AI</h2>
+            <p class="text-sm text-on-surface-variant font-medium min-h-[1.5rem]" id="callInterimText">Silakan berbicara...</p>
+        </div>
 
-            <div class="call-middle">
-                <div class="audio-visualizer" id="audioVisualizer">
-                    <div class="audio-bar"></div><div class="audio-bar"></div>
-                    <div class="audio-bar"></div><div class="audio-bar"></div>
-                    <div class="audio-bar"></div><div class="audio-bar"></div>
-                    <div class="audio-bar"></div>
-                </div>
-                <!-- Live interim: updates character-by-character as user speaks -->
-                <div class="call-interim-text" id="callInterimText"></div>
-                <div class="call-transcript-log" id="callTranscriptLog">
-                    <p class="call-transcript-hint">Bicara sekarang... DENAI sedang mendengarkan</p>
-                </div>
+        <!-- Waveform — pakai audio-bar supaya JS dan CSS animasi berfungsi -->
+        <div class="relative w-full max-w-2xl flex items-center justify-center gap-1.5 px-12 h-48" id="audioVisualizer">
+            <div class="audio-bar" style="background:#4c56af;height:12px;"></div>
+            <div class="audio-bar" style="background:#006578;height:24px;"></div>
+            <div class="audio-bar" style="background:#4c56af;height:16px;"></div>
+            <div class="audio-bar" style="background:#006578;height:32px;"></div>
+            <div class="audio-bar" style="background:#db322f;height:40px;"></div>
+            <div class="audio-bar" style="background:#006578;height:48px;"></div>
+            <div class="audio-bar" style="background:#b7131a;height:36px;"></div>
+            <div class="audio-bar" style="background:#006578;height:44px;"></div>
+            <div class="audio-bar" style="background:#4c56af;height:28px;"></div>
+            <div class="audio-bar" style="background:#006578;height:40px;"></div>
+            <div class="audio-bar" style="background:#db322f;height:20px;"></div>
+            <div class="audio-bar" style="background:#4c56af;height:16px;"></div>
+            <div class="audio-bar" style="background:#006578;height:36px;"></div>
+            <div class="audio-bar" style="background:#4c56af;height:24px;"></div>
+            <div class="audio-bar" style="background:#006578;height:12px;"></div>
+            <div class="audio-bar" style="background:#4c56af;height:20px;"></div>
+            <div class="audio-bar" style="background:#006578;height:32px;"></div>
+            <div class="audio-bar" style="background:#4c56af;height:16px;"></div>
+            <div class="audio-bar" style="background:#db322f;height:44px;"></div>
+            <div class="audio-bar" style="background:#4c56af;height:24px;"></div>
+            <div class="audio-bar" style="background:#006578;height:12px;"></div>
+        </div>
+
+        <!-- Metadata -->
+        <div class="mt-14 flex items-center gap-10 text-xs font-bold text-on-surface-variant/60 uppercase tracking-widest">
+            <div class="flex items-center gap-2">
+                <span class="material-symbols-outlined text-sm">settings_voice</span>
+                <span>DENAI AI</span>
             </div>
+            <div class="flex items-center gap-2">
+                <span class="material-symbols-outlined text-sm">timer</span>
+                <span id="callTimer">00:00</span>
+            </div>
+        </div>
 
-            <div class="call-bottom">
-                <div class="call-controls">
-                    <button class="call-control-btn mute" id="muteBtn" title="Mute/Unmute">
-                        <svg class="icon-unmuted" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <!-- Kontrol (pill floating) -->
+        <div class="call-controls mt-16">
+            <div class="flex items-center gap-5 px-8 py-4 bg-white/80 backdrop-blur-xl rounded-full shadow-[0px_12px_32px_rgba(25,28,30,0.10)] border border-white/40">
+                <div class="flex items-center gap-4 border-r border-outline-variant/20 pr-5">
+                    <button class="call-control-btn mute w-12 h-12 rounded-full flex items-center justify-center bg-surface-container-low text-on-surface-variant hover:bg-surface-container hover:scale-105 active:scale-95 transition-all"
+                            id="muteBtn" title="Mute/Unmute">
+                        <svg class="icon-unmuted w-5 h-5" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                             <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"></path>
                             <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
                             <line x1="12" y1="19" x2="12" y2="22"></line>
                         </svg>
-                        <svg class="icon-muted" style="display:none;" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <svg class="icon-muted w-5 h-5" style="display:none;" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                             <line x1="2" y1="2" x2="22" y2="22"></line>
                             <path d="M18.89 13.23A7.12 7.12 0 0 0 19 12v-2"></path>
                             <path d="M5 10v2a7 7 0 0 0 12 5"></path>
@@ -63,256 +191,367 @@
                             <line x1="12" y1="19" x2="12" y2="22"></line>
                         </svg>
                     </button>
-
-                    <button class="call-control-btn skip" id="skipBtn" title="Skip AI Speech" style="display: none;">
-                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor">
+                    <button class="call-control-btn skip w-12 h-12 rounded-full flex items-center justify-center bg-surface-container-low text-on-surface-variant hover:bg-surface-container hover:scale-105 active:scale-95 transition-all"
+                            id="skipBtn" title="Lewati" style="display:none;">
+                        <svg class="w-5 h-5" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor">
                             <path d="M4 18l8.5-6L4 6v12zm9-12v12l8.5-6L13 6z"/>
                         </svg>
                     </button>
-
-                    <button class="call-control-btn end-call" id="endCallBtn" title="End Call">
-                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor">
-                            <path d="M12 9c-1.6 0-3.15.25-4.6.72v3.1c0 .39-.23.74-.56.9-.98.49-1.87 1.12-2.66 1.85-.18.18-.43.28-.7.28-.28 0-.53-.11-.71-.29L.29 13.08c-.18-.17-.29-.42-.29-.7 0-.28.11-.53.29-.71C3.34 8.78 7.46 7 12 7s8.66 1.78 11.71 4.67c.18.18.29.43.29.71 0 .28-.11.53-.29.71l-2.48 2.48c-.18.18-.43.29-.71.29-.27 0-.52-.11-.7-.28-.79-.74-1.69-1.36-2.67-1.85-.33-.16-.56-.5-.56-.9v-3.1C15.15 9.25 13.6 9 12 9z"/>
-                        </svg>
-                    </button>
                 </div>
+
+                <!-- End Call -->
+                <button class="call-control-btn end-call flex items-center gap-3 px-8 py-4 btn-gradient text-white font-bold rounded-full shadow-lg shadow-primary/20 hover:scale-105 active:scale-95 transition-all"
+                        id="endCallBtn" title="Akhiri Panggilan">
+                    <span class="material-symbols-outlined" style="font-variation-settings:'FILL' 1;">call_end</span>
+                    <span>Akhiri</span>
+                </button>
+
             </div>
         </div>
-    </div>
+    </section>
 
-    <div class="volume-indicator" id="volumeIndicator" style="display:none;">
-        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" style="width: 16px; height: 16px; display: inline-block; margin-right: 8px;">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M6 10H4a1 1 0 00-1 1v2a1 1 0 001 1h2l4.707 4.707C11.337 19.337 12 18.891 12 18V6c0-.891-.663-1.337-1.293-.707L6 10z"></path>
-        </svg>
-        Volume: <span id="volumeLevel">100</span>%
-    </div>
+    <!-- Kanan: Live Transcript -->
+    <aside class="w-80 xl:w-[420px] bg-white/60 backdrop-blur-xl border-l border-outline-variant/10 flex flex-col shadow-2xl">
+        <div class="p-6 border-b border-outline-variant/10 flex items-center justify-between flex-shrink-0">
+            <h3 class="font-bold text-base text-on-surface">Transkrip</h3>
+            <span class="text-[10px] font-bold text-tertiary bg-tertiary-fixed px-2 py-0.5 rounded uppercase tracking-wider">Real-time</span>
+        </div>
+        <div class="flex-1 overflow-y-auto p-6 call-transcript-log" id="callTranscriptLog">
+            <p class="text-sm text-on-surface-variant italic call-transcript-hint">Mulai berbicara... DENAI sedang mendengarkan</p>
+        </div>
+        <div class="p-4 bg-surface-container-low/50 border-t border-outline-variant/10 flex-shrink-0">
+            <p class="text-center text-[10px] font-medium text-on-surface-variant uppercase tracking-widest">DENAI AI dapat membuat estimasi. Verifikasi dengan sumber resmi.</p>
+        </div>
+    </aside>
+</div>
 
-    <!-- Mobile sidebar overlay -->
-    <div class="sidebar-overlay" id="sidebarOverlay" onclick="closeSidebar()"></div>
+<!-- Volume Indicator -->
+<div class="volume-indicator fixed top-4 right-4 z-[9999] bg-white/90 backdrop-blur-sm px-4 py-2 rounded-lg shadow border border-outline-variant/20 text-sm text-on-surface-variant items-center gap-2"
+     id="volumeIndicator" style="display:none;">
+    <span class="material-symbols-outlined text-base">volume_up</span>
+    Volume: <span id="volumeLevel">100</span>%
+</div>
 
-    <div class="app-container">
-        <aside class="sidebar" id="sidebar">
-            <div class="sidebar-header">
-                <div class="brand">
-                    <div class="brand-icon"><span>AI</span></div>
-                    <span class="brand-text">DENAI AI</span>
-                </div>
+<!-- Mobile Sidebar Overlay -->
+<div class="sidebar-overlay" id="sidebarOverlay" onclick="closeSidebar()"></div>
+
+<!-- ================================================================
+     APP CONTAINER
+     ================================================================ -->
+<div class="flex h-screen overflow-hidden">
+
+    <!-- ── SIDEBAR ── -->
+    <aside class="w-72 h-screen flex flex-col bg-[#f8f9fc] border-r border-slate-200/50 flex-shrink-0" id="sidebar">
+
+        <!-- Brand -->
+        <div class="flex items-center gap-3 px-6 py-[18px] flex-shrink-0">
+            <div class="w-8 h-8 rounded-lg btn-gradient flex items-center justify-center text-white flex-shrink-0">
+                <span class="material-symbols-outlined text-base" style="font-variation-settings:'FILL' 1;">smart_toy</span>
             </div>
+            <div>
+                <h1 class="text-[15px] font-extrabold text-slate-900 tracking-tighter leading-tight">DENAI AI</h1>
+                <p class="text-[9px] uppercase tracking-[0.2em] text-slate-400 font-bold mt-0.5">Asisten Perusahaan</p>
+            </div>
+        </div>
 
-            <button class="btn-new-chat" onclick="newChat(true)">
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"/></svg>
+        <!-- New Chat -->
+        <div class="px-4 pb-4 flex-shrink-0">
+            <button class="w-full bg-[#191c1e] text-white font-bold py-3 px-4 rounded-xl flex items-center justify-center gap-2 shadow-md hover:bg-[#2e3133] active:scale-95 transition-all text-sm"
+                    onclick="newChat(true)">
+                <span class="material-symbols-outlined text-base">add</span>
                 <span>Chat Baru</span>
             </button>
+        </div>
 
-            <nav class="sidebar-nav">
-                <a href="#" class="nav-link active" onclick="event.preventDefault()">
-                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"/></svg>
-                    <span>Chat</span>
-                </a>
-            </nav>
+        <!-- Nav -->
+        <nav class="px-4 flex-shrink-0">
+            <a href="#" class="flex items-center gap-3 px-3 py-2.5 rounded-xl bg-white text-primary font-semibold shadow-sm ring-1 ring-primary/10 text-sm transition-all"
+               onclick="event.preventDefault()">
+                <span class="material-symbols-outlined text-lg" style="font-variation-settings:'FILL' 1;">chat_bubble</span>
+                <span>Percakapan</span>
+            </a>
+        </nav>
 
-            <div class="chat-history">
-                <div id="sessionList"></div>
-            </div>
-        </aside>
+        <!-- Session List -->
+        <div class="flex-1 overflow-y-auto no-scrollbar px-4 py-3 min-h-0">
+            <div id="sessionList"></div>
+        </div>
 
-        <main class="main-content">
-            <header class="top-header">
-                <!-- Hamburger button: visible only on mobile -->
-                <button class="hamburger-btn" id="hamburgerBtn" onclick="toggleSidebar()" title="Menu" aria-label="Toggle menu">
-                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round">
-                        <line x1="3" y1="6" x2="21" y2="6"/>
-                        <line x1="3" y1="12" x2="21" y2="12"/>
-                        <line x1="3" y1="18" x2="21" y2="18"/>
-                    </svg>
+        <!-- Role Switcher -->
+        <div class="px-4 pb-4 border-t border-slate-200/50 pt-3 flex-shrink-0">
+            <div class="role-switcher relative" id="roleSwitcher">
+                <button class="w-full flex items-center gap-3 p-2.5 rounded-xl bg-white border border-slate-100 shadow-sm hover:bg-slate-50 transition-colors"
+                        id="roleSwitcherBtn" onclick="window.CoreApp?.toggleRoleMenu()">
+                    <img id="roleSwitcherAvatar"
+                         src="https://ui-avatars.com/api/?name=Staff&background=6b7280&color=fff&size=40"
+                         alt="Akun" class="w-8 h-8 rounded-full flex-shrink-0">
+                    <div class="flex-1 text-left min-w-0">
+                        <p class="text-xs font-bold text-slate-900 truncate" id="roleSwitcherName">Staff</p>
+                        <span class="employee-badge" id="roleSwitcherBadge">Karyawan</span>
+                    </div>
+                    <span class="material-symbols-outlined text-slate-400 text-base flex-shrink-0">expand_more</span>
                 </button>
-                <div class="header-search">
-                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
-                    <input type="text" placeholder="Cari Pengetahuan..." class="search-input">
-                </div>
-                <div class="header-actions">
-                    <button class="header-btn" id="schemaBtn" title="Skema Database">
-                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4"/></svg>
-                        <span>Skema Data</span>
+
+                <div class="role-menu absolute bottom-full left-0 right-0 mb-2 bg-white border border-slate-100 rounded-xl shadow-lg overflow-hidden z-50"
+                     id="roleMenu">
+                    <div class="px-3 py-2 text-[10px] font-bold uppercase tracking-widest text-slate-400 border-b border-slate-100">Ganti Akun</div>
+                    <button class="w-full flex items-center gap-3 px-3 py-2.5 hover:bg-slate-50 transition-colors text-left"
+                            id="optEmployee" onclick="window.CoreApp?.switchRole('employee')">
+                        <img src="https://ui-avatars.com/api/?name=Staff&background=6b7280&color=fff&size=32" alt="Staff" class="w-7 h-7 rounded-full flex-shrink-0">
+                        <div class="flex-1">
+                            <p class="text-sm font-semibold text-slate-900">Staff</p>
+                            <p class="text-[11px] text-slate-400">Karyawan</p>
+                        </div>
+                        <span class="material-symbols-outlined text-primary text-lg" id="checkEmployee">check</span>
                     </button>
-                    <button class="header-btn header-btn-call" id="headerCallBtn" title="Mode Panggilan" onclick="window.CallModeModule?.startCallMode()">
-                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z"/></svg>
-                        <span>Panggil</span>
-                    </button>
-
-                    <!-- Account Switcher Dropdown -->
-                    <div class="role-switcher" id="roleSwitcher">
-                        <button class="role-switcher-btn" id="roleSwitcherBtn" onclick="window.CoreApp?.toggleRoleMenu()">
-                            <img id="roleSwitcherAvatar" src="https://ui-avatars.com/api/?name=Staff&background=6b7280&color=fff&size=40" alt="Akun">
-                            <div class="role-switcher-info">
-                                <span class="role-switcher-name" id="roleSwitcherName">Staff</span>
-                                <span class="role-switcher-badge employee-badge" id="roleSwitcherBadge">Karyawan</span>
-                            </div>
-                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"></polyline></svg>
-                        </button>
-                        <div class="role-menu" id="roleMenu">
-                            <div class="role-menu-header">Ganti Akun</div>
-                            <button class="role-option active" id="optEmployee" onclick="window.CoreApp?.switchRole('employee')">
-                                <img src="https://ui-avatars.com/api/?name=Staff&background=6b7280&color=fff&size=32" alt="Staff" class="role-option-avatar">
-                                <div class="role-option-info">
-                                    <span class="role-option-name">Staff</span>
-                                    <span class="role-option-role">Karyawan</span>
-                                </div>
-                                <svg class="role-option-check" id="checkEmployee" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"></polyline></svg>
-                            </button>
-                            <button class="role-option" id="optHR" onclick="window.CoreApp?.switchRole('hr')">
-                                <img src="https://ui-avatars.com/api/?name=Keysa&background=16a34a&color=fff&size=32" alt="Keysa" class="role-option-avatar">
-                                <div class="role-option-info">
-                                    <span class="role-option-name">Keysa</span>
-                                    <span class="role-option-role">HR</span>
-                                </div>
-                                <svg class="role-option-check" id="checkHR" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="display:none;"><polyline points="20 6 9 17 4 12"></polyline></svg>
-                            </button>
+                    <button class="w-full flex items-center gap-3 px-3 py-2.5 hover:bg-slate-50 transition-colors text-left"
+                            id="optHR" onclick="window.CoreApp?.switchRole('hr')">
+                        <img src="https://ui-avatars.com/api/?name=Keysa&background=16a34a&color=fff&size=32" alt="Keysa" class="w-7 h-7 rounded-full flex-shrink-0">
+                        <div class="flex-1">
+                            <p class="text-sm font-semibold text-slate-900">Keysa</p>
+                            <p class="text-[11px] text-slate-400">HR</p>
                         </div>
-                    </div>
-                </div>
-            </header>
-
-            <div class="landing-page" id="landing">
-                <div class="landing-center">
-                    <div class="welcome-card">
-                        <div class="card-layout">
-                            <div class="robot-placeholder">
-                                <div class="robot-image-container">
-                                    <img id="robotImage" src="assets/robot.png" alt="DENAI Robot" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">
-                                    <div class="robot-placeholder-text" style="display:none;">Robot Image</div>
-                                </div>
-                            </div>
-                            <div class="card-content-area">
-                                <div class="ai-badge"><span class="ai-badge-text">DENAI AI</span></div>
-                                <h1 class="welcome-heading">Halo! 👋</h1>
-                                <p class="welcome-desc">Saya <strong>DENAI</strong>, asisten digital karyawan.</p>
-                                <p class="ask-label">Apa yang ingin Anda tanyakan?</p>
-                            </div>
-                        </div>
-                        <div class="landing-search-box">
-                            <input type="text" id="landingInput" class="landing-search-input" placeholder="Tanyakan tentang kebijakan HR, lembur, cuti, atau data karyawan..." onkeydown="if(event.key==='Enter' && this.value.trim())startFromLanding()">
-                            <button class="landing-voice-btn" id="landingSpeechBtn" title="Input Suara"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z"/></svg></button>
-                            <button class="landing-send" onclick="startFromLanding()"><svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M2 21l21-9L2 3v7l15 2-15 2v7z"/></svg></button>
-                        </div>
-                        <div class="suggestions">
-                            <p class="suggestions-title">Pertanyaan yang sering ditanyakan:</p>
-                            <div class="suggestion-items">
-                                <button class="suggestion-pill" id="suggestionPill1" onclick="document.getElementById('landingInput').value='Apa saja hak karyawan kontrak?';startFromLanding()">• Apa saja hak karyawan kontrak?</button>
-                                <button class="suggestion-pill" onclick="document.getElementById('landingInput').value='Kebijakan lembur band 2';startFromLanding()">• Kebijakan lembur band 2</button>
-                                <button class="suggestion-pill" onclick="document.getElementById('landingInput').value='Prosedur cuti karyawan';startFromLanding()">• Prosedur cuti karyawan</button>
-                            </div>
-                        </div>
-                        <div class="action-section-label">DENAI dapat membantu Anda dengan:</div>
-                        <div class="action-grid">
-                            <div class="action-item" onclick="document.getElementById('landingInput').value='Cek aturan kebijakan HR terbaru';startFromLanding()"><div class="action-icon-red"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg></div><div><h4 class="action-title">Kebijakan HR</h4><p class="action-desc">Cek aturan karyawan</p></div></div>
-                            <div class="action-item" onclick="document.getElementById('landingInput').value='Hitung eligibilitas lembur band 2';startFromLanding()"><div class="action-icon-blue"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg></div><div><h4 class="action-title">Perhitungan Lembur</h4><p class="action-desc">Hitung kelayakan</p></div></div>
-                            <div class="action-item" onclick="document.getElementById('landingInput').value='Jelaskan prosedur cuti karyawan';startFromLanding()"><div class="action-icon-green"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg></div><div><h4 class="action-title">Kebijakan Cuti</h4><p class="action-desc">Lihat panduan</p></div></div>
-                            <div class="action-item" onclick="document.getElementById('landingInput').value='Tampilkan struktur organisasi perusahaan';startFromLanding()"><div class="action-icon-purple"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg></div><div><h4 class="action-title">Prosedur Perusahaan</h4><p class="action-desc">Lihat hierarki</p></div></div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            <div class="chat-view" id="chat" style="display: none;">
-                <div class="messages-container" id="messages"></div>
-                <div id="hr-analytics-container"></div>
-
-                <div class="chat-input-area">
-                    <div class="chat-input-wrap">
-                        <div class="input-box">
-                            <input type="text" id="chatInput" class="chat-input" placeholder="Tulis pesan Anda..." onkeydown="if(event.key==='Enter' && this.value.trim())sendMessage()">
-                            <div class="input-icons">
-                                <button class="input-icon-btn" id="chatSpeechBtn" title="Voice Input"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z"/></svg></button>
-                            </div>
-                            <button class="send-btn-inline" id="sendButton" onclick="sendMessage()" title="Kirim"><svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M2 21l21-9L2 3v7l15 2-15 2v7z"/></svg></button>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </main>
-    </div>
-
-    <!-- Schema Explorer Modal -->
-    <div class="schema-modal" id="schemaModal">
-        <div class="schema-modal-container">
-            <div class="schema-modal-header">
-                <div class="schema-modal-title">
-                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4"/></svg>
-                    Skema Database
-                </div>
-                <div class="schema-modal-actions">
-                    <button class="schema-action-btn" id="refreshSchemaBtn">
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"></polyline><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path></svg>
-                        Muat Ulang
-                    </button>
-                    <button class="schema-action-btn close-schema-btn" id="closeSchemaBtn">
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
-                        Tutup
+                        <span class="material-symbols-outlined text-primary text-lg" id="checkHR" style="display:none;">check</span>
                     </button>
                 </div>
-            </div>
-            <div class="schema-modal-body">
-                <div id="schemaContent"></div>
             </div>
         </div>
+    </aside>
+
+    <!-- ── MAIN CONTENT ── -->
+    <main class="flex-1 flex flex-col min-w-0 overflow-hidden main-wrapper">
+
+        <!-- HEADER -->
+        <header class="flex-shrink-0 flex items-center px-8 h-16 bg-white/80 backdrop-blur-xl border-b border-slate-100/50 shadow-[0px_12px_32px_rgba(25,28,30,0.04)] z-30 gap-4">
+
+            <!-- Mobile hamburger -->
+            <button class="md:hidden p-2 text-slate-500 hover:text-slate-900 rounded-lg flex-shrink-0"
+                    onclick="toggleSidebar()">
+                <span class="material-symbols-outlined">menu</span>
+            </button>
+
+            <!-- Actions -->
+            <div class="flex items-center gap-2 flex-shrink-0" style="margin-left:auto;">
+                <!-- Schema (HR only, shown by JS) -->
+                <button class="flex items-center gap-1.5 px-3 py-2 rounded-lg text-slate-500 hover:text-on-surface hover:bg-slate-50 transition-colors text-sm font-medium"
+                        id="schemaBtn" style="display:none;">
+                    <span class="material-symbols-outlined text-lg">database</span>
+                    <span>Skema Data</span>
+                </button>
+
+                <!-- Panggil -->
+                <button class="flex items-center gap-1.5 px-4 py-2 rounded-lg btn-gradient text-white text-sm font-bold shadow-md shadow-red-900/20 hover:opacity-90 active:scale-95 transition-all header-btn-call"
+                        id="headerCallBtn" onclick="window.CallModeModule?.startCallMode()">
+                    <span class="material-symbols-outlined text-base">call</span>
+                    <span class="hidden sm:inline">Panggil</span>
+                </button>
+            </div>
+        </header>
+
+        <!-- ── LANDING PAGE ── -->
+        <div class="flex-1 flex flex-col ether-gradient overflow-y-auto" id="landing" style="display:flex;">
+
+            <!-- Hero Content (tengah layar) -->
+            <div class="flex-1 flex flex-col items-center justify-center px-6 pb-8">
+
+                <div class="w-full max-w-4xl flex flex-col items-center text-center">
+
+                    <!-- Heading besar — "today?" dalam italic merah -->
+                    <h2 class="text-5xl md:text-6xl font-extrabold text-on-surface tracking-tighter mb-12 leading-[1.08]">
+                        Ada yang bisa DENAI bantu<br>
+                        untuk <span class="text-primary italic">Anda?</span>
+                    </h2>
+
+                    <!-- "Ether" Search Input (centered, bukan bottom) -->
+                    <div class="w-full max-w-2xl relative group input-glow-group mb-12">
+                        <div class="input-glow-ring absolute -inset-1 bg-gradient-to-r from-primary/10 to-primary-container/10 rounded-2xl blur opacity-0 transition duration-700 group-focus-within:opacity-100"></div>
+                        <div class="relative flex items-center bg-white rounded-2xl shadow-[0px_20px_48px_rgba(0,0,0,0.06)] border border-white/80 overflow-hidden">
+                            <div class="pl-6 flex items-center text-slate-300">
+                                <span class="material-symbols-outlined text-2xl">search</span>
+                            </div>
+                            <input type="text" id="landingInput"
+                                   class="w-full py-5 px-4 bg-transparent border-none focus:ring-0 text-on-surface text-base placeholder-slate-300 font-medium outline-none"
+                                   placeholder="Tanyakan kebijakan HR, lembur, cuti, atau data karyawan..."
+                                   onkeydown="if(event.key==='Enter' && this.value.trim()) startFromLanding()">
+                            <div class="pr-4 flex items-center gap-2">
+                                <button class="p-2 text-slate-400 hover:text-primary transition-colors rounded-lg"
+                                        id="landingSpeechBtn" title="Input Suara">
+                                    <span class="material-symbols-outlined">mic</span>
+                                </button>
+                                <button class="w-11 h-11 btn-gradient text-white rounded-xl flex items-center justify-center shadow-md hover:opacity-90 active:scale-90 transition-all"
+                                        onclick="startFromLanding()">
+                                    <span class="material-symbols-outlined" style="font-variation-settings:'FILL' 1;">arrow_forward</span>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Quick Action Cards (4 kolom) -->
+                    <div class="w-full grid grid-cols-2 md:grid-cols-4 gap-4 mb-10">
+                        <button class="group p-5 bg-white/60 hover:bg-white rounded-2xl border border-white transition-all duration-300 text-left hover:shadow-xl hover:shadow-slate-200/50 flex flex-col"
+                                onclick="document.getElementById('landingInput').value='Cek aturan kebijakan HR terbaru';startFromLanding()">
+                            <div class="w-10 h-10 rounded-xl bg-slate-50 flex items-center justify-center text-slate-400 group-hover:text-primary group-hover:bg-primary/5 transition-colors mb-4">
+                                <span class="material-symbols-outlined text-xl" style="font-variation-settings:'FILL' 1;">policy</span>
+                            </div>
+                            <p class="text-sm font-bold text-on-surface mb-1">Kebijakan HR</p>
+                            <p class="text-xs text-on-surface-variant leading-relaxed">Cek aturan karyawan</p>
+                        </button>
+                        <button class="group p-5 bg-white/60 hover:bg-white rounded-2xl border border-white transition-all duration-300 text-left hover:shadow-xl hover:shadow-slate-200/50 flex flex-col"
+                                onclick="document.getElementById('landingInput').value='Hitung eligibilitas lembur band 2';startFromLanding()">
+                            <div class="w-10 h-10 rounded-xl bg-slate-50 flex items-center justify-center text-slate-400 group-hover:text-primary group-hover:bg-primary/5 transition-colors mb-4">
+                                <span class="material-symbols-outlined text-xl" style="font-variation-settings:'FILL' 1;">schedule</span>
+                            </div>
+                            <p class="text-sm font-bold text-on-surface mb-1">Perhitungan Lembur</p>
+                            <p class="text-xs text-on-surface-variant leading-relaxed">Hitung kelayakan</p>
+                        </button>
+                        <button class="group p-5 bg-white/60 hover:bg-white rounded-2xl border border-white transition-all duration-300 text-left hover:shadow-xl hover:shadow-slate-200/50 flex flex-col"
+                                onclick="document.getElementById('landingInput').value='Prosedur cuti karyawan';startFromLanding()">
+                            <div class="w-10 h-10 rounded-xl bg-slate-50 flex items-center justify-center text-slate-400 group-hover:text-primary group-hover:bg-primary/5 transition-colors mb-4">
+                                <span class="material-symbols-outlined text-xl" style="font-variation-settings:'FILL' 1;">event_available</span>
+                            </div>
+                            <p class="text-sm font-bold text-on-surface mb-1">Kebijakan Cuti</p>
+                            <p class="text-xs text-on-surface-variant leading-relaxed">Lihat panduan cuti</p>
+                        </button>
+                        <button class="group p-5 bg-white/60 hover:bg-white rounded-2xl border border-white transition-all duration-300 text-left hover:shadow-xl hover:shadow-slate-200/50 flex flex-col"
+                                onclick="document.getElementById('landingInput').value='Tampilkan struktur organisasi perusahaan';startFromLanding()">
+                            <div class="w-10 h-10 rounded-xl bg-slate-50 flex items-center justify-center text-slate-400 group-hover:text-primary group-hover:bg-primary/5 transition-colors mb-4">
+                                <span class="material-symbols-outlined text-xl" style="font-variation-settings:'FILL' 1;">account_tree</span>
+                            </div>
+                            <p class="text-sm font-bold text-on-surface mb-1">Prosedur Perusahaan</p>
+                            <p class="text-xs text-on-surface-variant leading-relaxed">Lihat hierarki</p>
+                        </button>
+                    </div>
+
+                    <!-- FAQ Pills -->
+                    <div class="flex flex-wrap justify-center gap-2">
+                        <button id="suggestionPill1"
+                                class="px-4 py-2 bg-white/80 border border-white/60 rounded-full text-sm text-on-surface-variant hover:border-primary/30 hover:text-primary hover:bg-white transition-all"
+                                onclick="document.getElementById('landingInput').value='Apa saja hak karyawan kontrak?';startFromLanding()">
+                            Hak karyawan kontrak
+                        </button>
+                        <button class="px-4 py-2 bg-white/80 border border-white/60 rounded-full text-sm text-on-surface-variant hover:border-primary/30 hover:text-primary hover:bg-white transition-all"
+                                onclick="document.getElementById('landingInput').value='Kebijakan lembur band 2';startFromLanding()">
+                            Lembur band 2
+                        </button>
+                        <button class="px-4 py-2 bg-white/80 border border-white/60 rounded-full text-sm text-on-surface-variant hover:border-primary/30 hover:text-primary hover:bg-white transition-all"
+                                onclick="document.getElementById('landingInput').value='Prosedur cuti karyawan';startFromLanding()">
+                            Prosedur cuti
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Footer -->
+            <div class="flex-shrink-0 px-8 pb-6 flex justify-center items-center">
+                <p class="text-[11px] text-slate-400 font-medium uppercase tracking-widest">
+                    DENAI dapat memberikan estimasi. Verifikasi dengan HR atau sumber resmi.
+                </p>
+            </div>
+
+            <!-- Ambient decorations -->
+            <div class="fixed top-1/4 right-[-5%] w-96 h-96 bg-primary/5 rounded-full blur-[120px] pointer-events-none -z-10"></div>
+            <div class="fixed bottom-0 left-[20%] w-[500px] h-[500px] bg-secondary/5 rounded-full blur-[150px] pointer-events-none -z-10"></div>
+        </div>
+
+        <!-- ── CHAT VIEW ── -->
+        <div class="flex-1 flex-col overflow-hidden bg-white" id="chat" style="display:none;">
+
+            <!-- Messages -->
+            <div class="messages-container flex-1 overflow-y-auto no-scrollbar" id="messages"></div>
+
+            <!-- HR Analytics -->
+            <div id="hr-analytics-container"></div>
+
+            <!-- Input Bar Chat (glassmorphic, floating feel) -->
+            <div class="flex-shrink-0 px-6 md:px-20 pb-8 pt-4 chat-input-area">
+                <div class="w-full max-w-3xl mx-auto ether-glass rounded-2xl shadow-[0px_12px_32px_rgba(25,28,30,0.06)] p-3 flex items-center gap-3 border border-white/40 input-box chat-input-wrap">
+                    <button class="w-10 h-10 rounded-xl flex items-center justify-center text-slate-400 hover:bg-surface-container-low transition-all flex-shrink-0">
+                        <span class="material-symbols-outlined">attach_file</span>
+                    </button>
+                    <input type="text" id="chatInput"
+                           class="flex-1 bg-transparent border-none focus:ring-0 text-on-surface font-medium placeholder-slate-400 text-sm py-2 outline-none min-w-0 chat-input"
+                           placeholder="Tulis pesan Anda..."
+                           onkeydown="if(event.key==='Enter' && this.value.trim()) sendMessage()">
+                    <div class="flex items-center gap-2 flex-shrink-0 input-icons">
+                        <button class="w-10 h-10 rounded-xl flex items-center justify-center text-slate-400 hover:bg-surface-container-low transition-all input-icon-btn"
+                                id="chatSpeechBtn" title="Voice Input">
+                            <span class="material-symbols-outlined">mic</span>
+                        </button>
+                        <button class="w-10 h-10 rounded-xl btn-gradient text-white flex items-center justify-center shadow-lg shadow-primary/20 hover:scale-105 active:scale-95 transition-all send-btn-inline"
+                                id="sendButton" onclick="sendMessage()">
+                            <span class="material-symbols-outlined" style="font-variation-settings:'FILL' 1;">send</span>
+                        </button>
+                    </div>
+                </div>
+                <p class="text-center text-[10px] text-slate-400 mt-3 uppercase tracking-tight font-medium">
+                    DENAI dapat memberikan estimasi. Verifikasi dengan sumber resmi.
+                </p>
+            </div>
+        </div>
+
+    </main>
+</div>
+
+<!-- ================================================================
+     SCHEMA MODAL
+     ================================================================ -->
+<div class="schema-modal" id="schemaModal" style="display:none;">
+    <div class="schema-modal-container">
+        <div class="schema-modal-header">
+            <div class="schema-modal-title">
+                <div class="schema-header-accent"></div>
+                <span class="schema-header-text">Skema Database</span>
+            </div>
+            <div class="schema-modal-actions">
+                <button class="schema-refresh-btn" id="refreshSchemaBtn">
+                    <span class="material-symbols-outlined">refresh</span>
+                    Refresh
+                </button>
+                <button class="schema-close-btn" id="closeSchemaBtn">
+                    <span class="material-symbols-outlined">close</span>
+                </button>
+            </div>
+        </div>
+        <div class="schema-modal-body">
+            <div id="schemaContent"></div>
+        </div>
+        <div class="schema-modal-footer">
+            <button class="schema-cancel-btn" id="schemaCancelBtn">Cancel</button>
+            <button class="schema-select-btn" id="schemaSelectBtn" disabled>Select Table</button>
+        </div>
+        <div id="schemaDetailOverlay" style="display:none;"></div>
     </div>
+</div>
 
-    <script src="js/config.js"></script>
-    <script src="js/api.js"></script>
-    <script src="js/session-module.js"></script>
-    <script src="js/speech-module.js"></script>
-    <script src="js/call-mode-module.js"></script>
-    <script src="js/visualization-allin.js"></script>
-    <script src="js/hr_analytics_renderer.js"></script>
-    <script src="js/schema-explorer.js"></script>
-    <script src="js/core-app.js"></script>
+<!-- Scripts -->
+<script src="js/config.js"></script>
+<script src="js/api.js"></script>
+<script src="js/session-module.js"></script>
+<script src="js/speech-module.js"></script>
+<script src="js/call-mode-module.js"></script>
+<script src="js/visualization-allin.js"></script>
+<script src="js/hr_analytics_renderer.js"></script>
+<script src="js/schema-explorer.js"></script>
+<script src="js/core-app.js"></script>
 
-    <script>
-        document.addEventListener('DOMContentLoaded', () => {
-            if (window.SessionModule && typeof window.SessionModule.loadSessions === 'function') {
-                window.SessionModule.loadSessions();
-            }
-        });
-    </script>
+<script>
+    document.addEventListener('DOMContentLoaded', () => {
+        if (window.SessionModule?.loadSessions) window.SessionModule.loadSessions();
+    });
 
-    <script>
-        /* ===== MOBILE SIDEBAR TOGGLE ===== */
-        function toggleSidebar() {
-            const sidebar = document.getElementById('sidebar');
-            const overlay = document.getElementById('sidebarOverlay');
-            const isOpen = sidebar.classList.contains('open');
-            if (isOpen) {
-                closeSidebar();
-            } else {
-                sidebar.classList.add('open');
-                overlay.classList.add('open');
-                document.body.style.overflow = 'hidden';
-            }
-        }
-
-        function closeSidebar() {
-            const sidebar = document.getElementById('sidebar');
-            const overlay = document.getElementById('sidebarOverlay');
-            sidebar.classList.remove('open');
-            overlay.classList.remove('open');
-            document.body.style.overflow = '';
-        }
-
-        /* Close sidebar when a session is clicked on mobile */
-        document.addEventListener('click', function(e) {
-            const sessionItem = e.target.closest('.session-item');
-            if (sessionItem && window.innerWidth < 768) {
-                closeSidebar();
-            }
-        });
-
-        /* Close sidebar on window resize to desktop */
-        window.addEventListener('resize', function() {
-            if (window.innerWidth >= 768) {
-                closeSidebar();
-            }
-        });
-    </script>
+    /* Mobile Sidebar */
+    function toggleSidebar() {
+        const s = document.getElementById('sidebar');
+        const o = document.getElementById('sidebarOverlay');
+        s.classList.contains('open') ? closeSidebar() : (s.classList.add('open'), o.classList.add('open'), document.body.style.overflow = 'hidden');
+    }
+    function closeSidebar() {
+        document.getElementById('sidebar').classList.remove('open');
+        document.getElementById('sidebarOverlay').classList.remove('open');
+        document.body.style.overflow = '';
+    }
+    document.addEventListener('click', e => { if (e.target.closest('.session-item') && window.innerWidth < 768) closeSidebar(); });
+    window.addEventListener('resize', () => { if (window.innerWidth >= 768) closeSidebar(); });
+</script>
 </body>
 </html>

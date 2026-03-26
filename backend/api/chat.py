@@ -362,7 +362,21 @@ async def ask_question_stream(
                             except Exception: pass
 
                         await save_hybrid_message(req.session_id, "user", req.question)
-                        await save_hybrid_message(req.session_id, "assistant", full_response)
+                        # Embed analytics payload from result_base for persistence after refresh
+                        _ab_base = routing.get("result_base") or {}
+                        _ab_data = _ab_base.get("data") or {}
+                        _ab_payload_json = json.dumps({
+                            "columns": _ab_data.get("columns", []),
+                            "rows": _ab_data.get("rows", []),
+                            "sql_query": _ab_base.get("sql_query", ""),
+                            "sql_explanation": _ab_base.get("sql_explanation", ""),
+                            "query": routing.get("standalone_question", req.question),
+                            "turn_id": _ab_base.get("turn_id", ""),
+                            "visualization_available": _ab_base.get("visualization_available", False),
+                            "chart_hints": _ab_base.get("chart_hints") or [],
+                        })
+                        _ab_hidden_span = f'<span class="denai-hidden-payload" data-payload="{urllib.parse.quote(_ab_payload_json)}" style="display:none"></span>'
+                        await save_hybrid_message(req.session_id, "assistant", full_response + _ab_hidden_span)
 
                         trace_id = None
                         if _lf_span:
@@ -380,7 +394,7 @@ async def ask_question_stream(
 
                         result_base = routing["result_base"]
                         result_base["answer"] = full_response
-                        yield f"data: {json.dumps({'type': 'done', 'session_id': req.session_id, 'authorized': True, 'trace_id': trace_id, 'message_type': result_base.get('message_type'), 'data': result_base.get('data'), 'turn_id': result_base.get('turn_id'), 'conversation_id': result_base.get('conversation_id'), 'visualization_available': result_base.get('visualization_available', False)})}\n\n"
+                        yield f"data: {json.dumps({'type': 'done', 'session_id': req.session_id, 'authorized': True, 'trace_id': trace_id, 'message_type': result_base.get('message_type'), 'data': result_base.get('data'), 'turn_id': result_base.get('turn_id'), 'conversation_id': result_base.get('conversation_id'), 'visualization_available': result_base.get('visualization_available', False), 'chart_hints': result_base.get('chart_hints'), 'sql_query': result_base.get('sql_query'), 'sql_explanation': result_base.get('sql_explanation')})}\n\n"
                         return
 
                     elif routing and routing.get("mode") == "b_only":
@@ -393,7 +407,20 @@ async def ask_question_stream(
                                 result["trace_id"] = _lf_span.trace_id
                             except Exception: pass
                         await save_hybrid_message(req.session_id, "user", req.question)
-                        await save_hybrid_message(req.session_id, "assistant", answer)
+                        # Embed analytics payload as hidden span so it survives DB storage
+                        _b_data = result.get("data") or {}
+                        _b_payload_json = json.dumps({
+                            "columns": _b_data.get("columns", []),
+                            "rows": _b_data.get("rows", []),
+                            "sql_query": result.get("sql_query", ""),
+                            "sql_explanation": result.get("sql_explanation", ""),
+                            "query": routing.get("query_for_b", answer),
+                            "turn_id": result.get("turn_id", ""),
+                            "visualization_available": result.get("visualization_available", False),
+                            "chart_hints": result.get("chart_hints") or [],
+                        })
+                        _b_hidden_span = f'<span class="denai-hidden-payload" data-payload="{urllib.parse.quote(_b_payload_json)}" style="display:none"></span>'
+                        await save_hybrid_message(req.session_id, "assistant", answer + _b_hidden_span)
                         payload = {
                             "type": "done",
                             "answer": answer,
@@ -402,6 +429,12 @@ async def ask_question_stream(
                             "message_type": result.get("message_type"),
                             "data": result.get("data"),
                             "trace_id": result.get("trace_id"),
+                            "turn_id": result.get("turn_id"),
+                            "conversation_id": result.get("conversation_id"),
+                            "visualization_available": result.get("visualization_available", False),
+                            "chart_hints": result.get("chart_hints"),
+                            "sql_query": result.get("sql_query"),
+                            "sql_explanation": result.get("sql_explanation"),
                         }
                         yield f"data: {json.dumps(payload)}\n\n"
                         return

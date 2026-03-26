@@ -316,21 +316,23 @@ Tugas Anda: Analisis pertanyaan pengguna dan tentukan mesin mana yang harus dija
 
 === MESIN YANG TERSEDIA ===
 - Mesin A (SOP/Policy): Aturan, kebijakan, dan simulasi PERSONAL (Subjek: "Saya", "Kalau gaji saya").
-- Mesin B (HR Database): Data faktual kelompok (Subjek: "Seluruh", "Semua", "Berapa jumlah", "Daftar nama").
-  ⚠️ Database TIDAK punya data gaji. Hanya boleh ditanya JUMLAH orang.
+- Mesin B (HR Database): Data faktual dari database karyawan. Bisa menjawab: jumlah, distribusi, penyebaran, ranking, daftar, breakdown per grup (band, divisi, lokasi, jabatan, gender, status pensiun, dll).
+  ⚠️ Database TIDAK punya data nominal gaji. Hanya data struktural karyawan.
 
-=== ATURAN ROUTING (SANGAT KETAT) ===
+=== ATURAN ROUTING ===
 1. PERTANYAAN PERSONAL (Subjek: "Saya", "Gaji saya", "Kalau saya"):
-   - Ini adalah simulasi diri sendiri. User sudah menyediakan angka gajinya sendiri.
-   - SET: run_a=true, run_b=false. 
-   - JANGAN panggil Mesin B. Jangan menanyakan jumlah orang jika user bertanya tentang dirinya sendiri.
+   - Simulasi diri sendiri. SET: run_a=true, run_b=false.
 
-2. PERTANYAAN FAKTUAL / DATA (Subjek: "Berapa jumlah", "Siapa saja", "Tampilkan daftar"):
+2. PERTANYAAN FAKTUAL / DATA MURNI (Subjek: "Berapa", "Siapa saja", "Tampilkan", "Penyebaran", "Distribusi", "Daftar", "Ranking"):
    - SET: run_a=false, run_b=true.
+   - query_b: salin pertanyaan user PERSIS, pertahankan kata kunci asli (penyebaran, distribusi, ranking, dll).
 
-3. KALKULASI KELOMPOK (Subjek: "Seluruh", "Semua", "Satu divisi", "Total biaya jika"):
-   - Butuh aturan SOP (A) DAN jumlah orang dari database (B).
+3. KALKULASI / SIMULASI KELOMPOK (misal: "hitung total biaya lembur Band 5 yang pensiun", "simulasi THR seluruh divisi"):
+   - Butuh aturan dari SOP (A) DAN jumlah/data orang dari database (B).
    - SET: run_a=true, run_b=true.
+   - query_a: pertanyaan fokus ke ATURAN/KEBIJAKAN saja (mis: "Apa tarif lembur hari libur nasional?").
+   - query_b: pertanyaan MURNI DATA ke database (mis: "Berapa jumlah karyawan Band 5 yang pensiun tahun 2026?").
+     ⚠️ query_b HARUS berupa pertanyaan database sederhana — JANGAN sertakan kata "simulasi", "hitung", "asumsikan", atau angka asumsi. Hanya minta DATA faktual yang dibutuhkan untuk kalkulasi.
 
 Pertanyaan: "{question}"
 
@@ -338,8 +340,8 @@ Balas HANYA dengan JSON valid:
 {{
   "run_a": true/false,
   "run_b": true/false,
-  "query_a": "<pertanyaan fokus untuk mesin SOP>",
-  "query_b": "<pertanyaan HANYA tentang jumlah karyawan (jika run_b true)>"
+  "query_a": "<pertanyaan fokus aturan/kebijakan untuk Mesin SOP>",
+  "query_b": "<pertanyaan data murni untuk database, tanpa kata simulasi/asumsi>"
 }}"""
 
         try:
@@ -356,13 +358,18 @@ Balas HANYA dengan JSON valid:
             run_a = bool(parsed.get("run_a", True))
             run_b = bool(parsed.get("run_b", False))
             
-            # Jika itu pertanyaan "SAYA", pastikan run_b mati meskipun LLM salah tebak
+            # Jika pertanyaan PERSONAL diri sendiri (bukan tentang kelompok/karyawan lain), paksa run_b=False
             question_lower = question.lower()
-            if "saya" in question_lower or "gaji saya" in question_lower:
+            is_personal = (
+                ("saya" in question_lower or "gaji saya" in question_lower)
+                and not any(w in question_lower for w in ["karyawan", "seluruh", "semua", "band", "divisi", "pegawai"])
+            )
+            if is_personal:
                 run_b = False
 
             query_a = parsed.get("query_a") or (question if run_a else "")
-            query_b = parsed.get("query_b") if run_b else ""
+            # Fallback: jika query_b kosong atau LLM mengubah terlalu jauh, gunakan pertanyaan original
+            query_b = (parsed.get("query_b") or question) if run_b else ""
 
             if not run_a and not run_b:
                 run_a = True
@@ -717,7 +724,7 @@ Balas HANYA dengan JSON valid:
 
             if self._is_failure(result_b):
                 return None
-            return {"mode": "b_only", "result_b": result_b}
+            return {"mode": "b_only", "result_b": result_b, "query_for_b": query_for_b}
 
         # ── A+B merge: both routes in parallel ──────────────────────────────
         if not (run_a and run_b):
@@ -834,7 +841,7 @@ Balas HANYA dengan JSON valid:
         answer_b: str,
         mode: str
     ) -> str:
-        fallback = f"**Berdasarkan Panduan/SOP:**\n{answer_a}\n\n**Berdasarkan Data Aktual:**\n{answer_b}"
+        fallback = f"<p><strong>Berdasarkan Panduan/SOP:</strong></p>{answer_a}<p><strong>Berdasarkan Data Aktual:</strong></p>{answer_b}"
         try:
             temperature = CALL_MODE_TEMPERATURE if mode == "call" else CHAT_MODE_TEMPERATURE
             max_tokens = CALL_MODE_MAX_TOKENS if mode == "call" else CHAT_MODE_MAX_TOKENS
@@ -874,7 +881,7 @@ Balas HANYA dengan JSON valid:
                     temperature=temperature,
                     max_tokens=max_tokens
                 ),
-                timeout=15
+                timeout=30
             )
 
             synthesized = response.choices[0].message.content

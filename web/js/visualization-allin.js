@@ -183,7 +183,7 @@ const ChartCompatibility = {
     return { compatible: true, dataShape: shape };
   },
   generateHRColors(count, alpha = 0.6) {
-    const hrColors = ['59, 130, 246', '16, 185, 129', '245, 158, 11', '139, 92, 246', '239, 68, 68', '107, 114, 128', '20, 184, 166', '236, 72, 153'];
+    const hrColors = ['183, 19, 26', '76, 86, 175', '0, 101, 120', '245, 158, 11', '107, 114, 128', '219, 50, 47', '20, 184, 166', '139, 92, 246'];
     return Array.from({length: count}, (_, i) => `rgba(${hrColors[i % hrColors.length]}, ${alpha})`);
   },
   createValidatedChart(canvasId, type, data) {
@@ -259,16 +259,9 @@ window.ChartCompatibility = ChartCompatibility;
 /* ================= 3. PROFESSIONAL CANVAS EXPORTER ================= */
 class ProfessionalChartExporter {
   constructor() {
-    this.defaultConfig = {
-      canvas: { width: 1200, height: 950, backgroundColor: '#ffffff', padding: 50 },
-      title: { fontSize: 24, fontWeight: 'bold', color: '#1a1a1a', fontFamily: 'system-ui, sans-serif', marginBottom: 8 },
-      subtitle: { fontSize: 14, color: '#666666', fontFamily: 'system-ui, sans-serif', marginBottom: 35, lineHeight: 20 },
-      chart: { width: 1100, height: 420, marginTop: 120, marginBottom: 35 },
-      summaryHeader: { backgroundColor: '#1e40af', color: '#ffffff', fontSize: 18, fontWeight: 'bold', fontFamily: 'system-ui, sans-serif', padding: 15, borderRadius: 8 },
-      summaryContent: { backgroundColor: '#f8f9fa', color: '#333333', fontSize: 14, fontFamily: 'system-ui, sans-serif', lineHeight: 26, padding: 20, borderRadius: 8 },
-      totalRow: { backgroundColor: '#f8f9fa', color: '#1a1a1a', fontSize: 15, fontWeight: 'bold', fontFamily: 'system-ui, sans-serif', extraTopSpacing: 16 },
-      footer: { fontSize: 12, color: '#888888', fontFamily: 'system-ui, sans-serif' }
-    };
+    this.W = 1200;
+    this.PAD = 50;
+    this.F = 'system-ui, sans-serif';
   }
 
   async exportChartWithSummary(chartInstance, analyticsData, options = {}) {
@@ -277,80 +270,216 @@ class ProfessionalChartExporter {
       const chartCanvas = await this.createProfessionalChart(chartInstance);
       const summaryData = this.generateDataSummary(analyticsData);
       const titleData = this.generateTitle(options.chartType, summaryData);
-      const finalCanvas = this.createPerfectCanvas(chartCanvas, summaryData, titleData, options);
+      const finalCanvas = this.createPerfectCanvas(chartCanvas, summaryData, titleData, { ...options, analyticsData });
       return this.canvasToDownloadablePNG(finalCanvas, options);
     } catch (error) { throw error; }
   }
 
   generateTitle(chartType, summaryData) {
     const chartNames = { 'bar': 'Bar Chart', 'pie': 'Pie Chart', 'doughnut': 'Doughnut Chart', 'line': 'Line Chart', 'horizontal_bar': 'Horizontal Bar Chart' };
-    return { title: chartNames[chartType] || 'Data Visualization', subtitle: `Distribusi ${summaryData.valueKey} berdasarkan ${summaryData.categoryKey}.` };
+    return { title: chartNames[chartType] || 'Data Visualization', subtitle: `Distribusi ${summaryData.valueKey} berdasarkan ${summaryData.categoryKey}` };
   }
 
   createPerfectCanvas(chartCanvas, summaryData, titleData, options) {
-    const config = this.defaultConfig;
-    const canvas = document.createElement('canvas'); const ctx = canvas.getContext('2d');
-    canvas.width = config.canvas.width; canvas.height = config.canvas.height;
-    ctx.fillStyle = config.canvas.backgroundColor; ctx.fillRect(0, 0, canvas.width, canvas.height);
-    
-    this.drawTitle(ctx, titleData, config);
-    const chartX = (canvas.width - config.chart.width) / 2;
-    ctx.drawImage(chartCanvas, chartX, config.chart.marginTop, config.chart.width, config.chart.height);
-    
-    const summaryY = config.chart.marginTop + config.chart.height + config.chart.marginBottom;
-    this.drawPerfectDataSummary(ctx, summaryData, config, summaryY);
-    this.drawFooter(ctx, config, canvas.height);
+    const W = this.W, PAD = this.PAD, CW = W - PAD * 2, F = this.F;
+
+    // ── Pre-compute data ──────────────────────────────────────────────────
+    const dataLines = summaryData.lines.filter(l => !l.includes('Total'));
+    const totalLine = summaryData.lines.find(l => l.includes('Total')) || '';
+    const totalVal  = totalLine.split(' : ')[1] || '';
+    const rawNums   = summaryData.rawValues || dataLines.map(l => parseFloat((l.split(' : ')[1] || '0').replace(/[^0-9.,]/g, '').replace(',', '.')) || 0);
+    const rawSum    = rawNums.reduce((a, b) => a + b, 0) || 1;
+    const maxNum    = Math.max(...rawNums);
+    const ts = new Date().toLocaleString('id-ID', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+
+    // ── Layout heights ────────────────────────────────────────────────────
+    const HDR        = 80;
+    const CHART_CARD = 540;
+    const TBL_ROW_H  = 38;
+    const TBL_TITLE_H = 46; // "HASIL DATA" title row
+    const TBL_COL_H  = 36; // column header row (BAND | JUMLAH | PERSENTASE)
+    const TBL_TOT_H  = 44;
+    const TABLE_H    = TBL_TITLE_H + TBL_COL_H + dataLines.length * TBL_ROW_H + TBL_TOT_H;
+    const SUMM       = 170;
+    const NARR_LH    = 22; // line height for narrative
+    const NARR       = Math.max(90, Math.ceil((titleData.subtitle.length + 120) / 90) * NARR_LH + 40);
+    const FTR        = 72;
+    const H = HDR + 12 + CHART_CARD + 20 + TABLE_H + 20 + SUMM + 20 + NARR + 12 + FTR;
+
+    const SCALE = 2; // 2x resolution for HD output
+    const canvas = document.createElement('canvas');
+    canvas.width = W * SCALE; canvas.height = H * SCALE;
+    const ctx = canvas.getContext('2d');
+    ctx.scale(SCALE, SCALE);
+
+    // ── Page background ──────────────────────────────────────────────────
+    ctx.fillStyle = '#f8f9fc'; ctx.fillRect(0, 0, W, H);
+
+    // ── HEADER ───────────────────────────────────────────────────────────
+    ctx.fillStyle = '#ffffff'; ctx.fillRect(0, 0, W, HDR);
+    ctx.fillStyle = '#191c1e'; ctx.font = `bold 18px ${F}`; ctx.textAlign = 'left';
+    ctx.fillText('DENAI AI', PAD, 32);
+    ctx.fillStyle = '#5b403d'; ctx.font = `11px ${F}`;
+    ctx.fillText(`REPORT ID: DENAI-${String(Date.now()).slice(-9)}`, PAD, 52);
+    ctx.fillStyle = '#b7131a'; ctx.font = `bold 11px ${F}`; ctx.textAlign = 'right';
+    ctx.fillText(ts.toUpperCase(), W - PAD, 38);
+    ctx.fillStyle = '#f2f3f6'; ctx.fillRect(0, HDR, W, 1);
+
+    let y = HDR + 12;
+
+    // ── CHART CARD ───────────────────────────────────────────────────────
+    this._rect(ctx, PAD, y, CW, CHART_CARD, 12, '#ffffff');
+    ctx.fillStyle = '#b7131a';
+    ctx.beginPath(); ctx.roundRect(PAD, y, 5, CHART_CARD, [12, 0, 0, 12]); ctx.fill();
+    ctx.fillStyle = '#191c1e'; ctx.font = `bold 20px ${F}`; ctx.textAlign = 'left';
+    ctx.fillText(titleData.title, PAD + 22, y + 46);
+    ctx.fillStyle = '#5b403d'; ctx.font = `13px ${F}`;
+    ctx.fillText(titleData.subtitle, PAD + 22, y + 68);
+    ctx.drawImage(chartCanvas, PAD + 16, y + 88, CW - 32, CHART_CARD - 108);
+    y += CHART_CARD + 20;
+
+    // ── FULL DATA TABLE (HASIL DATA) ──────────────────────────────────────
+    const R = 10; // corner radius
+    // Container
+    this._rect(ctx, PAD, y, CW, TABLE_H, R, '#ffffff');
+
+    // Dark title row — "HASIL DATA" sebagai judul section
+    ctx.fillStyle = '#191c1e';
+    ctx.beginPath(); ctx.roundRect(PAD, y, CW, TBL_TITLE_H, [R, R, 0, 0]); ctx.fill();
+    ctx.fillStyle = '#ffffff'; ctx.font = `bold 13px ${F}`; ctx.textAlign = 'left';
+    ctx.fillText('HASIL DATA', PAD + 20, y + TBL_TITLE_H / 2 + 5);
+    y += TBL_TITLE_H;
+
+    // Column header row — BAND | JUMLAH | PERSENTASE
+    ctx.fillStyle = '#f5f6f8'; ctx.fillRect(PAD, y, CW, TBL_COL_H);
+    ctx.fillStyle = '#b7131a'; ctx.font = `bold 11px ${F}`; ctx.textAlign = 'left';
+    ctx.fillText(String(summaryData.categoryKey || '').toUpperCase(), PAD + 20, y + TBL_COL_H / 2 + 4);
+    ctx.fillStyle = '#5b403d'; ctx.textAlign = 'center';
+    ctx.fillText(String(summaryData.valueKey || '').toUpperCase(), W / 2, y + TBL_COL_H / 2 + 4);
+    ctx.textAlign = 'right';
+    ctx.fillText('PERSENTASE', W - PAD - 20, y + TBL_COL_H / 2 + 4);
+    // Bottom border for col header
+    ctx.fillStyle = '#e4e5e8'; ctx.fillRect(PAD, y + TBL_COL_H - 1, CW, 1);
+    y += TBL_COL_H;
+
+    // Data rows
+    const pctNums = rawNums.map(n => (n / rawSum) * 100);
+    const pctMin = Math.min(...pctNums), pctMax = Math.max(...pctNums);
+    dataLines.forEach((line, i) => {
+      const [cat, val] = line.split(' : ');
+      const num = rawNums[i];
+      const pct = pctNums[i].toFixed(1);
+      // Gradient color: red (min) → green (max)
+      const t = pctMax === pctMin ? 1 : (pctNums[i] - pctMin) / (pctMax - pctMin);
+      const cr = Math.round(183 + t * (22 - 183));
+      const cg = Math.round(19  + t * (163 - 19));
+      const cb = Math.round(26  + t * (74 - 26));
+      // Alternating row bg
+      if (i % 2 === 0) { ctx.fillStyle = '#fafafa'; ctx.fillRect(PAD, y, CW, TBL_ROW_H); }
+      // Row bottom border
+      ctx.fillStyle = 'rgba(228,190,185,0.12)'; ctx.fillRect(PAD, y + TBL_ROW_H - 1, CW, 1);
+      // Category name
+      ctx.fillStyle = '#191c1e'; ctx.font = `13px ${F}`; ctx.textAlign = 'left';
+      ctx.fillText(cat || '', PAD + 20, y + TBL_ROW_H / 2 + 5);
+      // Exact value (center)
+      ctx.fillStyle = '#191c1e'; ctx.font = `13px ${F}`; ctx.textAlign = 'center';
+      ctx.fillText(val || '', W / 2, y + TBL_ROW_H / 2 + 5);
+      // Percentage badge (right, gradient pill)
+      const pctLabel = `${pct}%`;
+      ctx.fillStyle = `rgba(${cr},${cg},${cb},0.10)`;
+      const pctW = 64, pctH = 22, pctX = W - PAD - 20 - pctW;
+      ctx.beginPath(); ctx.roundRect(pctX, y + (TBL_ROW_H - pctH) / 2, pctW, pctH, 6); ctx.fill();
+      ctx.fillStyle = `rgb(${cr},${cg},${cb})`; ctx.font = `bold 11px ${F}`; ctx.textAlign = 'center';
+      ctx.fillText(pctLabel, pctX + pctW / 2, y + TBL_ROW_H / 2 + 5);
+      y += TBL_ROW_H;
+    });
+
+    // Total row
+    ctx.fillStyle = '#f2f3f6';
+    ctx.beginPath(); ctx.roundRect(PAD, y, CW, TBL_TOT_H, [0, 0, R, R]); ctx.fill();
+    ctx.fillStyle = '#191c1e'; ctx.font = `bold 13px ${F}`; ctx.textAlign = 'left';
+    ctx.fillText('Total', PAD + 20, y + TBL_TOT_H / 2 + 5);
+    ctx.fillStyle = '#b7131a'; ctx.font = `bold 15px ${F}`; ctx.textAlign = 'right';
+    ctx.fillText(totalVal, W - PAD - 20, y + TBL_TOT_H / 2 + 5);
+    y += TBL_TOT_H + 20;
+
+    // ── SUMMARY ROW (Total Population + Structured Breakdown) ────────────
+    const SUMM_LC_W = 330;
+    this._rect(ctx, PAD, y, SUMM_LC_W, SUMM, 12, '#ffffff');
+    ctx.fillStyle = '#5b403d'; ctx.font = `12px ${F}`; ctx.textAlign = 'left';
+    ctx.fillText('Total Population', PAD + 22, y + 30);
+    const numOnly  = totalVal.replace(/[^0-9.,]/g, '').trim();
+    const unitOnly = totalVal.replace(/[0-9.,]/g, '').trim();
+    ctx.fillStyle = '#191c1e'; ctx.font = `bold 38px ${F}`;
+    ctx.fillText(numOnly, PAD + 22, y + 84);
+    const numW = ctx.measureText(numOnly).width;
+    ctx.fillStyle = '#5b403d'; ctx.font = `16px ${F}`;
+    ctx.fillText(' ' + unitOnly, PAD + 22 + numW, y + 84);
+    ctx.fillStyle = '#b7131a'; ctx.fillRect(PAD + 22, y + 100, 44, 4);
+
+    const RC_X = PAD + SUMM_LC_W + 20, RC_W = CW - SUMM_LC_W - 20;
+    this._rect(ctx, RC_X, y, RC_W, SUMM, 12, 'rgba(255,255,255,0.92)');
+    ctx.fillStyle = '#5b403d'; ctx.font = `bold 10px ${F}`; ctx.textAlign = 'left';
+    ctx.fillText('STRUCTURED BREAKDOWN', RC_X + 22, y + 30);
+    const cols = Math.min(dataLines.length, 6);
+    const colW = (RC_W - 44) / cols;
+    dataLines.slice(0, cols).forEach((line, i) => {
+      const [cat] = line.split(' : ');
+      const pct = ((rawNums[i] / rawSum) * 100).toFixed(1);
+      const isMax = rawNums[i] === maxNum;
+      const cx = RC_X + 22 + i * colW;
+      ctx.fillStyle = isMax ? '#b7131a' : '#5b403d'; ctx.font = `bold 9px ${F}`; ctx.textAlign = 'left';
+      ctx.fillText((cat || '').toUpperCase(), cx, y + 60);
+      ctx.fillStyle = isMax ? '#b7131a' : '#191c1e'; ctx.font = `bold 22px ${F}`;
+      ctx.fillText(`${pct}%`, cx, y + 92);
+    });
+    y += SUMM + 20;
+
+    // ── AI NARRATIVE ──────────────────────────────────────────────────────
+    ctx.fillStyle = 'rgba(183,19,26,0.18)'; ctx.fillRect(PAD, y, 4, NARR);
+    ctx.fillStyle = '#5b403d'; ctx.font = `italic 13px ${F}`; ctx.textAlign = 'left';
+    const topLine = dataLines[0] || '';
+    const narr = `"Berdasarkan data yang dianalisis, distribusi ${summaryData.valueKey} per ${summaryData.categoryKey} menunjukkan pola yang dapat memberikan wawasan strategis. Nilai tertinggi tercatat sebesar ${topLine.split(' : ')[1] || '-'} dan total keseluruhan sebesar ${totalVal}."`;
+    this._wrapText(ctx, narr, PAD + 16, y + 26, CW - 20, 22);
+    y += NARR + 12;
+
+    // ── FOOTER ────────────────────────────────────────────────────────────
+    ctx.fillStyle = '#e7e8eb'; ctx.fillRect(0, y, W, 1);
+    ctx.fillStyle = '#5b403d'; ctx.font = `10px ${F}`; ctx.textAlign = 'center';
+    ctx.fillText('© 2025 DENAI AI. All rights reserved. Confidential Data Visualization Report.', W / 2, y + 26);
+    ctx.fillStyle = 'rgba(183,19,26,0.45)'; ctx.font = `bold 9px ${F}`;
+    ctx.fillText('✦ SYSTEM AUTHENTICATED EXPORT', W / 2, y + 46);
+    ctx.fillStyle = 'rgba(183,19,26,0.55)'; ctx.font = `bold 10px ${F}`; ctx.textAlign = 'left';
+    ctx.fillText('DENAI Analytics', PAD, y + 36);
+    ctx.fillStyle = '#5b403d'; ctx.font = `10px ${F}`; ctx.textAlign = 'right';
+    ctx.fillText(`Dihasilkan oleh DENAI • ${ts}`, W - PAD, y + 36);
+
     return canvas;
   }
 
-  drawTitle(ctx, titleData, config) {
-    const centerX = config.canvas.width / 2;
-    ctx.fillStyle = config.title.color; ctx.font = `${config.title.fontWeight} ${config.title.fontSize}px ${config.title.fontFamily}`;
-    ctx.textAlign = 'center'; ctx.fillText(titleData.title, centerX, config.canvas.padding + 30);
-    ctx.fillStyle = config.subtitle.color; ctx.font = `${config.subtitle.fontSize}px ${config.subtitle.fontFamily}`;
-    ctx.fillText(titleData.subtitle, centerX, config.canvas.padding + 30 + config.title.fontSize + config.title.marginBottom);
+  _rect(ctx, x, y, w, h, r, fill) {
+    ctx.beginPath(); ctx.roundRect(x, y, w, h, r);
+    if (fill) { ctx.fillStyle = fill; ctx.fill(); }
   }
 
-  drawPerfectDataSummary(ctx, summaryData, config, startY) {
-    const blockX = config.canvas.padding; const blockWidth = config.canvas.width - (config.canvas.padding * 2);
-    const dataLines = summaryData.lines.filter(l => !l.includes('Total'));
-    const totalLine = summaryData.lines.find(l => l.includes('Total'));
-    const headerHeight = 50;
-    const dataContentHeight = dataLines.length * config.summaryContent.lineHeight + (config.summaryContent.padding * 2);
-    let currentY = startY;
-    
-    this.drawRoundedRect(ctx, blockX, currentY, blockWidth, headerHeight, { backgroundColor: config.summaryHeader.backgroundColor, borderRadius: config.summaryHeader.borderRadius });
-    ctx.fillStyle = config.summaryHeader.color; ctx.font = `${config.summaryHeader.fontWeight} ${config.summaryHeader.fontSize}px ${config.summaryHeader.fontFamily}`;
-    ctx.textAlign = 'left'; ctx.fillText('Data Summary', blockX + config.summaryHeader.padding, currentY + 32);
-    currentY += headerHeight;
-    
-    this.drawRoundedRect(ctx, blockX, currentY, blockWidth, dataContentHeight, { backgroundColor: config.summaryContent.backgroundColor, borderRadius: 0 });
-    ctx.fillStyle = config.summaryContent.color; ctx.font = `${config.summaryContent.fontSize}px ${config.summaryContent.fontFamily}`;
-    let dataY = currentY + config.summaryContent.padding + config.summaryContent.fontSize;
-    dataLines.forEach(line => { ctx.fillText(`  ${line}`, blockX + config.summaryContent.padding, dataY); dataY += config.summaryContent.lineHeight; });
-    currentY += dataContentHeight + config.totalRow.extraTopSpacing;
-    
-    this.drawRoundedRect(ctx, blockX, currentY, blockWidth, config.summaryContent.lineHeight + config.summaryContent.padding, { backgroundColor: config.totalRow.backgroundColor, borderRadius: config.summaryContent.borderRadius });
-    ctx.fillStyle = config.totalRow.color; ctx.font = `${config.totalRow.fontWeight} ${config.totalRow.fontSize}px ${config.totalRow.fontFamily}`;
-    ctx.fillText(`  ${totalLine}`, blockX + config.summaryContent.padding, currentY + 30);
+  _wrapText(ctx, text, x, y, maxW, lh) {
+    const words = text.split(' '); let line = '';
+    for (const word of words) {
+      const test = line + word + ' ';
+      if (ctx.measureText(test).width > maxW && line) { ctx.fillText(line.trim(), x, y); line = word + ' '; y += lh; }
+      else line = test;
+    }
+    if (line.trim()) ctx.fillText(line.trim(), x, y);
   }
 
-  drawRoundedRect(ctx, x, y, width, height, style) {
-    const radius = style.borderRadius || 0;
-    if (radius > 0) { ctx.beginPath(); ctx.roundRect(x, y, width, height, radius); } else { ctx.beginPath(); ctx.rect(x, y, width, height); }
-    if (style.backgroundColor) { ctx.fillStyle = style.backgroundColor; ctx.fill(); }
-  }
-
-  drawFooter(ctx, config, canvasHeight) {
-    const timestamp = new Date().toLocaleString('id-ID', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
-    ctx.fillStyle = config.footer.color; ctx.font = `${config.footer.fontSize}px ${config.footer.fontFamily}`;
-    ctx.textAlign = 'right'; ctx.fillText(`Generated by DenAi Chatbot • ${timestamp}`, config.canvas.width - config.canvas.padding, canvasHeight - config.canvas.padding + 20);
-  }
+  // ── kept for legacy / drawFooter / drawRoundedRect references ──
+  drawRoundedRect(ctx, x, y, w, h, style) { this._rect(ctx, x, y, w, h, style.borderRadius || 0, style.backgroundColor); }
+  drawFooter() {} drawTitle() {} drawPerfectDataSummary() {}
 
   async createProfessionalChart(chartInstance) {
     return new Promise((resolve) => {
       const tempCanvas = document.createElement('canvas'); const tempCtx = tempCanvas.getContext('2d');
-      tempCanvas.width = this.defaultConfig.chart.width; tempCanvas.height = this.defaultConfig.chart.height;
+      tempCanvas.width = this.W - this.PAD * 2; tempCanvas.height = 420;
       tempCtx.fillStyle = '#ffffff'; tempCtx.fillRect(0, 0, tempCanvas.width, tempCanvas.height);
       const chartImg = new Image();
       chartImg.onload = () => {
@@ -380,13 +509,15 @@ class ProfessionalChartExporter {
   }
 
   generateDataSummary(data) {
+    if (!data.rows || data.rows.length === 0) return { lines: ['Total : 0'], rawValues: [], categoryKey: 'category', valueKey: 'value' };
     let catKey = data.categoryKey || Object.keys(data.rows[0])[0];
     let valKey = data.valueKey || Object.keys(data.rows[0])[1];
     const unit = this.detectUnit(valKey, catKey);
-    const lines = data.rows.map(r => `${r[catKey]} : ${this.formatValueWithUnit(r[valKey], unit)}`);
-    const totalVal = data.rows.reduce((s, r) => s + (r[valKey] || 0), 0);
+    const rawValues = data.rows.map(r => Number(r[valKey]) || 0);
+    const lines = data.rows.map((r, i) => `${r[catKey]} : ${this.formatValueWithUnit(rawValues[i], unit)}`);
+    const totalVal = rawValues.reduce((s, v) => s + v, 0);
     lines.push(`Total : ${this.formatValueWithUnit(totalVal, unit)}`);
-    return { lines, categoryKey: catKey, valueKey: valKey };
+    return { lines, rawValues, categoryKey: catKey, valueKey: valKey };
   }
 
   canvasToDownloadablePNG(canvas, options) {
@@ -429,17 +560,35 @@ class ChartExportManager {
 
       if (typeof window.ProfessionalChartExporter !== 'undefined') {
         const result = await window.ProfessionalChartExporter.exportChartWithSummary(chartInstance, analyticsData, { chartType: metadata.chartType, title: metadata.title, filename: customFilename });
+        this._showDownloadToast(result.filename);
         return { success: true, filename: result.filename, type: 'professional' };
       } else {
         const base64Image = chartInstance.toBase64Image('image/png', 1.0);
         const filename = customFilename || `${metadata.chartType}_${Date.now()}.png`;
         this.downloadBase64File(base64Image, filename);
+        this._showDownloadToast(filename);
         return { success: true, filename, type: 'basic' };
       }
     } catch (error) {
       console.error(`❌ Export failed:`, error);
+      this._showDownloadToast(null, error.message);
       return { success: false, error: error.message };
     }
+  }
+
+  _showDownloadToast(filename, errorMsg = null) {
+    const existing = document.getElementById('denai-download-toast');
+    if (existing) existing.remove();
+    const toast = document.createElement('div');
+    toast.id = 'denai-download-toast';
+    const isError = !!errorMsg;
+    toast.style.cssText = `position:fixed;bottom:28px;right:28px;z-index:9999;display:flex;align-items:center;gap:10px;padding:12px 18px;background:${isError ? '#ba1a1a' : '#191c1e'};color:#ffffff;border-radius:12px;font-family:'Plus Jakarta Sans',sans-serif;font-size:13px;font-weight:600;box-shadow:0 8px 32px rgba(25,28,30,0.18);transform:translateY(12px);opacity:0;transition:transform 0.25s ease,opacity 0.25s ease;max-width:320px;`;
+    toast.innerHTML = isError
+      ? `<span class="material-symbols-outlined" style="font-size:18px;color:#ffdad6;">error</span><span>Gagal mengunduh: ${errorMsg}</span>`
+      : `<span class="material-symbols-outlined" style="font-size:18px;color:#b7131a;background:#fff;border-radius:50%;padding:2px;">download_done</span><div><div>Berhasil diunduh</div><div style="font-size:11px;opacity:0.65;font-weight:400;margin-top:2px;">${filename}</div></div>`;
+    document.body.appendChild(toast);
+    requestAnimationFrame(() => { toast.style.transform = 'translateY(0)'; toast.style.opacity = '1'; });
+    setTimeout(() => { toast.style.transform = 'translateY(12px)'; toast.style.opacity = '0'; setTimeout(() => toast.remove(), 280); }, 3500);
   }
 
   extractAnalyticsFromChart(chartInstance, metadata) {
@@ -553,10 +702,11 @@ class DenaiVisualizationEngine {
       const count = data.rows.length;
       let recType = count > 15 ? 'horizontal_bar' : 'pie';
       
+      const withCompat = chart_types.map(c => ({ ...c, _compat: window.ChartCompatibility.validateChartCompatibility(c.chart_type, data) }));
       const recommendations = {
-        recommended: chart_types.filter(c => c.chart_type === recType),
-        alternatives: chart_types.filter(c => c.chart_type !== recType && window.ChartCompatibility.validateChartCompatibility(c.chart_type, data).compatible),
-        notSuitable: chart_types.filter(c => c.chart_type !== recType && !window.ChartCompatibility.validateChartCompatibility(c.chart_type, data).compatible)
+        recommended: withCompat.filter(c => c.chart_type === recType),
+        alternatives: withCompat.filter(c => c.chart_type !== recType && c._compat.compatible),
+        notSuitable: withCompat.filter(c => c.chart_type !== recType && !c._compat.compatible)
       };
 
       this.vizSessions.set(turnId, { conversation_id: conversationId, turn_id: turnId, data: data, recommendations: recommendations });
@@ -564,56 +714,160 @@ class DenaiVisualizationEngine {
     } catch (e) { console.error(e); }
   }
 
+  _injectVizOfferStyles() {
+    if (document.getElementById('viz-offer-styles')) return;
+    const s = document.createElement('style');
+    s.id = 'viz-offer-styles';
+    s.textContent = `
+      .viz-offer-panel { background:#f8f9fc; border-radius:20px; overflow:hidden; font-family:'Plus Jakarta Sans',sans-serif; margin:12px 0; max-width:900px; border:1px solid #e7e8eb; box-shadow:0 8px 32px rgba(25,28,30,0.08); }
+      .viz-offer-header { padding:28px 32px 24px; background:#ffffff; border-bottom:1px solid #f0f1f4; }
+      .viz-offer-eyebrow { display:inline-flex; align-items:center; padding:4px 12px; background:rgba(183,19,26,0.07); color:#b7131a; font-size:10px; font-weight:800; letter-spacing:0.15em; text-transform:uppercase; border-radius:99px; margin-bottom:12px; border:1px solid rgba(183,19,26,0.12); }
+      .viz-offer-title { margin:0 0 6px; font-size:22px; font-weight:800; color:#191c1e; letter-spacing:-0.02em; }
+      .viz-offer-subtitle { margin:0; font-size:13px; color:#5b403d; line-height:1.6; }
+      .viz-section { padding:20px 32px; }
+      .viz-section-hd { display:flex; align-items:center; gap:12px; margin-bottom:18px; }
+      .viz-section-lbl { font-size:10px; font-weight:800; letter-spacing:0.18em; text-transform:uppercase; color:#5b403d; white-space:nowrap; }
+      .viz-section-divider { flex:1; height:1px; background:#e7e8eb; }
+      .viz-section-badge { font-size:10px; font-weight:700; padding:2px 10px; border-radius:4px; white-space:nowrap; }
+      .viz-badge-rec { color:#b7131a; background:rgba(183,19,26,0.08); border:1px solid rgba(183,19,26,0.15); }
+      .viz-badge-not-rec { color:#5b403d; background:#e7e8eb; border:1px solid #d1d5db; }
+      .viz-rec-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(170px,1fr)); gap:14px; }
+      .viz-rec-card { position:relative; background:#ffffff; border:1.5px solid #e7e8eb; border-radius:14px; padding:20px; cursor:pointer; box-shadow:0 2px 8px rgba(25,28,30,0.05); transition:border-color 0.25s,box-shadow 0.25s,transform 0.15s; overflow:hidden; }
+      .viz-rec-card:hover { border-color:rgba(183,19,26,0.3); box-shadow:0 12px 32px rgba(183,19,26,0.10); transform:translateY(-2px); }
+      .viz-rec-card:hover .viz-rc-chk { opacity:1; }
+      .viz-rec-card:hover .viz-rc-icon { background:#b7131a; color:#ffffff; }
+      .viz-rc-chk { position:absolute; top:10px; right:10px; font-size:18px; color:#b7131a; opacity:0; transition:opacity 0.2s; }
+      .viz-rc-icon { width:44px; height:44px; background:rgba(183,19,26,0.07); border-radius:10px; display:flex; align-items:center; justify-content:center; color:#b7131a; margin-bottom:14px; transition:background 0.25s,color 0.25s; }
+      .viz-rc-icon .material-symbols-outlined { font-size:22px; }
+      .viz-rc-title { margin:0 0 6px; font-size:14px; font-weight:700; color:#191c1e; }
+      .viz-rc-desc { margin:0; font-size:12px; color:#5b403d; line-height:1.5; }
+      .viz-not-rec-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(210px,1fr)); gap:14px; opacity:0.7; }
+      .viz-nr-card { background:#edeef1; border:1px solid #d1d5db; border-radius:12px; padding:16px; }
+      .viz-nr-hd { display:flex; align-items:flex-start; gap:10px; margin-bottom:8px; }
+      .viz-nr-icon { width:36px; height:36px; background:rgba(91,64,61,0.10); border-radius:8px; display:flex; align-items:center; justify-content:center; color:#5b403d; flex-shrink:0; }
+      .viz-nr-icon .material-symbols-outlined { font-size:18px; }
+      .viz-nr-title { margin:0 0 3px; font-size:13px; font-weight:700; color:#191c1e; }
+      .viz-warn-tag { display:flex; align-items:center; gap:3px; font-size:9px; font-weight:800; text-transform:uppercase; color:#ba1a1a; letter-spacing:0.06em; }
+      .viz-warn-tag .material-symbols-outlined { font-size:11px; }
+      .viz-nr-reason { margin:0; font-size:11px; color:#5b403d; font-style:italic; line-height:1.5; }
+      .viz-offer-footer { display:flex; align-items:center; justify-content:space-between; padding:16px 32px; background:#ffffff; border-top:1px solid #e7e8eb; gap:16px; flex-wrap:wrap; }
+      .viz-footer-hint { display:flex; align-items:center; gap:8px; font-size:12px; color:#5b403d; flex:1; min-width:200px; }
+      .viz-footer-btns { display:flex; gap:10px; flex-shrink:0; }
+      .viz-btn-cancel { padding:9px 18px; background:#ffffff; color:#191c1e; border:1.5px solid #d1d5db; border-radius:10px; font-size:12px; font-weight:700; font-family:'Plus Jakarta Sans',sans-serif; cursor:pointer; transition:background 0.2s; }
+      .viz-btn-cancel:hover { background:#f8f9fc; }
+      .viz-btn-primary { display:flex; align-items:center; gap:6px; padding:9px 18px; background:linear-gradient(135deg,#b7131a 0%,#db322f 100%); color:#ffffff; border:none; border-radius:10px; font-size:12px; font-weight:700; font-family:'Plus Jakarta Sans',sans-serif; cursor:pointer; box-shadow:0 8px 24px rgba(183,19,26,0.22); transition:filter 0.2s,transform 0.15s; }
+      .viz-btn-primary:hover { filter:brightness(1.08); }
+      .viz-btn-primary:active { transform:scale(0.97); }
+      .viz-btn-primary .material-symbols-outlined { font-size:15px; }
+    `;
+    document.head.appendChild(s);
+  }
+
+  _vizIconFor(chartType) {
+    const map = { bar_chart:'bar_chart', horizontal_bar:'bar_chart', horizontal_bar_chart:'bar_chart', line_chart:'show_chart', pie_chart:'pie_chart', doughnut_chart:'donut_large', radar_chart:'radar', polar_area_chart:'track_changes', bubble_chart:'bubble_chart', scatter_chart:'scatter_plot' };
+    return map[chartType] || 'bar_chart';
+  }
+
+  _vizDescFor(chartType) {
+    const map = {
+      bar_chart:'Terbaik untuk membandingkan nilai antar kategori data.',
+      horizontal_bar_chart:'Cocok untuk label panjang atau data ranking.',
+      line_chart:'Ideal untuk menunjukkan tren dari waktu ke waktu.',
+      pie_chart:'Komposisi proporsional data dalam satu kesatuan utuh.',
+      doughnut_chart:'Variasi Pie Chart dengan ruang tengah untuk metrik total.',
+      radar_chart:'Membandingkan beberapa variabel sekaligus.',
+      polar_area_chart:'Kategori dengan bobot kepentingan yang berbeda.',
+      bubble_chart:'Visualisasi tiga dimensi untuk analisis korelasi.',
+      scatter_chart:'Distribusi dan korelasi antar variabel numerik.'
+    };
+    return map[chartType] || '';
+  }
+
   renderChartOptionsUI(turnId, recommendations, data) {
     const bubbleId = `viz-bubble-${turnId}`;
     const existingBubble = document.getElementById(bubbleId);
     if (existingBubble) existingBubble.remove();
 
-    let optionsHTML = `
-      <div class="visualization-offer-bubble" id="${bubbleId}">
-        <div class="viz-options-header">
-          <div style="display:flex; align-items:center; gap: 10px;">
-            <div style="background: linear-gradient(135deg, #1e40af 0%, #3b82f6 100%); color: white; padding: 7px 9px; border-radius: 8px; font-size: 16px;">📊</div>
+    this._injectVizOfferStyles();
+
+    const allRec = [...(recommendations.recommended || []), ...(recommendations.alternatives || [])];
+    const notSuitable = recommendations.notSuitable || [];
+    const topChart = allRec[0];
+    const topName = topChart?.display_name || 'Bar Chart';
+    const topType = topChart?.chart_type || 'bar_chart';
+
+    const recCardsHTML = allRec.map(c => `
+      <div class="viz-rec-card" onclick="window.VisualizationModule.selectChart('${turnId}','${c.chart_type}','${c.display_name}')">
+        <span class="viz-rc-chk material-symbols-outlined">check_circle</span>
+        <div class="viz-rc-icon"><span class="material-symbols-outlined">${this._vizIconFor(c.chart_type)}</span></div>
+        <h5 class="viz-rc-title">${c.display_name}</h5>
+        <p class="viz-rc-desc">${this._vizDescFor(c.chart_type) || c.description || ''}</p>
+      </div>`).join('');
+
+    const notRecCardsHTML = notSuitable.map(c => {
+      const rawReason = c._compat?.reason || 'Data tidak kompatibel';
+      let shortLabel = 'Tidak kompatibel';
+      if (/koordinat|coordinate/i.test(rawReason)) shortLabel = 'Missing coordinates';
+      else if (/korelasi|correlation/i.test(rawReason)) shortLabel = 'Correlation needed';
+      else if (/banyak kategori|too many/i.test(rawReason)) shortLabel = 'Too many categories';
+      else if (/dimensi|multivariate/i.test(rawReason)) shortLabel = 'Low multivariate';
+      return `
+        <div class="viz-nr-card">
+          <div class="viz-nr-hd">
+            <div class="viz-nr-icon"><span class="material-symbols-outlined">${this._vizIconFor(c.chart_type)}</span></div>
             <div>
-              <h4 style="margin: 0; font-size: 14px; color: #1e293b; font-weight: 700;">Pilih Visualisasi</h4>
-              <p style="margin: 2px 0 0 0; font-size: 12px; color: #64748b;">${data.rows.length} kategori · ${data.categoryKey} → ${data.valueKey}</p>
+              <h5 class="viz-nr-title">${c.display_name}</h5>
+              <div class="viz-warn-tag"><span class="material-symbols-outlined">warning</span>${shortLabel}</div>
             </div>
           </div>
+          <p class="viz-nr-reason">"${rawReason}"</p>
+        </div>`;
+    }).join('');
+
+    const optionsHTML = `
+      <div class="viz-offer-panel" id="${bubbleId}">
+        <div class="viz-offer-header">
+          <div class="viz-offer-eyebrow">Visual Recommendation Engine</div>
+          <h4 class="viz-offer-title">Pilih Visualisasi</h4>
+          <p class="viz-offer-subtitle">Berdasarkan <strong>${data.rows.length} kategori</strong> data · <strong>${data.categoryKey}</strong> → <strong>${data.valueKey}</strong></p>
         </div>
-        <div class="viz-options-content">
-    `;
-
-    if (recommendations.recommended.length > 0) {
-      optionsHTML += `<div class="viz-section-title">✨ Rekomendasi Utama (Paling Cocok)</div><div class="viz-options-grid">`;
-      recommendations.recommended.forEach(c => optionsHTML += this.renderOptionHTML(c, turnId, true, false));
-      optionsHTML += `</div>`;
-    }
-
-    if (recommendations.alternatives.length > 0) {
-      optionsHTML += `<div class="viz-section-title" style="margin-top: 24px;">📈 Alternatif Visualisasi</div><div class="viz-options-grid">`;
-      recommendations.alternatives.forEach(c => optionsHTML += this.renderOptionHTML(c, turnId, false, false));
-      optionsHTML += `</div>`;
-    }
-
-    if (recommendations.notSuitable.length > 0) {
-      optionsHTML += `<div class="viz-section-title" style="margin-top: 24px; color:#ef4444;">⚠️ Tidak Disarankan Untuk Data Ini</div><div class="viz-options-grid">`;
-      recommendations.notSuitable.forEach(c => optionsHTML += this.renderOptionHTML(c, turnId, false, true));
-      optionsHTML += `</div>`;
-    }
-
-    optionsHTML += `
+        ${allRec.length > 0 ? `
+        <div class="viz-section">
+          <div class="viz-section-hd">
+            <span class="viz-section-lbl">Alternatif Visualisasi</span>
+            <div class="viz-section-divider"></div>
+            <span class="viz-section-badge viz-badge-rec">Recommended</span>
+          </div>
+          <div class="viz-rec-grid">${recCardsHTML}</div>
+        </div>` : ''}
+        ${notSuitable.length > 0 ? `
+        <div class="viz-section">
+          <div class="viz-section-hd">
+            <span class="viz-section-lbl">Tidak Disarankan Untuk Data Ini</span>
+            <div class="viz-section-divider"></div>
+            <span class="viz-section-badge viz-badge-not-rec">Not Recommended</span>
+          </div>
+          <div class="viz-not-rec-grid">${notRecCardsHTML}</div>
+        </div>` : ''}
+        <div class="viz-offer-footer">
+          <div class="viz-footer-hint">
+            <span class="material-symbols-outlined" style="color:#b7131a;font-size:18px;flex-shrink:0;">auto_awesome</span>
+            <span>DENAI menyarankan <strong>${topName}</strong> sebagai prioritas utama.</span>
+          </div>
+          <div class="viz-footer-btns">
+            <button class="viz-btn-cancel" onclick="window.VisualizationModule.cancelVisualization('${turnId}')">Batalkan</button>
+            <button class="viz-btn-primary" onclick="window.VisualizationModule.selectChart('${turnId}','${topType}','${topName}')">
+              Tampilkan Visualisasi
+              <span class="material-symbols-outlined">arrow_forward</span>
+            </button>
+          </div>
         </div>
-        <div class="viz-cancel">
-          <button class="viz-btn-cancel" onclick="window.VisualizationModule.cancelVisualization('${turnId}')">Batalkan Visualisasi</button>
-        </div>
-      </div>
-    `;
+      </div>`;
 
     const wrapper = document.createElement('div');
     wrapper.innerHTML = optionsHTML;
     const vizEl = wrapper.firstElementChild;
 
-    // Append inside registered chat bubble if available, else fall back to messages
     const targetBubble = window._hrVizBubbleMap && window._hrVizBubbleMap[turnId];
     if (targetBubble) {
       vizEl.style.marginTop = '12px';
@@ -622,29 +876,16 @@ class DenaiVisualizationEngine {
       const container = document.getElementById('messages');
       if (container) container.appendChild(vizEl);
     }
-    // Disabled auto-scroll to prevent UX jumping when options appear
-    // setTimeout(() => window.UXEnhancement?.smoothScrollTo(), 100);
   }
 
-  renderOptionHTML(chart, turnId, isRecommended, isDisabled) {
-    const disabledClass = isDisabled ? 'disabled' : '';
-    const recommendedClass = isRecommended ? 'recommended' : '';
-    const badge = isRecommended ? '<span class="rec-badge">⭐ Recommended</span>' : '';
+  renderOptionHTML(chart, turnId, _isRecommended, isDisabled) {
+    // Legacy fallback — kept for compatibility
     const onclick = isDisabled ? '' : `onclick="window.VisualizationModule.selectChart('${turnId}', '${chart.chart_type}', '${chart.display_name}')"`;
-    
-    return `
-      <div class="viz-chart-card ${recommendedClass} ${disabledClass}" ${onclick}>
-        <div class="viz-chart-card-header">
-          <div class="viz-icon-wrapper">${chart.icon || '📊'}</div>
-          <div class="viz-chart-title-wrap">
-            <div class="viz-chart-title">${chart.display_name}</div>
-            ${badge}
-          </div>
-        </div>
-        <div class="viz-chart-desc">${chart.description}</div>
-        ${isDisabled ? `<div class="viz-reason">⚠️ Struktur data tidak valid untuk jenis grafik ini</div>` : ''}
-      </div>
-    `;
+    return `<div class="viz-rec-card ${isDisabled ? 'viz-nr-card' : ''}" ${onclick}>
+      <div class="viz-rc-icon"><span class="material-symbols-outlined">${this._vizIconFor(chart.chart_type)}</span></div>
+      <h5 class="viz-rc-title">${chart.display_name}</h5>
+      <p class="viz-rc-desc">${this._vizDescFor(chart.chart_type) || chart.description || ''}</p>
+    </div>`;
   }
 
   showLoadingState(turnId, message) {
@@ -682,35 +923,31 @@ class DenaiVisualizationEngine {
             totalValue += val;
             
             detailsHTML += `
-                <div style="display: flex; align-items: center; gap: 8px; background: #fff; padding: 8px 16px; border-radius: 20px; border: 1px solid #e2e8f0; font-size: 13px; color: #374151; box-shadow: 0 2px 4px rgba(0,0,0,0.02);">
-                    <span style="display: inline-block; width: 12px; height: 12px; border-radius: 50%; background-color: ${colors[idx]}; box-shadow: 0 0 0 2px rgba(255,255,255,0.8), 0 0 0 3px ${colors[idx]};"></span>
-                    <strong>${catName}:</strong> <span style="color:#1e293b; font-weight:600;">${val.toLocaleString('id-ID')}</span>
+                <div style="display:flex;align-items:center;gap:8px;background:#fff;padding:6px 14px;border-radius:20px;border:1px solid rgba(228,190,185,0.2);font-size:12px;color:#191c1e;font-family:'Plus Jakarta Sans',sans-serif;">
+                    <span style="display:inline-block;width:10px;height:10px;border-radius:50%;background-color:${colors[idx]};flex-shrink:0;"></span>
+                    <strong>${catName}:</strong> <span style="color:#b7131a;font-weight:700;">${val.toLocaleString('id-ID')}</span>
                 </div>
             `;
         });
         detailsHTML += `</div>`;
         
         const chartHTML = `
-          <div class="chart-container" style="display: block; width: 100%; height: auto; background: #ffffff; border: 1px solid #e2e8f0; border-radius: 10px; box-shadow: 0 2px 6px -1px rgba(0,0,0,0.06); overflow: hidden;">
-            <div class="chart-header" style="padding: 10px 16px; border-bottom: 1px solid #e2e8f0; display: flex; justify-content: space-between; align-items: center; background: #fff;">
-              <div class="chart-title">
-                <h3 style="margin: 0; font-size: 14px; color: #1e293b; font-weight: 700;">${displayName} — ${categoryKey}</h3>
-              </div>
-              <div class="chart-actions" style="display: flex; gap: 8px;">
-                <button class="export-btn" style="background:#1e40af; color:#fff; border:none; padding:5px 12px; border-radius:6px; font-size:12px; font-weight:600; cursor:pointer;" onclick="window.ChartExportManager.exportChartAsPNG('${chartId}')">📥 Unduh</button>
-                <button class="change-type-btn" style="background:#f1f5f9; color:#475569; border:1px solid #cbd5e1; padding:5px 12px; border-radius:6px; font-size:12px; font-weight:600; cursor:pointer;" onclick="window.VisualizationModule.changeChartType('${session.conversation_id}', '${turnId}')">🔄 Ganti</button>
+          <div class="chart-container" style="display:block;width:100%;height:auto;background:#ffffff;border-radius:12px;box-shadow:0 4px 20px rgba(0,0,0,0.04);overflow:hidden;font-family:'Plus Jakarta Sans',sans-serif;">
+            <div style="padding:12px 20px;display:flex;justify-content:space-between;align-items:center;background:#fff;border-bottom:1px solid rgba(228,190,185,0.15);">
+              <h3 style="margin:0;font-size:14px;color:#191c1e;font-weight:700;letter-spacing:-0.01em;">${displayName} <span style="color:#5b403d;font-weight:400;">— ${categoryKey}</span></h3>
+              <div style="display:flex;gap:8px;">
+                <button style="display:flex;align-items:center;gap:5px;background:linear-gradient(135deg,#b7131a,#db322f);color:#fff;border:none;padding:5px 12px;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;font-family:'Plus Jakarta Sans',sans-serif;" onclick="window.ChartExportManager.exportChartAsPNG('${chartId}')"><span class="material-symbols-outlined" style="font-size:14px;">download</span>Unduh</button>
+                <button style="display:flex;align-items:center;gap:5px;background:#f2f3f6;color:#191c1e;border:1px solid rgba(228,190,185,0.3);padding:5px 12px;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;font-family:'Plus Jakarta Sans',sans-serif;" onclick="window.VisualizationModule.changeChartType('${session.conversation_id}', '${turnId}')"><span class="material-symbols-outlined" style="font-size:14px;">swap_horiz</span>Ganti</button>
               </div>
             </div>
-
-            <div class="chart-content" style="position: relative; height: 280px; min-height: 280px; width: 100%; padding: 16px; background: #fff;">
+            <div style="position:relative;height:280px;min-height:280px;width:100%;padding:16px;background:#fff;">
               <canvas id="${chartId}"></canvas>
             </div>
-
-            <div class="chart-footer" style="padding: 12px 16px; background: #f8fafc; border-top: 1px solid #e2e8f0;">
+            <div style="padding:12px 20px;background:#f8f9fc;border-top:1px solid rgba(228,190,185,0.12);">
               ${detailsHTML}
-              <div style="text-align: center; font-size: 13px; color: #1e293b; font-weight: 600; margin-top: 8px; padding-top: 8px; border-top: 1px dashed #cbd5e1;">
-                  Total: <span style="color: #1e40af; font-size: 15px; font-weight:800; margin: 0 4px;">${totalValue.toLocaleString('id-ID')}</span>
-                  <span style="color: #64748b; font-size: 12px; font-weight: normal;">(${rows.length} kategori)</span>
+              <div style="text-align:center;font-size:13px;color:#191c1e;font-weight:600;margin-top:8px;padding-top:8px;border-top:1px dashed rgba(228,190,185,0.3);">
+                Total: <span style="color:#b7131a;font-size:15px;font-weight:800;margin:0 4px;">${totalValue.toLocaleString('id-ID')}</span>
+                <span style="color:#5b403d;font-size:12px;font-weight:400;">(${rows.length} kategori)</span>
               </div>
             </div>
           </div>
@@ -748,7 +985,7 @@ class DenaiVisualizationEngine {
     const bubble = document.getElementById(`viz-bubble-${turnId}`);
     if(bubble) {
         // Kembalikan ke tampilan bubble awal
-        bubble.style.cssText = "background: #fff; border: 1px solid #e2e8f0; border-radius: 12px; margin: 16px 0; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1); width: 100%; max-width: 100%; transition: all 0.3s ease;";
+        bubble.style.cssText = "";
     }
     this.renderChartOptionsUI(turnId, session.recommendations, session.data);
   }

@@ -191,24 +191,32 @@ function setCallStatus(type) {
   // Clear previous animations
   callAvatar.classList.remove('listening', 'processing', 'speaking');
   
+  // Update waveform state
+  if (audioVisualizer) {
+    audioVisualizer.classList.remove('state-listening', 'state-processing', 'state-speaking');
+  }
+
   switch(type) {
     case 'connected':
-      callStatus.textContent = 'Menghubungkan...';
+      callStatus.textContent = 'MENGHUBUNGKAN';
       break;
-      
+
     case 'listening':
-      callStatus.textContent = 'AI sedang mendengarkan...';
+      callStatus.textContent = 'MENDENGARKAN ANDA';
       callAvatar.classList.add('listening');
+      if (audioVisualizer) audioVisualizer.classList.add('state-listening');
       break;
-      
+
     case 'processing':
-      callStatus.textContent = 'AI sedang memproses...';
+      callStatus.textContent = 'MEMPROSES JAWABAN';
       callAvatar.classList.add('processing');
+      if (audioVisualizer) audioVisualizer.classList.add('state-processing');
       break;
-      
+
     case 'speaking':
-      callStatus.textContent = 'AI sedang menjawab...';
+      callStatus.textContent = 'DENAI BERBICARA';
       callAvatar.classList.add('speaking');
+      if (audioVisualizer) audioVisualizer.classList.add('state-speaking');
       break;
   }
 }

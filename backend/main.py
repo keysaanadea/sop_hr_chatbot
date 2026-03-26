@@ -24,6 +24,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 # ✅ FIX BUG: Import dari config tanpa sys.path hack
+import os
 from app.config import (
     ENVIRONMENT,
     FEATURE_VERBOSE_LOGGING,
@@ -55,12 +56,20 @@ app = FastAPI(
 )
 
 # Add CORS middleware
+# Set ALLOWED_ORIGINS in .env for production, e.g.: ALLOWED_ORIGINS=https://yourdomain.com
+_raw_origins = os.getenv("ALLOWED_ORIGINS", "")
+if _raw_origins:
+    CORS_ORIGINS = [o.strip() for o in _raw_origins.split(",") if o.strip()]
+else:
+    # Development fallback — allow all
+    CORS_ORIGINS = ["*"]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=CORS_ORIGINS,
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allow_headers=["Content-Type", "Authorization", "Accept", "X-Requested-With"],
 )
 
 # ✅ CLEAN ARCHITECTURE ROUTING
@@ -152,8 +161,8 @@ if __name__ == "__main__":
     print(f"✅ Environment: {ENVIRONMENT}")
     
     uvicorn.run(
-        "backend.main:app", # Gunakan format module path
-        host="0.0.0.0", 
-        port=8000, 
-        reload=True if ENVIRONMENT == "development" else False
+        "backend.main:app",
+        host=os.getenv("HOST", "0.0.0.0"),
+        port=int(os.getenv("PORT", "8000")),
+        reload=ENVIRONMENT == "development",
     )

@@ -254,12 +254,7 @@ async function scanAndRenderHiddenPayloads(sessionId) {
             
             // 1. Update BUBBLE content (Text Only)
             const textHTML = currentHtml ? `<div style="background: white; padding: 16px 20px; border-radius: 12px; border: 1px solid #e5e7eb; margin-bottom: 12px;">${currentHtml}</div>` : '';
-            contentBox.innerHTML = `
-                ${textHTML}
-                <div class="chat-system-note">
-                    ↻ Dipulihkan dari riwayat percakapan
-                </div>
-            `;
+            contentBox.innerHTML = textHTML;
             
             // 2. Create DATA CONTAINER (Sibling to Bubble)
             const dataContainer = document.createElement('div');

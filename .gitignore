@@ -11,6 +11,15 @@ csv/
 db/
 documents/
 documents_global/
+documents_fix/
+chunks/
+embeddings/
+
+# ======================
+# BINARY / BUILD ARTIFACTS
+# ======================
+web/tailwindcss
+=2.0.0
 
 # ======================
 # RUNTIME OUTPUT
@@ -19,6 +28,11 @@ complete_enterprise_evaluation_results/
 logs/
 cache/
 logs/
+# ======================
+# NODE
+# ======================
+node_modules/
+
 # ======================
 # PYTHON
 # ======================

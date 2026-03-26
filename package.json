@@ -1,0 +1,16 @@
+{
+  "name": "manualchatbottwomode",
+  "version": "1.0.0",
+  "main": "tailwind.config.js",
+  "scripts": {
+    "build:css": "tailwindcss -c tailwind.config.js -i tailwind-input.css -o web/styles/tailwind.css --minify",
+    "watch:css": "tailwindcss -c tailwind.config.js -i tailwind-input.css -o web/styles/tailwind.css --watch"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "description": "",
+  "devDependencies": {
+    "tailwindcss": "^3.4.19"
+  }
+}

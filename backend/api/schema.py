@@ -78,21 +78,46 @@ async def get_database_schema() -> Dict[str, Any]:
 async def refresh_database_schema() -> Dict[str, Any]:
     """
     GET /api/schema/refresh
-    
+
     Force refresh the schema cache and return updated schema
     """
     try:
         from engines.hr.database.schema_reader import SchemaReader
-        
+
         schema_reader = SchemaReader()
         schema = schema_reader.get_schema(refresh_cache=True)
-        
-        return {
+
+        response = {
             "success": True,
-            "message": "Schema cache refreshed successfully",
-            "total_tables": schema.get("total_tables", 0)
+            "schema_name": schema.get("schema_name", "hr"),
+            "total_tables": schema.get("total_tables", 0),
+            "connection_type": schema.get("connection_type", "Supabase PostgreSQL"),
+            "tables": []
         }
-        
+
+        for table_name, table_info in schema.get("tables", {}).items():
+            table_data = {
+                "name": table_name,
+                "full_name": f"hr.{table_name}",
+                "total_columns": table_info.get("total_columns", 0),
+                "columns": []
+            }
+
+            for col_name in table_info.get("columns", []):
+                col_type = table_info.get("column_types", {}).get(col_name, "unknown")
+                sample_data = table_info.get("distinct_values", {}).get(col_name)
+
+                table_data["columns"].append({
+                    "name": col_name,
+                    "type": col_type,
+                    "sample_data": sample_data if sample_data else None
+                })
+
+            response["tables"].append(table_data)
+
+        logger.info(f"✅ Schema refreshed: {response['total_tables']} tables")
+        return response
+
     except Exception as e:
         logger.error(f"❌ Schema refresh error: {e}", exc_info=True)
         raise HTTPException(

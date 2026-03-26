@@ -880,9 +880,9 @@ function setInputState(disabled) {
       sendButton.onclick = cancelCurrentRequest;
       sendButton.title = "Cancel request";
     } else {
-      sendButton.innerHTML = 'Send';
+      sendButton.innerHTML = '<span class="material-symbols-outlined" style="font-variation-settings:\'FILL\' 1;">arrow_forward</span>';
       sendButton.classList.remove('stop-btn');
-      sendButton.onclick = sendMessage;
+      sendButton.onclick = () => sendMessage();
       sendButton.title = "Send message";
     }
   }

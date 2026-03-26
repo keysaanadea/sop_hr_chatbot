@@ -1,14 +1,6 @@
-"""
-HR Service - Supabase PostgreSQL Edition with Integrated Insight Layer
-=====================================================================
-Sang Dirigen (Orchestrator) yang menghubungkan SQL, Database, dan Analytics.
-✅ CLEAN ARCHITECTURE: Parafrase/Konteks ditangani di Pintu Depan (Chat Service).
-"""
-
 import logging
 from typing import Dict, Any, Optional
 
-# ✅ FIX: Menggunakan Absolute Imports untuk semua komponen yang sudah kita bersihkan!
 from engines.hr.models.hr_response import HRResponse
 from engines.hr.intent.hr_intent_analyzer import HRIntentAnalyzer
 from engines.hr.query.sql_generator import SQLGenerator
@@ -18,8 +10,6 @@ from engines.hr.database.schema_reader import SchemaReader
 from engines.hr.database.db_manager import DatabaseManager
 from engines.hr.analysis.data_first_analyzer import DataFirstAnalyzer
 from engines.hr.analysis.data_narrator import ProductionDataNarrator
-
-# ❌ FIX: Import get_recent_history_async DIHAPUS karena urusan history ada di Chat Service
 
 from openai import OpenAI
 from app.config import OPENAI_API_KEY
@@ -63,7 +53,7 @@ class HRService:
         except Exception as e:
             self.logger.error(f"❌ HR Service initialization failed: {e}")
             raise
-    
+
     def process_hr_query(self, question: str, user_role: str, selected_chart: Optional[str] = None, session_id: str = "default") -> HRResponse:
         """
         🔥 MAIN ENTRY POINT
@@ -95,11 +85,11 @@ class HRService:
                 analysis_response = self.data_analyzer.analyze(query_result.to_dict(), standalone_question)
                 
                 computed_metrics = {
-                    'total_sum': analysis_response.metrics.total_sum,
-                    'highest_value': analysis_response.metrics.highest_value,
-                    'lowest_value': analysis_response.metrics.lowest_value,
-                    'concentration_top_percent': analysis_response.metrics.concentration_top_percent,
-                    'category_count': analysis_response.metrics.category_count
+                    'total_sum': getattr(analysis_response.metrics, 'total_sum', None),
+                    'highest_value': getattr(analysis_response.metrics, 'highest_value', None),
+                    'lowest_value': getattr(analysis_response.metrics, 'lowest_value', None),
+                    'concentration_top_percent': getattr(analysis_response.metrics, 'concentration_top_percent', None),
+                    'category_count': getattr(analysis_response.metrics, 'category_count', None)
                 }
                 
                 # 5b. Generate narrative

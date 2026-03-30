@@ -42,7 +42,9 @@ def save_message(session_id: str, role: str, message: str, **kwargs):
         supabase.table("chat_memory").insert(data).execute()
 
         # Update last_message_at pada session agar sidebar sorting akurat
-        now_iso = datetime.now().isoformat()
+        # Gunakan UTC timezone-aware agar konsisten dengan Supabase timestamptz
+        from datetime import timezone
+        now_iso = datetime.now(timezone.utc).isoformat()
         supabase.table("chat_sessions").update({"last_message_at": now_iso}).eq("session_id", session_id).execute()
     except Exception as e:
         logger.error(f"❌ Failed to save message: {e}")
@@ -82,24 +84,30 @@ def save_session(session_id: str, title: str):
 def get_sessions(limit: int = 30):
     if not supabase: return []
     try:
-        res = (
+        # Pisahkan pinned dan non-pinned agar urutan tetap: pinned dulu (terbaru),
+        # lalu non-pinned (terbaru), masing-masing diurutkan DB-side oleh last_message_at DESC.
+        pinned_res = (
             supabase
             .table("chat_sessions")
             .select("session_id,title,pinned,created_at,last_message_at")
+            .eq("pinned", True)
+            .order("last_message_at", desc=True)
+            .order("created_at", desc=True)
             .limit(limit)
             .execute()
         )
-        data = res.data or []
-        # Sort: pinned dulu, lalu berdasarkan last_message_at (atau created_at jika belum ada pesan)
-        def sort_key(s):
-            ts_str = s.get("last_message_at") or s.get("created_at") or "1970-01-01T00:00:00"
-            try:
-                ts = datetime.fromisoformat(ts_str.replace("Z", "+00:00"))
-            except Exception:
-                ts = datetime.min
-            return (not s.get("pinned", False), -ts.timestamp())
-        data.sort(key=sort_key)
-        return data
+        unpinned_res = (
+            supabase
+            .table("chat_sessions")
+            .select("session_id,title,pinned,created_at,last_message_at")
+            .eq("pinned", False)
+            .order("last_message_at", desc=True)
+            .order("created_at", desc=True)
+            .limit(limit)
+            .execute()
+        )
+        data = (pinned_res.data or []) + (unpinned_res.data or [])
+        return data[:limit]
     except Exception as e:
         logger.error(f"❌ Failed to get sessions: {e}")
         return []

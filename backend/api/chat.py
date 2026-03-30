@@ -234,6 +234,12 @@ async def process_question_with_cancellation(
             cancellation_check=lambda: request.is_disconnected(),
         )
 
+        # Replace SOP "not found" code with a friendly message
+        _NOT_FOUND_CODE = "[DATA_TIDAK_DITEMUKAN_DI_SOP]"
+        _FRIENDLY_MSG = "Maaf, informasi mengenai topik yang Anda tanyakan belum tersedia dalam dokumen SOP dan kebijakan perusahaan yang ada saat ini. Silakan hubungi tim HR untuk informasi lebih lanjut."
+        if result.get("answer") and _NOT_FOUND_CODE in result["answer"]:
+            result["answer"] = _FRIENDLY_MSG
+
         # ── Stamp the trace with the final answer and record trace_id ──────
         if _lf_span:
             try:
@@ -506,6 +512,12 @@ async def ask_question_stream(
             ):
                 full_response += chunk
                 yield f"data: {json.dumps({'type': 'token', 'content': chunk})}\n\n"
+
+            # Replace SOP "not found" code with a friendly message
+            _NOT_FOUND_CODE = "[DATA_TIDAK_DITEMUKAN_DI_SOP]"
+            _FRIENDLY_MSG = "Maaf, informasi mengenai topik yang Anda tanyakan belum tersedia dalam dokumen SOP dan kebijakan perusahaan yang ada saat ini. Silakan hubungi tim HR untuk informasi lebih lanjut."
+            if _NOT_FOUND_CODE in full_response:
+                full_response = _FRIENDLY_MSG
 
             if _lf_span:
                 try:

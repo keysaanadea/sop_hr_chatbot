@@ -85,6 +85,14 @@ async function askBackend(text) {
         } else if (event.type === "done") {
           window.CoreApp?.removeThinkingAnimation();
 
+          // Replace SOP "not found" sentinel with a user-friendly message
+          const _NOT_FOUND = "[DATA_TIDAK_DITEMUKAN_DI_SOP]";
+          const _FRIENDLY = "Maaf, informasi mengenai topik yang Anda tanyakan belum tersedia dalam dokumen SOP dan kebijakan perusahaan saat ini. Silakan hubungi tim HR untuk informasi lebih lanjut.";
+          if (fullAnswer.includes(_NOT_FOUND)) {
+            fullAnswer = _FRIENDLY;
+            if (streamingBubble) streamingBubble.innerHTML = _FRIENDLY;
+          }
+
           if (event.answer) {
             // Non-streaming path (greeting / HR analytics)
             if (streamingBubble) { streamingBubble.closest(".msg")?.remove(); streamingBubble = null; }

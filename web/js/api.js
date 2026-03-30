@@ -185,9 +185,13 @@ function _createStreamingBubble() {
   cursor.textContent = "▌";
   cursor.dataset.streamCursor = "1";
 
+  const chatColumn = document.createElement("div");
+  chatColumn.className = "chat-column";
+  chatColumn.appendChild(bubble);
+  chatColumn.appendChild(cursor);
+
   msgDiv.appendChild(avatar);
-  msgDiv.appendChild(bubble);
-  msgDiv.appendChild(cursor);
+  msgDiv.appendChild(chatColumn);
   messages.appendChild(msgDiv);
   messages.scrollTop = messages.scrollHeight;
 
@@ -200,12 +204,13 @@ function _finalizeStreamingBubble(bubble, fullAnswer, traceId) {
   bubble.innerHTML = cleaned;
 
   const msgDiv = bubble.closest(".msg");
+  const chatColumn = bubble.closest(".chat-column") || msgDiv;
   if (msgDiv) {
     msgDiv.querySelector("[data-stream-cursor]")?.remove();
   }
 
-  if (traceId && window.CoreApp?._buildFeedbackButtons && msgDiv) {
-    msgDiv.appendChild(window.CoreApp._buildFeedbackButtons(traceId));
+  if (traceId && window.CoreApp?._buildFeedbackButtons && chatColumn) {
+    chatColumn.appendChild(window.CoreApp._buildFeedbackButtons(traceId));
   }
 
   return msgDiv; // return so caller can append analytics into same message

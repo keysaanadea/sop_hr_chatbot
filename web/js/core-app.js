@@ -95,6 +95,10 @@ function switchRole(role) {
   const menu = document.getElementById('roleMenu');
   if (menu) menu.classList.remove('open');
 
+  // Reset chat and reload sessions filtered for the new role
+  newChat(true);
+  window.SessionModule?.loadSessions();
+
   console.log(`🔑 Account switched: role=${userRole}, isHR=${isHR}`);
 }
 
@@ -600,29 +604,38 @@ function createRegularMessage(role, text, shouldSave = true, traceId = null) {
   avatar.textContent = avatarText;
 
   div.appendChild(avatar);
-  div.appendChild(bubble);
 
-  if (role === "bot" && !isTextOnlyMode && !window.isCallModeActive) {
-    const actions = document.createElement("div");
-    actions.className = "message-actions";
-    actions.innerHTML = `
-      <button class="action-btn" onclick="window.SpeechModule?.speakMessage(this)" title="Read aloud">
-        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 14.142M8.364 18.364L7 17l6-6-6-6 1.364-1.364L14.727 10l-6.363 6.364z"></path>
-        </svg>
-      </button>
-      <button class="action-btn" onclick="window.SpeechModule?.stopTextToSpeech()" title="Stop speaking">
-        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
-        </svg>
-      </button>
-    `;
-    div.appendChild(actions);
-  }
+  if (role === "bot") {
+    const chatColumn = document.createElement("div");
+    chatColumn.className = "chat-column";
+    chatColumn.appendChild(bubble);
 
-  // Feedback buttons are independent of TTS/voice mode — render whenever traceId is present
-  if (role === "bot" && traceId && !window.isCallModeActive) {
-    div.appendChild(_buildFeedbackButtons(traceId));
+    if (!isTextOnlyMode && !window.isCallModeActive) {
+      const actions = document.createElement("div");
+      actions.className = "message-actions";
+      actions.innerHTML = `
+        <button class="action-btn" onclick="window.SpeechModule?.speakMessage(this)" title="Read aloud">
+          <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 14.142M8.364 18.364L7 17l6-6-6-6 1.364-1.364L14.727 10l-6.363 6.364z"></path>
+          </svg>
+        </button>
+        <button class="action-btn" onclick="window.SpeechModule?.stopTextToSpeech()" title="Stop speaking">
+          <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+          </svg>
+        </button>
+      `;
+      chatColumn.appendChild(actions);
+    }
+
+    // Feedback buttons are independent of TTS/voice mode — render whenever traceId is present
+    if (traceId && !window.isCallModeActive) {
+      chatColumn.appendChild(_buildFeedbackButtons(traceId));
+    }
+
+    div.appendChild(chatColumn);
+  } else {
+    div.appendChild(bubble);
   }
   
   if (messages) {
@@ -902,6 +915,11 @@ function sendMessage(textOverride) {
 
   // Hide old stopped messages when sending new message
   hideOldRegenerateButtons();
+
+  // Optimistic sidebar entry: show new chat immediately before backend saves it
+  if (conversationHistory.length === 0) {
+    window.SessionModule?.addOptimisticSession(activeChatId, text);
+  }
 
   addMessage("user", text);
   if (window.askBackend) askBackend(text);

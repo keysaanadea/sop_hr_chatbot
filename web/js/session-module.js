@@ -15,6 +15,28 @@ async function togglePinSession(sessionId, event) {
   } catch (error) { console.error('Failed to pin session:', error); }
 }
 
+const MAX_SESSIONS = 25;
+
+async function handleNewChat() {
+  try {
+    const res = await fetch(`${window.API_URL}/sessions/`, { headers: { "Accept": "application/json" } });
+    if (res.ok) {
+      const sessions = await res.json();
+      const unpinned = sessions.filter(s => !s.pinned);
+      if (sessions.length >= MAX_SESSIONS && unpinned.length > 0) {
+        // Hapus chat paling lama (terakhir di list, karena list diurutkan terbaru dulu)
+        const oldest = unpinned[unpinned.length - 1];
+        await fetch(`${window.API_URL}/sessions/${oldest.session_id}`, {
+          method: 'DELETE', headers: { 'Accept': 'application/json' }
+        });
+      }
+    }
+  } catch (e) {
+    console.warn('Session limit check failed:', e);
+  }
+  window.CoreApp?.newChat(true);
+}
+
 async function deleteSession(sessionId, event) {
   event.stopPropagation();
   const confirmed = confirm('Are you sure you want to delete this conversation?');
@@ -29,6 +51,38 @@ async function deleteSession(sessionId, event) {
       await loadSessions();
     }
   } catch (error) { console.error('Failed to delete session:', error); }
+}
+
+function addOptimisticSession(sessionId, firstMessage) {
+  const list = document.getElementById("sessionList");
+  if (!list) return;
+
+  // Remove any leftover optimistic placeholders
+  list.querySelectorAll('.session-item.optimistic').forEach(el => el.remove());
+
+  // Remove active highlight from current items
+  list.querySelectorAll('.session-item.active').forEach(el => el.classList.remove('active'));
+
+  // Find (or create) the recents section
+  let recentsSection = Array.from(list.querySelectorAll('.session-section'))
+    .find(s => s.querySelector('.recents-list'));
+
+  if (!recentsSection) {
+    recentsSection = document.createElement("div");
+    recentsSection.className = "session-section";
+    recentsSection.innerHTML = `<div class="section-header">Terakhir</div><div class="session-list recents-list"></div>`;
+    list.appendChild(recentsSection);
+  }
+
+  const recentsList = recentsSection.querySelector('.recents-list') || recentsSection;
+
+  const div = document.createElement("div");
+  div.className = "session-item active optimistic";
+  div.dataset.sessionId = sessionId;
+  const title = (firstMessage || 'Percakapan baru').slice(0, 45);
+  div.innerHTML = `<span class="title">${title}</span>`;
+
+  recentsList.prepend(div);
 }
 
 async function loadSessions() {
@@ -332,11 +386,12 @@ function initialize() {
   return true;
 }
 
-window.SessionModule = { 
-  loadSessions, loadSession, togglePinSession, deleteSession, 
-  exportSessionHistory, clearAllSessions, createSessionItem, 
+window.SessionModule = {
+  loadSessions, loadSession, togglePinSession, deleteSession,
+  exportSessionHistory, clearAllSessions, createSessionItem,
   showStoppedResponseFromHistory, // 🔥 FIX 2 INCLUDED
-  initialize 
+  addOptimisticSession,
+  initialize
 };
 window.loadSessions = loadSessions; 
 window.loadSession = loadSession; 

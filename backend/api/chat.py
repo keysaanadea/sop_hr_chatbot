@@ -196,8 +196,9 @@ async def process_question_with_cancellation(
 
             # 2. Propagate trace-level attributes (session_id, user_id, tags)
             #    ke semua child span yang dibuat dalam context ini
-            _lf_attr_cm = langfuse.propagate_attributes(
-                trace_name="chat_interaction",
+            from langfuse import propagate_attributes as _lf_propagate_attributes
+            _lf_attr_cm = _lf_propagate_attributes(
+                trace_name="denai_chat",
                 user_id=str(user_role),
                 session_id=str(session_id),
                 tags=[str(user_role)],
@@ -311,7 +312,8 @@ async def ask_question_stream(
                     input={"question": req.question, "user_role": user_role},
                 )
                 _lf_span = _lf_obs_cm.__enter__()
-                _lf_attr_cm = langfuse.propagate_attributes(
+                from langfuse import propagate_attributes as _lf_propagate_attributes
+                _lf_attr_cm = _lf_propagate_attributes(
                     trace_name="denai_chat",
                     user_id=str(user_role),
                     session_id=str(req.session_id),
@@ -421,6 +423,16 @@ async def ask_question_stream(
                         })
                         _b_hidden_span = f'<span class="denai-hidden-payload" data-payload="{urllib.parse.quote(_b_payload_json)}" style="display:none"></span>'
                         await save_hybrid_message(req.session_id, "assistant", answer + _b_hidden_span)
+                        b_trace_id = result.get("trace_id")
+                        if b_trace_id:
+                            background_tasks.add_task(
+                                evaluate_interaction_background,
+                                trace_id=b_trace_id,
+                                question=req.question,
+                                context=answer,
+                                answer=answer,
+                            )
+
                         payload = {
                             "type": "done",
                             "answer": answer,

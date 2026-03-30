@@ -95,63 +95,66 @@ Metric definitions:
 - context_precision (1.0 = retrieved context is tightly relevant; no noise)"""
 
         # Buat span "llm_as_a_judge" dan attach ke trace chat_interaction yang sudah ada
-        # propagate_attributes(trace_name=...) → pastikan trace muncul sebagai "denai_chat"
         # trace_context={"trace_id": trace_id} → span menjadi child dari trace tersebut
-        _attr_cm = _propagate_attributes(trace_name="denai_chat") if _propagate_attributes else None
-        if _attr_cm:
-            _attr_cm.__enter__()
-        try:
-            with langfuse.start_as_current_observation(
-                trace_context={"trace_id": trace_id},
-                name="llm_as_a_judge",
-                as_type="evaluator",
-                input={"question": question[:300]},
-            ) as judge_span:
-                aclient = AsyncOpenAI(api_key=OPENAI_API_KEY)
+        # propagate_attributes di-enter SETELAH start_as_current_observation agar trace_id
+        # sudah ada di OTel context saat nama trace di-set.
+        _attr_cm = None
+        with langfuse.start_as_current_observation(
+            trace_context={"trace_id": trace_id},
+            name="llm_as_a_judge",
+            as_type="evaluator",
+            input={"question": question[:300]},
+        ) as judge_span:
+            # Set trace name SETELAH trace_id aktif di OTel context
+            if _propagate_attributes:
+                _attr_cm = _propagate_attributes(trace_name="denai_chat")
+                _attr_cm.__enter__()
+            aclient = AsyncOpenAI(api_key=OPENAI_API_KEY)
 
-                response = await aclient.chat.completions.create(
-                    model="gpt-4o-mini",
-                    messages=[
-                        {
-                            "role": "system",
-                            "content": "You are a strict evaluator. Output only valid JSON.",
-                        },
-                        {"role": "user", "content": prompt},
-                    ],
-                    response_format={"type": "json_object"},
-                    temperature=0.0,
-                    max_tokens=400,
+            response = await aclient.chat.completions.create(
+                model="gpt-4o-mini",
+                messages=[
+                    {
+                        "role": "system",
+                        "content": "You are a strict evaluator. Output only valid JSON.",
+                    },
+                    {"role": "user", "content": prompt},
+                ],
+                response_format={"type": "json_object"},
+                temperature=0.0,
+                max_tokens=400,
+            )
+
+            scores_raw = response.choices[0].message.content.strip()
+            scores = json.loads(scores_raw)
+
+            # Push scores ke trace
+            metrics = ["faithfulness", "answer_relevance", "context_precision"]
+            score_summary = {}
+            for metric in metrics:
+                if metric not in scores:
+                    continue
+                metric_data = scores[metric]
+                score_val = float(metric_data.get("score", 0.0))
+                score_val = max(0.0, min(1.0, score_val))
+                reason = str(metric_data.get("reason", ""))
+                score_summary[metric] = score_val
+
+                langfuse.create_score(
+                    trace_id=trace_id,
+                    name=metric,
+                    value=score_val,
+                    comment=reason,
+                )
+                logger.info(
+                    f"✅ LLM Judge [{metric}={score_val:.2f}] trace={trace_id[:8]}…"
                 )
 
-                scores_raw = response.choices[0].message.content.strip()
-                scores = json.loads(scores_raw)
+            # Stamp output pada span
+            if judge_span:
+                judge_span.update(output=score_summary)
 
-                # Push scores ke trace
-                metrics = ["faithfulness", "answer_relevance", "context_precision"]
-                score_summary = {}
-                for metric in metrics:
-                    if metric not in scores:
-                        continue
-                    metric_data = scores[metric]
-                    score_val = float(metric_data.get("score", 0.0))
-                    score_val = max(0.0, min(1.0, score_val))
-                    reason = str(metric_data.get("reason", ""))
-                    score_summary[metric] = score_val
-
-                    langfuse.create_score(
-                        trace_id=trace_id,
-                        name=metric,
-                        value=score_val,
-                        comment=reason,
-                    )
-                    logger.info(
-                        f"✅ LLM Judge [{metric}={score_val:.2f}] trace={trace_id[:8]}…"
-                    )
-
-                # Stamp output pada span
-                if judge_span:
-                    judge_span.update(output=score_summary)
-        finally:
+            # Tutup propagate_attributes SEBELUM keluar dari trace context
             if _attr_cm:
                 try:
                     _attr_cm.__exit__(None, None, None)

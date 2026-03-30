@@ -300,8 +300,10 @@ async def answer_question_async(
             # Filter chunks dengan Cohere relevance score di bawah threshold
             before_filter = len(matches)
             filtered = [m for m in matches if m.get('score', 0.0) >= RAG_MIN_SCORE]
-            # Jaga minimal 1 chunk agar tidak kosong
-            matches = filtered if filtered else matches[:1]
+            # Jaga minimal 3 chunk agar LLM tidak false-negative "tidak ditemukan"
+            if len(filtered) < 3:
+                filtered = matches[:max(3, len(filtered))]
+            matches = filtered if filtered else matches[:3]
             logger.info(f"🔽 Score filter: {before_filter} → {len(matches)} chunks (threshold={RAG_MIN_SCORE})")
 
             if _sp_ret:
@@ -519,7 +521,10 @@ async def answer_question_stream(
             matches = await retrieve_context_async(question, keywords, scope, doc_type)
             before_filter = len(matches)
             filtered = [m for m in matches if m.get('score', 0.0) >= RAG_MIN_SCORE]
-            matches = filtered if filtered else matches[:1]
+            # Jaga minimal 3 chunk agar LLM tidak false-negative "tidak ditemukan"
+            if len(filtered) < 3:
+                filtered = matches[:max(3, len(filtered))]
+            matches = filtered if filtered else matches[:3]
             logger.info(f"🔽 Score filter: {before_filter} → {len(matches)} chunks (threshold={RAG_MIN_SCORE})")
             if _sp_ret:
                 _sp_ret.update(output={"chunks_returned": len(matches), "chunks_before_filter": before_filter})

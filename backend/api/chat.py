@@ -201,7 +201,7 @@ async def process_question_with_cancellation(
                 trace_name="denai_chat",
                 user_id=str(user_role),
                 session_id=str(session_id),
-                tags=[str(user_role)],
+                tags=[],
             )
             _lf_attr_cm.__enter__()
     except Exception as _lf_err:
@@ -240,10 +240,14 @@ async def process_question_with_cancellation(
         if result.get("answer") and _NOT_FOUND_CODE in result["answer"]:
             result["answer"] = _FRIENDLY_MSG
 
-        # ── Stamp the trace with the final answer and record trace_id ──────
+        # ── Tag route dan stamp trace ──────────────────────────────────────
         if _lf_span:
             try:
-                _lf_span.update(output={"answer": result.get("answer", "")[:500]})
+                _route_tag = "data_hr" if result.get("message_type") == "analytics_result" else "skd"
+                _lf_span.update(
+                    tags=[_route_tag],
+                    output={"answer": result.get("answer", "")[:500]},
+                )
                 result["trace_id"] = _lf_span.trace_id
             except Exception:
                 pass
@@ -323,7 +327,7 @@ async def ask_question_stream(
                     trace_name="denai_chat",
                     user_id=str(user_role),
                     session_id=str(req.session_id),
-                    tags=[str(user_role)],
+                    tags=[],
                 )
                 _lf_attr_cm.__enter__()
         except Exception:
@@ -356,6 +360,9 @@ async def ask_question_stream(
 
                     if routing and routing.get("mode") == "ab":
                         # ── A+B merge: stream synthesis ──────────────────────
+                        if _lf_span:
+                            try: _lf_span.update(tags=["skd", "data_hr"])
+                            except Exception: pass
                         full_response = ""
                         async for chunk in chat_service._synthesize_results_stream(
                             question=routing["standalone_question"],
@@ -405,10 +412,35 @@ async def ask_question_stream(
                         yield f"data: {json.dumps({'type': 'done', 'session_id': req.session_id, 'authorized': True, 'trace_id': trace_id, 'message_type': result_base.get('message_type'), 'data': result_base.get('data'), 'turn_id': result_base.get('turn_id'), 'conversation_id': result_base.get('conversation_id'), 'visualization_available': result_base.get('visualization_available', False), 'chart_hints': result_base.get('chart_hints'), 'sql_query': result_base.get('sql_query'), 'sql_explanation': result_base.get('sql_explanation')})}\n\n"
                         return
 
+                    elif routing and routing.get("mode") == "a_only":
+                        # ── A-only: SOP succeeded but B failed — stream SOP answer ──
+                        result = routing["result_a"]
+                        answer = result.get("answer", "")
+                        # Replace SOP not-found sentinel with friendly message
+                        _NOT_FOUND_CODE = "[DATA_TIDAK_DITEMUKAN_DI_SOP]"
+                        _FRIENDLY_MSG = "Maaf, informasi mengenai topik yang Anda tanyakan belum tersedia dalam dokumen SOP dan kebijakan perusahaan yang ada saat ini. Silakan hubungi tim HR untuk informasi lebih lanjut."
+                        if _NOT_FOUND_CODE in answer:
+                            answer = _FRIENDLY_MSG
+                        if _lf_span:
+                            try:
+                                _lf_span.update(tags=["skd"], output={"answer": answer[:500]})
+                            except Exception: pass
+                        await save_hybrid_message(req.session_id, "user", req.question)
+                        await save_hybrid_message(req.session_id, "assistant", answer)
+                        trace_id = None
+                        if _lf_span:
+                            try: trace_id = _lf_span.trace_id
+                            except Exception: pass
+                        yield f"data: {json.dumps({'type': 'done', 'answer': answer, 'session_id': req.session_id, 'authorized': True, 'trace_id': trace_id})}\n\n"
+                        return
+
                     elif routing and routing.get("mode") == "b_only":
                         # ── B-only: return analytics result directly ──────────
                         result = routing["result_b"]
                         answer = result.get("answer", "")
+                        if _lf_span:
+                            try: _lf_span.update(tags=["data_hr"])
+                            except Exception: pass
                         if _lf_span:
                             try:
                                 _lf_span.update(output={"answer": answer[:500]})
@@ -501,6 +533,9 @@ async def ask_question_stream(
                 return
 
             # SOP (intent A): stream dari RAG engine
+            if _lf_span:
+                try: _lf_span.update(tags=["skd"])
+                except Exception: pass
             from engines.sop.rag_engine import answer_question_stream as rag_stream
 
             full_response = ""

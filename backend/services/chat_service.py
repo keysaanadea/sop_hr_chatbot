@@ -759,8 +759,22 @@ Balas HANYA dengan JSON valid:
         if isinstance(result_b, Exception):
             result_b = {"error": str(result_b), "answer": "maaf, terjadi kesalahan", "authorized": True}
 
-        if self._is_failure(result_a) or self._is_failure(result_b):
+        a_failed = self._is_failure(result_a)
+        b_failed = self._is_failure(result_b)
+
+        # If both failed → caller falls back to process_question
+        if a_failed and b_failed:
             return None
+
+        # If only B failed → return A result as SOP-only (don't discard valid SOP answer)
+        if not a_failed and b_failed:
+            logger.info("⚡ [STREAM A+B] B failed but A succeeded — returning a_only result")
+            return {"mode": "a_only", "result_a": result_a}
+
+        # If only A failed → return B result as b_only
+        if a_failed and not b_failed:
+            logger.info("⚡ [STREAM A+B] A failed but B succeeded — returning b_only result")
+            return {"mode": "b_only", "result_b": result_b, "query_for_b": query_for_b}
 
         b_content = str(result_b.get("answer", ""))
         if result_b.get("message_type") == "analytics_result" and "data" in result_b:

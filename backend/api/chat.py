@@ -540,17 +540,21 @@ async def ask_question_stream(
 
             full_response = ""
             rag_out = {}   # will be populated with {"context": context_str} by rag_stream
+            _NOT_FOUND_CODE = "[DATA_TIDAK_DITEMUKAN_DI_SOP]"
+            _FRIENDLY_MSG = "Maaf, informasi mengenai topik yang Anda tanyakan belum tersedia dalam dokumen SOP dan kebijakan perusahaan yang ada saat ini. Silakan hubungi tim HR untuk informasi lebih lanjut."
+            _sentinel_detected = False
             async for chunk in rag_stream(
                 req.question, req.session_id,
                 lambda: request.is_disconnected(),
                 out_context=rag_out,
             ):
                 full_response += chunk
-                yield f"data: {json.dumps({'type': 'token', 'content': chunk})}\n\n"
+                # As soon as sentinel appears, stop forwarding tokens to client
+                if not _sentinel_detected and _NOT_FOUND_CODE in full_response:
+                    _sentinel_detected = True
+                if not _sentinel_detected:
+                    yield f"data: {json.dumps({'type': 'token', 'content': chunk})}\n\n"
 
-            # Replace SOP "not found" code with a friendly message
-            _NOT_FOUND_CODE = "[DATA_TIDAK_DITEMUKAN_DI_SOP]"
-            _FRIENDLY_MSG = "Maaf, informasi mengenai topik yang Anda tanyakan belum tersedia dalam dokumen SOP dan kebijakan perusahaan yang ada saat ini. Silakan hubungi tim HR untuk informasi lebih lanjut."
             if _NOT_FOUND_CODE in full_response:
                 full_response = _FRIENDLY_MSG
 

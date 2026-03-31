@@ -77,19 +77,38 @@ def validate_input(question: str) -> Tuple[bool, str]:
 # LAYER 2: QUERY UNDERSTANDING (Robust Pydantic & Async)
 # =====================
 class QuerySchema(BaseModel):
-    search_keywords: str = Field(description="3-6 kata kunci inti untuk pencarian Vector DB berdasarkan pertanyaan user.")
+    sop_topic: str = Field(description="""LANGKAH PERTAMA — Identifikasi topik SOP mana yang paling relevan.
+Pilih TEPAT SATU dari daftar berikut berdasarkan ISI pertanyaan, BUKAN nama kota/angka:
+- 'perjalanan_dinas'   : perjalanan dinas, business trip, UPD, uang harian dinas, transportasi dinas
+- 'lembur'             : lembur, overtime, upah kerja lembur, jam lembur
+- 'pembelajaran'       : pelatihan, training, sertifikasi, pembelajaran, beasiswa
+- 'relokasi'           : relokasi, penempatan, pindah, mutasi, POH, POA, fasilitas pindah, biaya pindah
+- 'tunjangan'          : tunjangan domisili, bantuan sewa rumah, ongkos pindah, tunjangan jabatan
+- 'karir'              : manajemen karir, promosi, rotasi, pengembangan karir, kompetensi
+- 'phk'                : PHK, pemutusan hubungan kerja, pesangon, pensiun, terminasi
+- 'general'            : topik lain yang tidak masuk kategori di atas
+""")
+    search_keywords: str = Field(description="""Kata kunci pencarian Vector DB. WAJIB ikuti aturan ini:
+- Selalu sertakan nama topik SOP (dari sop_topic) sebagai kata kunci pertama.
+- Contoh: sop_topic='relokasi' → keywords dimulai dengan 'relokasi penempatan karyawan ...'
+- Contoh: sop_topic='perjalanan_dinas' → keywords dimulai dengan 'perjalanan dinas UPD ...'
+- Tambahkan detail spesifik dari pertanyaan setelahnya (band, nominal, fasilitas, dll).""")
     scope: str = Field(description="Pilih HANYA SALAH SATU: domestic, international, atau general")
-    doc_type: str = Field(description="Pilih HANYA SALAH SATU: sop_perjalanan_dinas, sop_lembur, sop_pembelajaran, atau general")
+    doc_type: str = Field(description="""Pilih HANYA SALAH SATU berdasarkan sop_topic:
+- sop_perjalanan_dinas : HANYA jika sop_topic='perjalanan_dinas'
+- sop_lembur           : HANYA jika sop_topic='lembur'
+- sop_pembelajaran     : HANYA jika sop_topic='pembelajaran'
+- general              : untuk SEMUA topik lain (relokasi, tunjangan, karir, PHK, dll)""")
     template_type: str = Field(description="""Pilih HANYA SALAH SATU:
 - 'general_calculation': JIKA nanya hitungan angka, total uang, UPD, tarif, atau jumlah biaya.
 - 'procedure': JIKA nanya 'cara', 'langkah-langkah', 'bagaimana mengajukan'.
 - 'rules': JIKA nanya syarat, kelayakan (Yes/No), atau 'dapat apa aja/fasilitas apa aja'.
 - 'definition': JIKA nanya apa itu/definisi.
 - 'general': Jika tidak masuk kategori di atas.""")
-    kota_asal: str = Field(default="", description="Ekstrak kota_asal JIKA ADA.")
-    kota_tujuan: str = Field(default="", description="Ekstrak kota_tujuan JIKA ADA.")
-    butuh_kalkulasi_jarak: bool = Field(description="Pilih TRUE HANYA JIKA pertanyaan berhubungan dengan perjalanan dinas ke suatu Kota/Negara ATAU menanyakan Uang/Fasilitas perjalanan. Pilih FALSE jika nanya prosedur/cara umum.")
-    
+    kota_asal: str = Field(default="", description="Ekstrak kota_asal JIKA ADA dan sop_topic='perjalanan_dinas'. Kosongkan untuk topik lain.")
+    kota_tujuan: str = Field(default="", description="Ekstrak kota_tujuan JIKA ADA dan sop_topic='perjalanan_dinas'. Kosongkan untuk topik lain.")
+    butuh_kalkulasi_jarak: bool = Field(description="TRUE HANYA JIKA sop_topic='perjalanan_dinas' DAN pertanyaan menanyakan biaya/fasilitas perjalanan ke kota tertentu. FALSE untuk semua topik lain termasuk relokasi.")
+
 class FastQueryAnalyzer:
     def __init__(self, llm):
         self.llm = llm
@@ -106,13 +125,21 @@ class FastQueryAnalyzer:
 
 CURRENT QUERY: "{query}"
 
-TASK:
-1. Search Keywords: Ekstrak 3-6 kata kunci inti dari query di atas. JIKA nanya BIAYA/UPD/FASILITAS, WAJIB tambah kata kunci: "TABEL BIAYA PERJALANAN DINAS UPD-DN HARIAN Lokasi Tertentu Pelatihan Umum Khusus Akomodasi Transportasi".
-2. Template Type: PERHATIKAN BAIK-BAIK! Jika menanyakan hitungan angka ("berapa total uangnya", "total 10 hari"), WAJIB pilih 'general_calculation'. Jika hanya nanya teori "fasilitas apa saja", pilih 'rules'.
+TUGAS UTAMA:
+LANGKAH 1 — Tentukan sop_topic: Baca pertanyaan dengan cermat. Identifikasi topik SOP mana yang ditanyakan.
+  ⚠️ PERHATIAN: Adanya nama kota (Gresik, Jakarta, dll) TIDAK otomatis berarti perjalanan dinas!
+  - Jika ada kata "penempatan", "pindah", "mutasi", "relokasi" → sop_topic = 'relokasi'
+  - Jika ada kata "perjalanan dinas", "UPD", "dinas ke", "uang harian" → sop_topic = 'perjalanan_dinas'
+
+LANGKAH 2 — Buat search_keywords: Mulai dengan nama topik SOP, lalu tambahkan detail dari pertanyaan.
+  JIKA nanya BIAYA PERJALANAN DINAS: WAJIB tambah "TABEL BIAYA PERJALANAN DINAS UPD-DN HARIAN".
+  JANGAN sertakan nama kota sebagai keyword jika sop_topic bukan 'perjalanan_dinas'.
+
+LANGKAH 3 — Isi field lainnya sesuai panduan di setiap field.
 
 {format_instructions}
 """
-        default_result = {"search_keywords": query, "scope": "general", "doc_type": "general", "template_type": "general", "kota_asal": "", "kota_tujuan": "", "butuh_kalkulasi_jarak": False}
+        default_result = {"sop_topic": "general", "search_keywords": query, "scope": "general", "doc_type": "general", "template_type": "general", "kota_asal": "", "kota_tujuan": "", "butuh_kalkulasi_jarak": False}
         try:
             print("   👉 [RADAR DALAM] Ainvoke dipanggil...")
             response = await self.llm.ainvoke(prompt)
@@ -121,6 +148,7 @@ TASK:
             result = parsed_result.model_dump()
             result['scope'] = result.get('scope', 'general').lower()
             result['doc_type'] = result.get('doc_type', 'general').lower()
+            logger.info(f"🏷️  sop_topic: {result.get('sop_topic')} | doc_type: {result.get('doc_type')}")
             return result
         except Exception as e:
             logger.error(f"❌ Pydantic Parse Failed: {e}. Fallback to default.")
@@ -285,14 +313,29 @@ async def answer_question_async(
         scope = analysis.get('scope', 'general')
         doc_type = analysis.get('doc_type', 'general')
         template_type = analysis.get('template_type', 'general')
+        _sop_topic_async = analysis.get('sop_topic', 'general')
 
-        logger.info("\n" + "🔮" * 25 + "\n" +
-                    "🔍 DEBUGGING QUERY ANALYZER (DOMAIN RAG)\n" +
-                    f"🗣️ Standalone Query : {question}\n" +
-                    f"🔑 Search Keywords  : {keywords}\n" +
-                    f"🎯 Scope Terdeteksi : {scope}\n" +
-                    f"📝 Template Type    : {template_type}\n" +
-                    "🔮" * 25)
+        # scope filter (domestic/international) hanya relevan untuk perjalanan dinas.
+        # Untuk topik lain (relokasi, PHK, karir, dll), Pinecone scope filter akan
+        # menyingkirkan dokumen yang di-index dengan scope=general.
+        if _sop_topic_async != 'perjalanan_dinas' and scope != 'general':
+            logger.info(f"🔧 scope override: '{scope}' → 'general' (sop_topic={_sop_topic_async}, scope filter only for perjalanan dinas)")
+            scope = 'general'
+
+        logger.info(
+            "\n" + "🔮" * 25 + "\n"
+            "🔍 DEBUGGING QUERY ANALYZER (DOMAIN RAG)\n"
+            f"🗣️ Standalone Query : {question}\n"
+            f"🏷️ SOP Topic        : {_sop_topic_async}\n"
+            f"🔑 Search Keywords  : {keywords}\n"
+            f"🎯 Scope Terdeteksi : {scope}\n"
+            f"📄 Doc Type         : {doc_type}\n"
+            f"📝 Template Type    : {template_type}\n"
+            f"🏙️ Kota Asal        : {analysis.get('kota_asal', '-')}\n"
+            f"🏙️ Kota Tujuan      : {analysis.get('kota_tujuan', '-')}\n"
+            f"📏 Kalkulasi Jarak  : {analysis.get('butuh_kalkulasi_jarak', False)}\n"
+            + "🔮" * 25
+        )
 
         with langfuse_observation("vector_retrieval", input={"keywords": keywords, "scope": scope, "doc_type": doc_type}) as _sp_ret:
             matches = await retrieve_context_async(question, keywords, scope, doc_type)
@@ -346,19 +389,37 @@ async def answer_question_async(
         kota_tujuan = str(kota_tujuan[0]) if isinstance(kota_tujuan, list) else str(kota_tujuan).strip()
         
         is_valid_destination = bool(kota_tujuan and kota_tujuan.lower() not in ["", "none", "null", "-", "tidak ada"])
-        
-        if analysis.get('butuh_kalkulasi_jarak', False) or is_valid_destination:
+
+        # FIX: Jangan trigger TravelAnalyzer untuk pertanyaan "penempatan/relokasi".
+        # Trigger HANYA jika LLM eksplisit menandai butuh_kalkulasi_jarak=True
+        # DAN ada tujuan valid DAN bukan pertanyaan relokasi/mutasi.
+        _relokasi_keywords = ["penempatan", "relokasi", "pindah", "mutasi", "dipindahkan"]
+        _is_relokasi = any(w in question.lower() for w in _relokasi_keywords)
+        _butuh_kalkulasi = analysis.get('butuh_kalkulasi_jarak', False)
+        _trigger_travel = _butuh_kalkulasi and is_valid_destination and not _is_relokasi
+
+        logger.info(
+            f"🚦 TravelAnalyzer trigger: butuh_kalkulasi={_butuh_kalkulasi} | "
+            f"is_valid_destination={is_valid_destination} | is_relokasi={_is_relokasi} | "
+            f"→ akan_trigger={_trigger_travel}"
+        )
+
+        if _trigger_travel:
             travel_data = await rag_engine.travel_analyzer.process_decision_query_async(origin=kota_asal, destination=kota_tujuan, scope=scope)
-            
+
             if travel_data.get('processed'):
                 route_str = travel_data.get('route', 'Tidak diketahui')
                 dist_km = travel_data.get('distance_km', 0)
                 dur_hrs = travel_data.get('duration_hours', 0)
-                
+                logger.info(f"🛣️ TravelAnalyzer injected: route={route_str}, dist={dist_km}km")
+
                 if scope == 'international':
                     tool_info = HRTravelPolicy.get_international_policy_injection(route_str, dur_hrs)
                 else:
                     tool_info = HRTravelPolicy.get_domestic_policy_injection(route_str, dist_km, dur_hrs)
+        else:
+            if is_valid_destination:
+                logger.info(f"⏭️ TravelAnalyzer SKIPPED (is_relokasi={_is_relokasi}, butuh_kalkulasi={_butuh_kalkulasi})")
 
         # 🔥 CHECKPOINT 6: Before template building
         await check_cancelled()
@@ -389,7 +450,7 @@ Anda adalah Asisten Profesional HRD PT Semen Indonesia.
    - Contoh: Upah Kerja Lembur HANYA diberikan untuk karyawan Job Grade 10 ke bawah atau Band 5. 
    - JIKA user menyebutkan ia adalah Band 1, 2, 3, atau 4 dan meminta hitungan lembur, Anda DILARANG KERAS memberikan hitungan/rumus. Anda WAJIB menolak dengan sopan dan menjelaskan bahwa sesuai aturan, Band tersebut tidak mendapatkan upah lembur.
 3. 🚨 KESEIMBANGAN ANTI-HALUSINASI & KELENTURAN (SANGAT KRITIS):
-   - CEK TOPIK ALIEN: Coba lihat [KNOWLEDGE BASE]. Apakah topik yang ditanyakan (misal: Pensiun, Cuti Melahirkan, Resign) SAMA SEKALI TIDAK DITULIS di sana? JIKA YA (Topik Alien), Anda WAJIB BERHENTI dan HANYA MENGELUARKAN KODE INI TANPA TAMBAHAN TEKS LAIN:
+   - CEK TOPIK ALIEN: Coba lihat [KNOWLEDGE BASE] dengan seksama. Apakah topik yang ditanyakan SAMA SEKALI TIDAK ADA referensinya di sana (bukan hanya mirip topiknya, tapi benar-benar tidak ada sama sekali di seluruh teks)? JIKA YA (Topik Alien), Anda WAJIB BERHENTI dan HANYA MENGELUARKAN KODE INI TANPA TAMBAHAN TEKS LAIN:
 [DATA_TIDAK_DITEMUKAN_DI_SOP]
    - CEK TOPIK RELEVAN TAPI KURANG DATA: JIKA topik yang ditanyakan ADA (misal: Lembur, Perjalanan Dinas, Hari Libur), tetapi Anda merasa data di [KNOWLEDGE BASE] tidak cukup detail untuk melakukan hitungan matematika/angka pasti yang diminta user, JANGAN GUNAKAN KODE ERROR! Anda WAJIB tetap menjawab dengan ramah berdasarkan aturan/definisi yang tersedia, dan sampaikan secara profesional bahwa Anda membutuhkan data tambahan (seperti gaji pokok, dsb) untuk menghitung angka pastinya.
 4. DILARANG KERAS merangkai atau memaksakan aturan dari topik A untuk menjawab topik B (Topik harus match!).
@@ -516,6 +577,33 @@ async def answer_question_stream(
         scope = analysis.get('scope', 'general')
         doc_type = analysis.get('doc_type', 'general')
         template_type = analysis.get('template_type', 'general')
+        butuh_kalkulasi = analysis.get('butuh_kalkulasi_jarak', False)
+
+        # sop_topic dari LLM — digunakan untuk scope override dan TravelAnalyzer guard
+        _sop_topic = analysis.get('sop_topic', 'general')
+        _is_relokasi = _sop_topic in ('relokasi', 'tunjangan', 'karir', 'phk') or \
+                       any(w in question.lower() for w in ["penempatan", "relokasi", "pindah", "mutasi", "dipindahkan"])
+
+        # scope filter (domestic/international) hanya relevan untuk perjalanan dinas.
+        # Untuk topik lain, Pinecone scope filter menyingkirkan dokumen scope=general.
+        if _sop_topic != 'perjalanan_dinas' and scope != 'general':
+            logger.info(f"🔧 scope override: '{scope}' → 'general' (sop_topic={_sop_topic})")
+            scope = 'general'
+
+        logger.info(
+            "\n" + "🔮" * 25 + "\n"
+            "🔍 DEBUGGING QUERY ANALYZER (STREAM)\n"
+            f"🗣️  Pertanyaan      : {question}\n"
+            f"🏷️  SOP Topic       : {_sop_topic}\n"
+            f"🔑  Search Keywords : {keywords}\n"
+            f"🎯  Scope           : {scope}\n"
+            f"📄  Doc Type        : {doc_type}\n"
+            f"📝  Template Type   : {template_type}\n"
+            f"🏙️  Kota Asal       : {analysis.get('kota_asal', '-')}\n"
+            f"🏙️  Kota Tujuan     : {analysis.get('kota_tujuan', '-')}\n"
+            f"📏  Kalkulasi Jarak : {butuh_kalkulasi}\n"
+            + "🔮" * 25
+        )
 
         with langfuse_observation("vector_retrieval", input={"keywords": keywords, "scope": scope, "doc_type": doc_type}) as _sp_ret:
             matches = await retrieve_context_async(question, keywords, scope, doc_type)
@@ -526,6 +614,12 @@ async def answer_question_stream(
                 filtered = matches[:max(3, len(filtered))]
             matches = filtered if filtered else matches[:3]
             logger.info(f"🔽 Score filter: {before_filter} → {len(matches)} chunks (threshold={RAG_MIN_SCORE})")
+            # Debug: tampilkan semua chunk yang diambil
+            for i, m in enumerate(matches):
+                src = m['metadata'].get('filename') or m['metadata'].get('source_file') or 'Unknown'
+                sec = m['metadata'].get('parent_section') or m['metadata'].get('heading') or '-'
+                score = m.get('score', 0.0)
+                logger.info(f"  📄 Chunk {i+1}: score={score:.4f} | file={src} | section={sec[:60]}")
             if _sp_ret:
                 _sp_ret.update(output={"chunks_returned": len(matches), "chunks_before_filter": before_filter})
 
@@ -553,16 +647,33 @@ async def answer_question_stream(
         kota_tujuan = str(kota_tujuan[0]) if isinstance(kota_tujuan, list) else str(kota_tujuan).strip()
         is_valid_destination = bool(kota_tujuan and kota_tujuan.lower() not in ["", "none", "null", "-", "tidak ada"])
 
-        if analysis.get('butuh_kalkulasi_jarak', False) or is_valid_destination:
+        # FIX: Jangan trigger TravelAnalyzer untuk pertanyaan "penempatan/relokasi".
+        # Trigger HANYA jika LLM secara eksplisit menandai butuh_kalkulasi_jarak=True
+        # DAN ada tujuan yang valid. Jika hanya ada nama kota tanpa flag jarak, skip.
+        _relokasi_keywords = ["penempatan", "relokasi", "pindah", "mutasi", "dipindahkan"]
+        _is_relokasi = any(w in question.lower() for w in _relokasi_keywords)
+        _trigger_travel = butuh_kalkulasi and is_valid_destination and not _is_relokasi
+
+        logger.info(
+            f"🚦 TravelAnalyzer trigger: butuh_kalkulasi={butuh_kalkulasi} | "
+            f"is_valid_destination={is_valid_destination} | is_relokasi={_is_relokasi} | "
+            f"→ akan_trigger={_trigger_travel}"
+        )
+
+        if _trigger_travel:
             travel_data = await rag_engine.travel_analyzer.process_decision_query_async(origin=kota_asal, destination=kota_tujuan, scope=scope)
             if travel_data.get('processed'):
                 route_str = travel_data.get('route', 'Tidak diketahui')
                 dist_km = travel_data.get('distance_km', 0)
                 dur_hrs = travel_data.get('duration_hours', 0)
+                logger.info(f"🛣️  TravelAnalyzer injected: route={route_str}, dist={dist_km}km")
                 if scope == 'international':
                     tool_info = HRTravelPolicy.get_international_policy_injection(route_str, dur_hrs)
                 else:
                     tool_info = HRTravelPolicy.get_domestic_policy_injection(route_str, dist_km, dur_hrs)
+        else:
+            if is_valid_destination and not _trigger_travel:
+                logger.info(f"⏭️  TravelAnalyzer SKIPPED (is_relokasi={_is_relokasi}, butuh_kalkulasi={butuh_kalkulasi})")
 
         await check_cancelled()
 
@@ -586,7 +697,7 @@ Anda adalah Asisten Profesional HRD PT Semen Indonesia.
    - Contoh: Upah Kerja Lembur HANYA diberikan untuk karyawan Job Grade 10 ke bawah atau Band 5.
    - JIKA user menyebutkan ia adalah Band 1, 2, 3, atau 4 dan meminta hitungan lembur, Anda DILARANG KERAS memberikan hitungan/rumus. Anda WAJIB menolak dengan sopan dan menjelaskan bahwa sesuai aturan, Band tersebut tidak mendapatkan upah lembur.
 3. 🚨 KESEIMBANGAN ANTI-HALUSINASI & KELENTURAN (SANGAT KRITIS):
-   - CEK TOPIK ALIEN: Coba lihat [KNOWLEDGE BASE]. Apakah topik yang ditanyakan (misal: Pensiun, Cuti Melahirkan, Resign) SAMA SEKALI TIDAK DITULIS di sana? JIKA YA (Topik Alien), Anda WAJIB BERHENTI dan HANYA MENGELUARKAN KODE INI TANPA TAMBAHAN TEKS LAIN:
+   - CEK TOPIK ALIEN: Coba lihat [KNOWLEDGE BASE] dengan seksama. Apakah topik yang ditanyakan SAMA SEKALI TIDAK ADA referensinya di sana (bukan hanya mirip topiknya, tapi benar-benar tidak ada sama sekali di seluruh teks)? JIKA YA (Topik Alien), Anda WAJIB BERHENTI dan HANYA MENGELUARKAN KODE INI TANPA TAMBAHAN TEKS LAIN:
 [DATA_TIDAK_DITEMUKAN_DI_SOP]
    - CEK TOPIK RELEVAN TAPI KURANG DATA: JIKA topik yang ditanyakan ADA (misal: Lembur, Perjalanan Dinas, Hari Libur), tetapi Anda merasa data di [KNOWLEDGE BASE] tidak cukup detail untuk melakukan hitungan matematika/angka pasti yang diminta user, JANGAN GUNAKAN KODE ERROR! Anda WAJIB tetap menjawab dengan ramah berdasarkan aturan/definisi yang tersedia, dan sampaikan secara profesional bahwa Anda membutuhkan data tambahan (seperti gaji pokok, dsb) untuk menghitung angka pastinya.
 4. DILARANG KERAS merangkai atau memaksakan aturan dari topik A untuk menjawab topik B (Topik harus match!).

@@ -94,11 +94,7 @@ Pilih TEPAT SATU dari daftar berikut berdasarkan ISI pertanyaan, BUKAN nama kota
 - Contoh: sop_topic='perjalanan_dinas' → keywords dimulai dengan 'perjalanan dinas UPD ...'
 - Tambahkan detail spesifik dari pertanyaan setelahnya (band, nominal, fasilitas, dll).""")
     scope: str = Field(description="Pilih HANYA SALAH SATU: domestic, international, atau general")
-    doc_type: str = Field(description="""Pilih HANYA SALAH SATU berdasarkan sop_topic:
-- sop_perjalanan_dinas : HANYA jika sop_topic='perjalanan_dinas'
-- sop_lembur           : HANYA jika sop_topic='lembur'
-- sop_pembelajaran     : HANYA jika sop_topic='pembelajaran'
-- general              : untuk SEMUA topik lain (relokasi, tunjangan, karir, PHK, dll)""")
+    doc_type: str = Field(default="general", description="Selalu isi 'general'. Field ini tidak digunakan sebagai filter — hanya dipertahankan untuk kompatibilitas schema.")
     template_type: str = Field(description="""Pilih HANYA SALAH SATU:
 - 'general_calculation': JIKA nanya hitungan angka, total uang, UPD, tarif, atau jumlah biaya.
 - 'procedure': JIKA nanya 'cara', 'langkah-langkah', 'bagaimana mengajukan'.
@@ -207,33 +203,101 @@ class RAGEngine:
 rag_engine = RAGEngine()
 
 # =====================
-# LAYER 3 & 4: RETRIEVAL
+# LAYER 3 & 4: RETRIEVAL (Multi-Query)
 # =====================
-async def retrieve_context_async(query: str, search_keywords: str, scope: str, doc_type: str) -> List[Dict]:
-    query_vector = await rag_engine.embeddings.aembed_query(search_keywords)
-    
-    def _run_pinecone_query(vector, filter_dict):
-        return rag_engine.index.query(vector=vector, top_k=RAG_RETRIEVAL_K, filter=filter_dict, include_metadata=True, namespace=PINECONE_NAMESPACE)
+async def _generate_multi_queries(question: str, sop_topic: str) -> List[str]:
+    """Generate 3 alternative search queries using synonym variation."""
+    prompt = f"""Kamu adalah asisten pencarian dokumen regulasi HR perusahaan.
+Tugasmu: buat TEPAT 3 query pencarian dengan TERMINOLOGI yang BENAR-BENAR BERBEDA dari pertanyaan berikut.
+PENTING: Jangan hanya mengubah struktur kalimat — ganti kata kunci utamanya dengan sinonim/istilah alternatif.
 
-    base_filter = {"doc_type": {"$eq": doc_type}} if doc_type and doc_type != "general" else None
+Topik: {sop_topic}
+Pertanyaan: {question}
 
+Panduan:
+1. [SINONIM FORMAL] Ganti kata kunci utama dengan istilah yang lazim di dokumen regulasi/SK Direksi.
+   Contoh: "mobil dinas" → "kendaraan jabatan" / "fasilitas kendaraan" / "tunjangan kendaraan"
+   Contoh: "pulsa" → "biaya komunikasi" / "fasilitas komunikasi"
+   Contoh: "gaji" → "honorarium" / "penghasilan tetap"
+2. [ENTITAS LENGKAP] Gunakan nama entitas/jabatan secara lengkap dan spesifik.
+   Contoh: "Pengurus" → "Pengurus Dana Pensiun Semen Gresik"
+3. [KONTEKS PASAL] Tambahkan konteks dokumen formal seperti nomor pasal atau nama SK.
+   Contoh: "tunjangan kendaraan Pengurus Dana Pensiun SK Direksi Pasal 3"
+
+Tulis HANYA 3 baris, satu query per baris, tanpa nomor atau label apapun."""
+    try:
+        response = await rag_engine.llm.ainvoke(prompt)
+        queries = [q.strip() for q in response.content.strip().split('\n') if q.strip()][:3]
+        logger.info(f"🔀 Multi-query alternatives: {queries}")
+        return queries
+    except Exception as e:
+        logger.warning(f"⚠️ Multi-query generation failed: {e}. Fallback to single query.")
+        return []
+
+
+async def retrieve_context_async(query: str, search_keywords: str, scope: str, sop_topic: str = "general") -> List[Dict]:
+    # Step 1: Generate alternative queries + embed primary secara paralel
+    alt_queries, primary_vector = await asyncio.gather(
+        _generate_multi_queries(query, sop_topic),
+        rag_engine.embeddings.aembed_query(search_keywords)
+    )
+
+    # Step 2: Embed alternative queries secara paralel
+    alt_vectors = list(await asyncio.gather(*[
+        rag_engine.embeddings.aembed_query(q) for q in alt_queries
+    ])) if alt_queries else []
+
+    all_vectors = [primary_vector] + alt_vectors
+
+    def _run_pinecone_query(vector, filter_dict, top_k):
+        return rag_engine.index.query(
+            vector=vector, top_k=top_k, filter=filter_dict,
+            include_metadata=True, namespace=PINECONE_NAMESPACE
+        )
+
+    # Step 3: Tentukan filter berdasarkan scope
     if scope in ['domestic', 'international']:
-        strict_filter = {**base_filter, "scope": {"$eq": scope}} if base_filter else {"scope": {"$eq": scope}}
-        res = await asyncio.to_thread(_run_pinecone_query, query_vector, strict_filter)
-        chunks = [{'metadata': m.metadata, 'score': m.score} for m in res.matches]
-
-        if len(chunks) < 3:
-            relax_filter = {**base_filter, "scope": {"$in": [scope, "general"]}} if base_filter else {"scope": {"$in": [scope, "general"]}}
-            res = await asyncio.to_thread(_run_pinecone_query, query_vector, relax_filter)
-            chunks = [{'metadata': m.metadata, 'score': m.score} for m in res.matches]
+        main_filter = {"scope": {"$eq": scope}}
+        fallback_filter = {"scope": {"$in": [scope, "general"]}}
     else:
-        res = await asyncio.to_thread(_run_pinecone_query, query_vector, base_filter)
-        chunks = [{'metadata': m.metadata, 'score': m.score} for m in res.matches]
+        main_filter = None
+        fallback_filter = None
 
-    if rag_engine.cohere_reranker and chunks:
+    # Step 4: Jalankan semua Pinecone query secara paralel
+    # Primary pakai RAG_RETRIEVAL_K penuh, alternatif cukup 5 per query
+    tasks = [
+        asyncio.to_thread(_run_pinecone_query, vec, main_filter, RAG_RETRIEVAL_K if i == 0 else 5)
+        for i, vec in enumerate(all_vectors)
+    ]
+    results = await asyncio.gather(*tasks)
+
+    # Step 5: Fallback scope untuk primary query jika hasil < 3
+    primary_matches = results[0].matches
+    if scope in ['domestic', 'international'] and len(primary_matches) < 3:
+        fallback_res = await asyncio.to_thread(
+            _run_pinecone_query, primary_vector, fallback_filter, RAG_RETRIEVAL_K
+        )
+        primary_matches = fallback_res.matches
+
+    # Step 6: Merge + deduplikasi by vector ID, simpan score tertinggi
+    seen: Dict[str, Dict] = {}
+    all_matches = list(primary_matches) + [m for res in results[1:] for m in res.matches]
+    for m in all_matches:
+        vid = m.id
+        if vid not in seen or m.score > seen[vid]['score']:
+            seen[vid] = {'id': vid, 'metadata': m.metadata, 'score': m.score}
+
+    merged = list(seen.values())
+    logger.info(f"🔀 Multi-query: {len(all_vectors)} queries → {len(merged)} unique chunks sebelum rerank")
+
+    # Step 7: Cohere rerank dari pool yang lebih besar
+    if rag_engine.cohere_reranker and merged:
         metrics.cohere_rerank_calls += 1
-        chunks = await rag_engine.cohere_reranker.rerank_async(query=query, chunks=chunks, top_k=RAG_TOP_K)
-    return chunks
+        rerank_query = f"[Topik: {sop_topic}] {query}" if sop_topic and sop_topic != "general" else query
+        logger.info(f"🔍 Cohere rerank query: {rerank_query}")
+        merged = await rag_engine.cohere_reranker.rerank_async(query=rerank_query, chunks=merged, top_k=RAG_TOP_K)
+
+    return merged
 
 
 # =====================
@@ -338,7 +402,7 @@ async def answer_question_async(
         )
 
         with langfuse_observation("vector_retrieval", input={"keywords": keywords, "scope": scope, "doc_type": doc_type}) as _sp_ret:
-            matches = await retrieve_context_async(question, keywords, scope, doc_type)
+            matches = await retrieve_context_async(question, keywords, scope, sop_topic=analysis.get('sop_topic', 'general'))
 
             # Filter chunks dengan Cohere relevance score di bawah threshold
             before_filter = len(matches)
@@ -362,7 +426,9 @@ async def answer_question_async(
         for i, m in enumerate(matches):
             text = m['metadata'].get('text', '').strip()[:2000]
             source = m['metadata'].get('filename') or m['metadata'].get('source_file') or 'Unknown'
-            parent = m['metadata'].get('parent_section') or m['metadata'].get('heading') or 'Tidak spesifik'
+            _section_path = m['metadata'].get('section_path', '')
+            _section_full = ' > '.join(p.strip() for p in _section_path.split('|') if p.strip()) if _section_path else ''
+            parent = m['metadata'].get('parent_section') or m['metadata'].get('heading') or _section_full or 'Tidak spesifik'
             score = m.get('score', 0.0)
             
             if source != 'Unknown':
@@ -378,11 +444,12 @@ async def answer_question_async(
         logger.info(debug_msg)
 
         context_str = "\n\n---\n\n".join(context_parts)
-        
+        primary_source = relevant_filenames[0] if relevant_filenames else None
+
         # Tools & Policy Injections
         tool_info = ""
-        travel_data = {} 
-        
+        travel_data = {}
+
         kota_asal = analysis.get('kota_asal', '')
         kota_tujuan = analysis.get('kota_tujuan', '')
         kota_asal = str(kota_asal[0]) if isinstance(kota_asal, list) else str(kota_asal).strip()
@@ -390,17 +457,19 @@ async def answer_question_async(
         
         is_valid_destination = bool(kota_tujuan and kota_tujuan.lower() not in ["", "none", "null", "-", "tidak ada"])
 
-        # FIX: Jangan trigger TravelAnalyzer untuk pertanyaan "penempatan/relokasi".
-        # Trigger HANYA jika LLM eksplisit menandai butuh_kalkulasi_jarak=True
-        # DAN ada tujuan valid DAN bukan pertanyaan relokasi/mutasi.
+        # Trigger TravelAnalyzer otomatis jika perjalanan_dinas dengan kota asal+tujuan valid.
+        # Tidak bergantung pada flag butuh_kalkulasi_jarak dari LLM karena LLM sering
+        # return False untuk pertanyaan "fasilitas apa" meski jarak tetap dibutuhkan.
+        # Guard relokasi tetap aktif untuk case "penempatan/mutasi/pindah ke kota X".
         _relokasi_keywords = ["penempatan", "relokasi", "pindah", "mutasi", "dipindahkan"]
         _is_relokasi = any(w in question.lower() for w in _relokasi_keywords)
         _butuh_kalkulasi = analysis.get('butuh_kalkulasi_jarak', False)
-        _trigger_travel = _butuh_kalkulasi and is_valid_destination and not _is_relokasi
+        _is_valid_asal = bool(kota_asal and kota_asal.lower() not in ["", "none", "null", "-", "tidak ada"])
+        _trigger_travel = is_valid_destination and _is_valid_asal and not _is_relokasi
 
         logger.info(
             f"🚦 TravelAnalyzer trigger: butuh_kalkulasi={_butuh_kalkulasi} | "
-            f"is_valid_destination={is_valid_destination} | is_relokasi={_is_relokasi} | "
+            f"is_valid_destination={is_valid_destination} | is_valid_asal={_is_valid_asal} | is_relokasi={_is_relokasi} | "
             f"→ akan_trigger={_trigger_travel}"
         )
 
@@ -449,14 +518,23 @@ Anda adalah Asisten Profesional HRD PT Semen Indonesia.
 2. 🚨 CEK KELAYAKAN (ELIGIBILITY) SEBELUM MENGHITUNG: Anda WAJIB memeriksa apakah user berhak atas fasilitas tersebut berdasarkan aturan di [KNOWLEDGE BASE]. 
    - Contoh: Upah Kerja Lembur HANYA diberikan untuk karyawan Job Grade 10 ke bawah atau Band 5. 
    - JIKA user menyebutkan ia adalah Band 1, 2, 3, atau 4 dan meminta hitungan lembur, Anda DILARANG KERAS memberikan hitungan/rumus. Anda WAJIB menolak dengan sopan dan menjelaskan bahwa sesuai aturan, Band tersebut tidak mendapatkan upah lembur.
-3. 🚨 KESEIMBANGAN ANTI-HALUSINASI & KELENTURAN (SANGAT KRITIS):
-   - CEK TOPIK ALIEN: Coba lihat [KNOWLEDGE BASE] dengan seksama. Apakah topik yang ditanyakan SAMA SEKALI TIDAK ADA referensinya di sana (bukan hanya mirip topiknya, tapi benar-benar tidak ada sama sekali di seluruh teks)? JIKA YA (Topik Alien), Anda WAJIB BERHENTI dan HANYA MENGELUARKAN KODE INI TANPA TAMBAHAN TEKS LAIN:
+3. 🚨 ANTI-HALUSINASI (HUKUM TERTINGGI — TIDAK BOLEH DILANGGAR):
+   - CEK TOPIK ALIEN: Apakah topik yang ditanyakan SAMA SEKALI TIDAK ADA referensinya di [KNOWLEDGE BASE]? JIKA YA, Anda WAJIB BERHENTI dan HANYA MENGELUARKAN KODE INI TANPA TAMBAHAN TEKS LAIN:
 [DATA_TIDAK_DITEMUKAN_DI_SOP]
-   - CEK TOPIK RELEVAN TAPI KURANG DATA: JIKA topik yang ditanyakan ADA (misal: Lembur, Perjalanan Dinas, Hari Libur), tetapi Anda merasa data di [KNOWLEDGE BASE] tidak cukup detail untuk melakukan hitungan matematika/angka pasti yang diminta user, JANGAN GUNAKAN KODE ERROR! Anda WAJIB tetap menjawab dengan ramah berdasarkan aturan/definisi yang tersedia, dan sampaikan secara profesional bahwa Anda membutuhkan data tambahan (seperti gaji pokok, dsb) untuk menghitung angka pastinya.
-4. DILARANG KERAS merangkai atau memaksakan aturan dari topik A untuk menjawab topik B (Topik harus match!).
-5. Angka tarif, jarak, dan durasi HARUS persis sama dengan dokumen.
-6. 🔥 TUGAS KALKULASI: JIKA ADA angka jarak (km) atau durasi (jam) dari [INFO SISTEM & INSTRUKSI MUTLAK], WAJIB gunakan angka tersebut.
-7. 🚨 KEPATUHAN FORMAT: WAJIB MEMATUHI SEMUA PERINTAH di dalam [INFO SISTEM & INSTRUKSI MUTLAK] TANPA TERKECUALI!
+   - CEK TOPIK ADA TAPI DATA TERBATAS: Jika topik ada di [KNOWLEDGE BASE] namun informasinya sedikit atau tidak lengkap, Anda WAJIB menjawab HANYA berdasarkan kalimat yang BENAR-BENAR TERTULIS di [KNOWLEDGE BASE]. DILARANG KERAS menambahkan langkah, prosedur, aturan, atau penjelasan dari pengetahuan umum Anda sendiri meski terdengar logis. Jika ada bagian yang tidak ada di dokumen, cukup sampaikan bahwa informasi tersebut tidak tercantum dalam dokumen yang tersedia.
+   - CEK TOPIK RELEVAN TAPI BUTUH DATA TAMBAHAN: JIKA topik ADA dan butuh angka/kalkulasi tapi data tidak lengkap (misal: gaji pokok tidak diketahui), JANGAN GUNAKAN KODE ERROR. Jawab dengan aturan/rumus yang tersedia dan minta data tambahan yang dibutuhkan.
+4. 🚫 CEK RELEVANSI DOKUMEN (WAJIB SEBELUM MENJAWAB):
+   Sebelum menggunakan isi sebuah chunk, pastikan dokumen sumber chunk tersebut relevan dengan topik/entitas yang ditanyakan user.
+   - Jika pertanyaan jelas tentang topik X (misal: LHKPN, pensiun, Dana Pensiun Semen Gresik) dan sebuah chunk berasal dari dokumen yang membahas topik Y yang berbeda (misal: mobil dinas Eselon Satu, perjalanan dinas) → ABAIKAN chunk tersebut.
+   - Contoh: user tanya tentang LHKPN → ABAIKAN chunk dari SKD mobil dinas atau perjalanan dinas, meski ada kata "mencabut" atau "surat keputusan" di sana.
+   - Contoh: user tanya tentang "Dewan Pengawas Dana Pensiun" → ABAIKAN chunk tentang "Karyawan Eselon Satu" atau karyawan umum.
+   - 🚨 JIKA setelah membuang chunk yang tidak relevan tidak ada chunk tersisa yang menjawab pertanyaan → WAJIB keluarkan kode ini tanpa teks lain:
+[DATA_TIDAK_DITEMUKAN_DI_SOP]
+   - ✅ Jika ada beberapa chunk relevan dari dokumen berbeda, boleh blend dan WAJIB cantumkan SEMUA file sumber di Rujukan Dokumen.
+5. DILARANG KERAS merangkai atau memaksakan aturan dari topik A untuk menjawab topik B (Topik harus match!).
+6. Angka tarif, jarak, dan durasi HARUS persis sama dengan dokumen.
+7. 🔥 TUGAS KALKULASI: JIKA ADA angka jarak (km) atau durasi (jam) dari [INFO SISTEM & INSTRUKSI MUTLAK], WAJIB gunakan angka tersebut.
+8. 🚨 KEPATUHAN FORMAT: WAJIB MEMATUHI SEMUA PERINTAH di dalam [INFO SISTEM & INSTRUKSI MUTLAK] TANPA TERKECUALI!
 {detail_enforcer}
 
 {enforcement_instructions}
@@ -466,6 +544,10 @@ Anda adalah Asisten Profesional HRD PT Semen Indonesia.
 === INFO SISTEM & INSTRUKSI MUTLAK ===
 {tool_info}
 
+=== SUMBER DOKUMEN UTAMA ===
+File dengan skor kemiripan tertinggi adalah: **{primary_source}**
+Jika jawaban Anda secara spesifik mengambil informasi dari file ini, cantumkan sebagai Rujukan Dokumen. Jika jawaban juga mengambil dari file lain, cantumkan semua. Jika jawaban Anda bersifat umum dan tidak dapat dilacak ke chunk spesifik manapun, HAPUS seluruh bagian Rujukan Dokumen.
+
 === KNOWLEDGE BASE ===
 {context_str}
 
@@ -474,7 +556,7 @@ Anda adalah Asisten Profesional HRD PT Semen Indonesia.
 
 === YOUR RESPONSE ===
 """
-        
+
         # 🔥 CHECKPOINT 7: Before final LLM call
         await check_cancelled()
 
@@ -606,7 +688,7 @@ async def answer_question_stream(
         )
 
         with langfuse_observation("vector_retrieval", input={"keywords": keywords, "scope": scope, "doc_type": doc_type}) as _sp_ret:
-            matches = await retrieve_context_async(question, keywords, scope, doc_type)
+            matches = await retrieve_context_async(question, keywords, scope, sop_topic=analysis.get('sop_topic', 'general'))
             before_filter = len(matches)
             filtered = [m for m in matches if m.get('score', 0.0) >= RAG_MIN_SCORE]
             # Jaga minimal 3 chunk agar LLM tidak false-negative "tidak ditemukan"
@@ -614,12 +696,21 @@ async def answer_question_stream(
                 filtered = matches[:max(3, len(filtered))]
             matches = filtered if filtered else matches[:3]
             logger.info(f"🔽 Score filter: {before_filter} → {len(matches)} chunks (threshold={RAG_MIN_SCORE})")
-            # Debug: tampilkan semua chunk yang diambil
+            # Debug: tampilkan semua chunk yang diambil beserta isi teksnya
+            sep = "=" * 60
             for i, m in enumerate(matches):
                 src = m['metadata'].get('filename') or m['metadata'].get('source_file') or 'Unknown'
                 sec = m['metadata'].get('parent_section') or m['metadata'].get('heading') or '-'
                 score = m.get('score', 0.0)
-                logger.info(f"  📄 Chunk {i+1}: score={score:.4f} | file={src} | section={sec[:60]}")
+                txt = m['metadata'].get('text', '').strip()
+                logger.info(
+                    f"\n{sep}\n"
+                    f"📄 CHUNK #{i+1} | Score: {score:.4f}\n"
+                    f"📁 File   : {src}\n"
+                    f"📑 Section: {sec}\n"
+                    f"📝 Text   :\n{txt}\n"
+                    f"{sep}"
+                )
             if _sp_ret:
                 _sp_ret.update(output={"chunks_returned": len(matches), "chunks_before_filter": before_filter})
 
@@ -630,12 +721,15 @@ async def answer_question_stream(
         for m in matches:
             text = m['metadata'].get('text', '').strip()[:2000]
             source = m['metadata'].get('filename') or m['metadata'].get('source_file') or 'Unknown'
-            parent = m['metadata'].get('parent_section') or m['metadata'].get('heading') or 'Tidak spesifik'
+            _section_path = m['metadata'].get('section_path', '')
+            _section_full = ' > '.join(p.strip() for p in _section_path.split('|') if p.strip()) if _section_path else ''
+            parent = m['metadata'].get('parent_section') or m['metadata'].get('heading') or _section_full or 'Tidak spesifik'
             if source != 'Unknown':
                 relevant_filenames.append(source)
             context_parts.append(f"[FILE: {source} | BAB: {parent}]\n{text}")
 
         context_str = "\n\n---\n\n".join(context_parts)
+        primary_source = relevant_filenames[0] if relevant_filenames else None
         if out_context is not None:
             out_context["context"] = context_str
 
@@ -647,16 +741,18 @@ async def answer_question_stream(
         kota_tujuan = str(kota_tujuan[0]) if isinstance(kota_tujuan, list) else str(kota_tujuan).strip()
         is_valid_destination = bool(kota_tujuan and kota_tujuan.lower() not in ["", "none", "null", "-", "tidak ada"])
 
-        # FIX: Jangan trigger TravelAnalyzer untuk pertanyaan "penempatan/relokasi".
-        # Trigger HANYA jika LLM secara eksplisit menandai butuh_kalkulasi_jarak=True
-        # DAN ada tujuan yang valid. Jika hanya ada nama kota tanpa flag jarak, skip.
+        # Trigger TravelAnalyzer otomatis jika perjalanan_dinas dengan kota asal+tujuan valid.
+        # Tidak bergantung pada flag butuh_kalkulasi_jarak dari LLM karena LLM sering
+        # return False untuk pertanyaan "fasilitas apa" meski jarak tetap dibutuhkan.
+        # Guard relokasi tetap aktif untuk case "penempatan/mutasi/pindah ke kota X".
         _relokasi_keywords = ["penempatan", "relokasi", "pindah", "mutasi", "dipindahkan"]
         _is_relokasi = any(w in question.lower() for w in _relokasi_keywords)
-        _trigger_travel = butuh_kalkulasi and is_valid_destination and not _is_relokasi
+        _is_valid_asal = bool(kota_asal and kota_asal.lower() not in ["", "none", "null", "-", "tidak ada"])
+        _trigger_travel = is_valid_destination and _is_valid_asal and not _is_relokasi
 
         logger.info(
             f"🚦 TravelAnalyzer trigger: butuh_kalkulasi={butuh_kalkulasi} | "
-            f"is_valid_destination={is_valid_destination} | is_relokasi={_is_relokasi} | "
+            f"is_valid_destination={is_valid_destination} | is_valid_asal={_is_valid_asal} | is_relokasi={_is_relokasi} | "
             f"→ akan_trigger={_trigger_travel}"
         )
 
@@ -696,14 +792,23 @@ Anda adalah Asisten Profesional HRD PT Semen Indonesia.
 2. 🚨 CEK KELAYAKAN (ELIGIBILITY) SEBELUM MENGHITUNG: Anda WAJIB memeriksa apakah user berhak atas fasilitas tersebut berdasarkan aturan di [KNOWLEDGE BASE].
    - Contoh: Upah Kerja Lembur HANYA diberikan untuk karyawan Job Grade 10 ke bawah atau Band 5.
    - JIKA user menyebutkan ia adalah Band 1, 2, 3, atau 4 dan meminta hitungan lembur, Anda DILARANG KERAS memberikan hitungan/rumus. Anda WAJIB menolak dengan sopan dan menjelaskan bahwa sesuai aturan, Band tersebut tidak mendapatkan upah lembur.
-3. 🚨 KESEIMBANGAN ANTI-HALUSINASI & KELENTURAN (SANGAT KRITIS):
-   - CEK TOPIK ALIEN: Coba lihat [KNOWLEDGE BASE] dengan seksama. Apakah topik yang ditanyakan SAMA SEKALI TIDAK ADA referensinya di sana (bukan hanya mirip topiknya, tapi benar-benar tidak ada sama sekali di seluruh teks)? JIKA YA (Topik Alien), Anda WAJIB BERHENTI dan HANYA MENGELUARKAN KODE INI TANPA TAMBAHAN TEKS LAIN:
+3. 🚨 ANTI-HALUSINASI (HUKUM TERTINGGI — TIDAK BOLEH DILANGGAR):
+   - CEK TOPIK ALIEN: Apakah topik yang ditanyakan SAMA SEKALI TIDAK ADA referensinya di [KNOWLEDGE BASE]? JIKA YA, Anda WAJIB BERHENTI dan HANYA MENGELUARKAN KODE INI TANPA TAMBAHAN TEKS LAIN:
 [DATA_TIDAK_DITEMUKAN_DI_SOP]
-   - CEK TOPIK RELEVAN TAPI KURANG DATA: JIKA topik yang ditanyakan ADA (misal: Lembur, Perjalanan Dinas, Hari Libur), tetapi Anda merasa data di [KNOWLEDGE BASE] tidak cukup detail untuk melakukan hitungan matematika/angka pasti yang diminta user, JANGAN GUNAKAN KODE ERROR! Anda WAJIB tetap menjawab dengan ramah berdasarkan aturan/definisi yang tersedia, dan sampaikan secara profesional bahwa Anda membutuhkan data tambahan (seperti gaji pokok, dsb) untuk menghitung angka pastinya.
-4. DILARANG KERAS merangkai atau memaksakan aturan dari topik A untuk menjawab topik B (Topik harus match!).
-5. Angka tarif, jarak, dan durasi HARUS persis sama dengan dokumen.
-6. 🔥 TUGAS KALKULASI: JIKA ADA angka jarak (km) atau durasi (jam) dari [INFO SISTEM & INSTRUKSI MUTLAK], WAJIB gunakan angka tersebut.
-7. 🚨 KEPATUHAN FORMAT: WAJIB MEMATUHI SEMUA PERINTAH di dalam [INFO SISTEM & INSTRUKSI MUTLAK] TANPA TERKECUALI!
+   - CEK TOPIK ADA TAPI DATA TERBATAS: Jika topik ada di [KNOWLEDGE BASE] namun informasinya sedikit atau tidak lengkap, Anda WAJIB menjawab HANYA berdasarkan kalimat yang BENAR-BENAR TERTULIS di [KNOWLEDGE BASE]. DILARANG KERAS menambahkan langkah, prosedur, aturan, atau penjelasan dari pengetahuan umum Anda sendiri meski terdengar logis. Jika ada bagian yang tidak ada di dokumen, cukup sampaikan bahwa informasi tersebut tidak tercantum dalam dokumen yang tersedia.
+   - CEK TOPIK RELEVAN TAPI BUTUH DATA TAMBAHAN: JIKA topik ADA dan butuh angka/kalkulasi tapi data tidak lengkap (misal: gaji pokok tidak diketahui), JANGAN GUNAKAN KODE ERROR. Jawab dengan aturan/rumus yang tersedia dan minta data tambahan yang dibutuhkan.
+4. 🚫 CEK RELEVANSI DOKUMEN (WAJIB SEBELUM MENJAWAB):
+   Sebelum menggunakan isi sebuah chunk, pastikan dokumen sumber chunk tersebut relevan dengan topik/entitas yang ditanyakan user.
+   - Jika pertanyaan jelas tentang topik X (misal: LHKPN, pensiun, Dana Pensiun Semen Gresik) dan sebuah chunk berasal dari dokumen yang membahas topik Y yang berbeda (misal: mobil dinas Eselon Satu, perjalanan dinas) → ABAIKAN chunk tersebut.
+   - Contoh: user tanya tentang LHKPN → ABAIKAN chunk dari SKD mobil dinas atau perjalanan dinas, meski ada kata "mencabut" atau "surat keputusan" di sana.
+   - Contoh: user tanya tentang "Dewan Pengawas Dana Pensiun" → ABAIKAN chunk tentang "Karyawan Eselon Satu" atau karyawan umum.
+   - 🚨 JIKA setelah membuang chunk yang tidak relevan tidak ada chunk tersisa yang menjawab pertanyaan → WAJIB keluarkan kode ini tanpa teks lain:
+[DATA_TIDAK_DITEMUKAN_DI_SOP]
+   - ✅ Jika ada beberapa chunk relevan dari dokumen berbeda, boleh blend dan WAJIB cantumkan SEMUA file sumber di Rujukan Dokumen.
+5. DILARANG KERAS merangkai atau memaksakan aturan dari topik A untuk menjawab topik B (Topik harus match!).
+6. Angka tarif, jarak, dan durasi HARUS persis sama dengan dokumen.
+7. 🔥 TUGAS KALKULASI: JIKA ADA angka jarak (km) atau durasi (jam) dari [INFO SISTEM & INSTRUKSI MUTLAK], WAJIB gunakan angka tersebut.
+8. 🚨 KEPATUHAN FORMAT: WAJIB MEMATUHI SEMUA PERINTAH di dalam [INFO SISTEM & INSTRUKSI MUTLAK] TANPA TERKECUALI!
 {detail_enforcer}
 
 {enforcement_instructions}
@@ -712,6 +817,10 @@ Anda adalah Asisten Profesional HRD PT Semen Indonesia.
 
 === INFO SISTEM & INSTRUKSI MUTLAK ===
 {tool_info}
+
+=== SUMBER DOKUMEN UTAMA ===
+File dengan skor kemiripan tertinggi adalah: **{primary_source}**
+Jika jawaban Anda secara spesifik mengambil informasi dari file ini, cantumkan sebagai Rujukan Dokumen. Jika jawaban juga mengambil dari file lain, cantumkan semua. Jika jawaban Anda bersifat umum dan tidak dapat dilacak ke chunk spesifik manapun, HAPUS seluruh bagian Rujukan Dokumen.
 
 === KNOWLEDGE BASE ===
 {context_str}

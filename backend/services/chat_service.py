@@ -220,16 +220,17 @@ class ChatService:
         
         # Check for ambiguous patterns
         ambiguous_patterns = [
-            'itu', 'nya', 'dia', 'mereka', 'tersebut', 'yang tadi',
-            'it', 'that', 'this', 'they', 'he', 'she', 'them'
+            'ini', 'itu', 'nya', 'dia', 'mereka', 'tersebut', 'yang tadi',
+            'it', 'that', 'this', 'they', 'he', 'she', 'them',
+            'peraturan ini', 'aturan ini', 'kebijakan ini', 'dokumen ini'
         ]
         
         question_lower = current_question.lower()
         has_ambiguity = any(pattern in question_lower for pattern in ambiguous_patterns)
         
-        # If question is long (>6 words) and has no ambiguous references → skip!
+        # If question is long (>8 words) and has no ambiguous references → skip!
         word_count = len(current_question.split())
-        if not has_ambiguity and word_count > 6:
+        if not has_ambiguity and word_count > 8:
             logger.info(f"⚡ SKIP paraphrase: Question clear ({word_count} words, no ambiguity)")
             return current_question
         
@@ -255,9 +256,15 @@ class ChatService:
         ])
 
         prompt = f"""Diberikan riwayat percakapan berikut dan pertanyaan lanjutan dari pengguna.
-Formulasikan ulang pertanyaan lanjutan tersebut menjadi satu pertanyaan mandiri (standalone query) yang komprehensif tanpa perlu membaca riwayat lagi.
-JANGAN menjawab pertanyaannya, cukup tulis ulang pertanyaannya agar jelas maksud subjeknya. 
-Jika pertanyaan lanjutan sudah sangat jelas dengan sendirinya tanpa perlu history, kembalikan persis seperti aslinya.
+Tugasmu: tulis ulang pertanyaan lanjutan menjadi pertanyaan mandiri (standalone) yang jelas tanpa perlu membaca riwayat.
+
+ATURAN WAJIB:
+- Klarifikasi subjek/objek yang ambigu (kata ganti seperti "ini", "itu", "nya", "peraturan ini") menggunakan konteks dari history
+- BOLEH menyebutkan nama dokumen/SKD yang sedang dibahas dalam history HANYA jika pertanyaan secara eksplisit merujuk ke "peraturan ini", "aturan ini", "dokumen ini", atau sejenisnya
+- DILARANG menambahkan "menurut SKD X" atau nama dokumen apapun jika pertanyaan tidak menyebut atau merujuk ke dokumen tertentu — pertanyaan faktual umum seperti "apa kepanjangan dari X" tidak perlu dikaitkan ke dokumen spesifik
+- DILARANG mengubah maksud atau scope pertanyaan (contoh: jangan tambah "yang sudah pensiun" jika user tidak menyebutnya)
+- DILARANG menambahkan asumsi yang sama sekali tidak ada di history maupun pertanyaan
+- Jika pertanyaan sudah jelas dan tidak ada referensi ambigu, kembalikan PERSIS seperti aslinya
 
 Riwayat Percakapan:
 {context_text}

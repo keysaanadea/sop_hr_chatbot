@@ -107,32 +107,19 @@
     line-height: 1.7;
 }
 
-/* Bot bubble — card style */
+/* Bot bubble — no card, plain text like ChatGPT/Claude/Gemini */
 .msg.bot .bubble {
-    background: #ffffff;
+    background: transparent;
     color: var(--text-1);
-    border: 1px solid rgba(228, 190, 185, 0.2);
-    box-shadow: 0px 12px 32px rgba(25, 28, 30, 0.06);
-    border-radius: 16px;
+    border: none;
+    box-shadow: none;
+    border-radius: 0;
     flex: 1;
     min-width: 0;
     width: 100%;
-    padding: 20px 24px;
-    overflow: hidden;
+    padding: 0;
+    overflow: visible;
     position: relative;
-}
-/* Decorative gradient footer accent on bot card */
-.msg.bot .bubble::after {
-    content: '';
-    display: block;
-    height: 3px;
-    background: linear-gradient(to right, rgba(183,19,26,0.05), rgba(183,19,26,0.4), rgba(183,19,26,0.05));
-    border-radius: 0 0 16px 16px;
-    position: absolute;
-    bottom: 0;
-    left: 0;
-    right: 0;
-    opacity: 0.5;
 }
 
 /* Not-found card */

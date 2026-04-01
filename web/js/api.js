@@ -82,6 +82,11 @@ async function askBackend(text) {
             if (msgs) msgs.scrollTop = msgs.scrollHeight;
           }
 
+        } else if (event.type === "stream_clear") {
+          // Backend detected sentinel — wipe any partial text already shown
+          fullAnswer = "";
+          if (streamingBubble) streamingBubble.innerHTML = "";
+
         } else if (event.type === "done") {
           window.CoreApp?.removeThinkingAnimation();
 
@@ -182,7 +187,7 @@ function _createStreamingBubble() {
 
   const avatar = document.createElement("div");
   avatar.className = "avatar";
-  avatar.textContent = "AI";
+  avatar.innerHTML = `<span class="material-symbols-outlined" style="font-variation-settings:'FILL' 1,'wght' 400,'GRAD' 0,'opsz' 24;">auto_awesome</span>`;
 
   const bubble = document.createElement("div");
   bubble.className = "bubble";
@@ -193,8 +198,13 @@ function _createStreamingBubble() {
   cursor.textContent = "▌";
   cursor.dataset.streamCursor = "1";
 
+  const label = document.createElement("div");
+  label.className = "denai-response-label";
+  label.textContent = "DENAI AI RESPONSE";
+
   const chatColumn = document.createElement("div");
   chatColumn.className = "chat-column";
+  chatColumn.appendChild(label);
   chatColumn.appendChild(bubble);
   chatColumn.appendChild(cursor);
 
@@ -209,7 +219,9 @@ function _createStreamingBubble() {
 function _finalizeStreamingBubble(bubble, fullAnswer, traceId) {
   if (!bubble) return null;
   const cleaned = fullAnswer.replace(/\*\*(.*?)\*\*/g, "<strong>$1</strong>");
-  bubble.innerHTML = cleaned;
+  bubble.innerHTML = window.CoreApp?._renderBotBubbleContent
+    ? window.CoreApp._renderBotBubbleContent(cleaned)
+    : cleaned;
 
   const msgDiv = bubble.closest(".msg");
   const chatColumn = bubble.closest(".chat-column") || msgDiv;

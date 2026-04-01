@@ -581,6 +581,55 @@ function addMessage(role, text, shouldSave = true, responseData = null) {
   return createRegularMessage(role, text, shouldSave, responseData?.trace_id || null);
 }
 
+function _buildNotFoundCard(body) {
+  return `
+    <div class="not-found-card">
+      <div class="not-found-header">
+        <span class="material-symbols-outlined">error</span>
+        <h3>Informasi Tidak Ditemukan</h3>
+      </div>
+      <p class="not-found-body">${body || "Maaf, data spesifik atau panduan aturan yang Anda tanyakan tidak tersedia di <strong>Sistem Database</strong> maupun <strong>Buku Panduan (SOP)</strong> kami saat ini."}</p>
+      <div class="not-found-tips">
+        <h4><span class="material-symbols-outlined">lightbulb</span>Saran Pencarian:</h4>
+        <ul>
+          <li>Gunakan kata kunci yang lebih spesifik atau berbeda.</li>
+          <li>Pastikan ejaan nama divisi / jabatan sudah benar.</li>
+          <li>Hubungi Departemen HR untuk informasi lebih lanjut.</li>
+        </ul>
+      </div>
+      <div class="not-found-actions">
+        <button class="not-found-btn-secondary">
+          <span class="material-symbols-outlined">contact_support</span>Hubungi Admin
+        </button>
+      </div>
+    </div>`;
+}
+
+/**
+ * Renders bot bubble inner HTML — special card for "not found", markdown for everything else.
+ */
+function _renderBotBubbleContent(text) {
+  // Format: "Judul|Pesan" untuk not-found card dengan custom body
+  if (text.includes("|") && text.startsWith("Informasi Tidak Ditemukan|")) {
+    const body = text.split("|")[1] || "";
+    return _buildNotFoundCard(body);
+  }
+
+  const _NOT_FOUND_KEYWORDS = [
+    "tidak tersedia dalam dokumen SOP",
+    "tidak tersedia di Sistem Database maupun Buku Panduan",
+    "Silakan hubungi tim HR",
+    "Silakan periksa kembali kata kunci",
+    "saya adalah asisten khusus untuk informasi HR",
+    "Pertanyaan ini membutuhkan akses ke database karyawan",
+  ];
+  const isNotFound = _NOT_FOUND_KEYWORDS.some(k => text.includes(k));
+  if (isNotFound) {
+    return _buildNotFoundCard(text);
+  }
+  return text;
+}
+
 /**
  * 🔄 REGULAR MESSAGE RENDERING
  */
@@ -588,26 +637,34 @@ function createRegularMessage(role, text, shouldSave = true, traceId = null) {
   const div = document.createElement("div");
   div.className = `msg ${role==="user"?"user-msg user":"bot"}`;
 
-  const avatarText = role === "user" ? "YOU" : "AI";
-
   const bubble = document.createElement("div");
   bubble.className = "bubble";
 
   if (role === "user") {
     bubble.textContent = text;
   } else {
-    bubble.innerHTML = text;
+    bubble.innerHTML = _renderBotBubbleContent(text);
   }
 
   const avatar = document.createElement("div");
   avatar.className = "avatar";
-  avatar.textContent = avatarText;
+  if (role === "user") {
+    avatar.textContent = "YOU";
+  } else {
+    avatar.innerHTML = `<span class="material-symbols-outlined" style="font-variation-settings:'FILL' 1,'wght' 400,'GRAD' 0,'opsz' 24;">auto_awesome</span>`;
+  }
 
   div.appendChild(avatar);
 
   if (role === "bot") {
     const chatColumn = document.createElement("div");
     chatColumn.className = "chat-column";
+
+    const label = document.createElement("div");
+    label.className = "denai-response-label";
+    label.textContent = "DENAI AI RESPONSE";
+    chatColumn.appendChild(label);
+
     chatColumn.appendChild(bubble);
 
     if (!isTextOnlyMode && !window.isCallModeActive) {
@@ -1089,6 +1146,7 @@ window.CoreApp = {
   set isVoiceToTextMode(value) { isVoiceToTextMode = value; },
   
   addMessage,
+  _renderBotBubbleContent,
   submitFeedback,
   _buildFeedbackButtons,
   _showFeedbackBox,

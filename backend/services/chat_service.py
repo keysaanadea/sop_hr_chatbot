@@ -145,11 +145,13 @@ B (EMPLOYEE_DATA / SQL DATABASE):
 
 RULES:
 1. Clear greeting → "greeting"
-2. Casual/unrelated → "casual_chat"
+2. Casual/unrelated (world events, weather, celebrities, cooking) → "casual_chat"
 3. Policy question OR personal (self) simulation → "A"
 4. Factual company data query OR group/aggregate calculation → "B"
 5. Unsure A/B → default "A"
-6. Unsure casual → treat as HR (A or B)
+6. If context shows previous HR/SOP topic, treat follow-up questions as HR even if phrased casually → "A"
+7. Questions about company documents, teams, duties, regulations, procedures → always "A" (never casual_chat)
+8. When in doubt → "A" (never refuse a potentially valid HR question as casual_chat)
 
 Respond ONLY: greeting, casual_chat, A, or B
 
@@ -508,15 +510,12 @@ Balas HANYA dengan JSON valid:
                     if _sp:
                         _sp.update(output={"standalone": standalone_question})
 
-                # ✨ STEP 3: Master Orchestrator
-                with langfuse_observation("orchestration", input={"question": standalone_question}) as _sp:
-                    orchestration = await self._decompose_query(standalone_question)
-                    run_a = orchestration["run_a"]
-                    run_b = orchestration["run_b"]
-                    query_for_a = orchestration["query_a"]
-                    query_for_b = orchestration["query_b"]
-                    if _sp:
-                        _sp.update(output={"run_a": run_a, "run_b": run_b})
+                # ✨ STEP 3: Always run A+B in parallel for HR users
+                run_a = True
+                run_b = True
+                query_for_a = standalone_question
+                query_for_b = standalone_question
+                logger.info(f"🧭 [ORCHESTRATOR] run_a=True | run_b=True (always parallel) | A: {query_for_a[:50]} | B: {query_for_b[:50]}")
 
                 # Safety gatekeeper
                 if run_b and not is_hr_user:
@@ -672,22 +671,38 @@ Balas HANYA dengan JSON valid:
         _run_completion LLM call inside _execute_intent_flow (which was a no-op:
         tool_choice was always forced and the generated args were always overridden).
         """
-        if user_role.lower() not in ['hr', 'admin', 'manager']:
-            return None  # Non-HR: always route A only
+        is_hr_user = user_role.lower() in ['hr', 'admin', 'manager']
 
         with langfuse_observation("query_contextualization", input={"question": question}) as _sp:
             standalone_question = await self._smart_contextualize(question, history)
             if _sp:
                 _sp.update(output={"standalone": standalone_question})
 
-        with langfuse_observation("orchestration", input={"question": standalone_question}) as _sp:
-            orchestration = await self._decompose_query(standalone_question)
-            run_a = orchestration["run_a"]
-            run_b = orchestration["run_b"]
-            query_for_a = orchestration["query_a"]
-            query_for_b = orchestration["query_b"]
-            if _sp:
-                _sp.update(output={"run_a": run_a, "run_b": run_b})
+        if not is_hr_user:
+            # Non-HR: run A only — if A fails, caller will show "Akses Terbatas"
+            from app.tools import search_sop as _search_sop
+            logger.info(f"⚡ [STREAM A-only] Non-HR user, route A only: {standalone_question[:60]}")
+            with langfuse_observation("route_a_rag", input={"query": standalone_question}):
+                try:
+                    sop_answer = await _search_sop(
+                        question=standalone_question,
+                        session_id=session_id,
+                        cancellation_check=cancellation_check,
+                    )
+                    result_a = {"answer": sop_answer, "authorized": True}
+                except Exception as e:
+                    result_a = {"error": str(e), "answer": "maaf, terjadi kesalahan", "authorized": True}
+
+            if self._is_failure(result_a):
+                return None  # A failed → caller shows "Akses Terbatas" for B-only content
+            return {"mode": "a_only", "result_a": result_a, "standalone_question": standalone_question}
+
+        # HR users: always run A+B in parallel — no orchestrator needed
+        run_a = True
+        run_b = True
+        query_for_a = standalone_question
+        query_for_b = standalone_question
+        logger.info(f"🧭 [STREAM ORCHESTRATOR] run_a=True | run_b=True (always parallel) | A: {query_for_a[:50]} | B: {query_for_b[:50]}")
 
         from app.tools import search_sop, query_hr_database, StructuredResponse as _SR
 
@@ -709,26 +724,6 @@ Balas HANYA dengan JSON valid:
                 result["answer"] = title
                 return result
             return {"answer": str(raw), "authorized": True}
-
-        # ── B-only: single direct HR query, no A involved ──────────────────
-        if run_b and not run_a:
-            logger.info(f"⚡ [STREAM B-only] Direct tool call: B={query_for_b[:50]}")
-            with langfuse_observation("route_b_database", input={"query": query_for_b}):
-                try:
-                    raw_b = await query_hr_database(
-                        question=query_for_b, user_role=user_role, session_id=session_id
-                    )
-                    result_b = _process_b_result(raw_b, query_for_b)
-                except Exception as e:
-                    result_b = {"error": str(e), "answer": "maaf, terjadi kesalahan", "authorized": True}
-
-            if self._is_failure(result_b):
-                return None
-            return {"mode": "b_only", "result_b": result_b, "query_for_b": query_for_b}
-
-        # ── A+B merge: both routes in parallel ──────────────────────────────
-        if not (run_a and run_b):
-            return None  # edge case: orchestrator said A-only despite classify→B
 
         async def _run_route_a():
             with langfuse_observation("route_a_rag", input={"query": query_for_a}):

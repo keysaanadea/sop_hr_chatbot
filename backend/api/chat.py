@@ -337,178 +337,17 @@ async def ask_question_stream(
             history = await get_hybrid_history(req.session_id, limit=4)
             await setup_hybrid_session(req.session_id, req.question)
 
-            # Intent classification — sekarang nested di bawah chat_interaction
+            # Intent classification — only for greeting/casual_chat detection
             from backend.services.chat_service import classify_intent_unified
             intent = await classify_intent_unified(req.question, history)
 
-            # Non-SOP: process normally, return as single done event
-            if intent in ("greeting", "casual_chat", "B"):
-                # For B queries: try A+B streaming path first
-                if intent == "B":
-                    routing = None
-                    try:
-                        routing = await chat_service.run_ab_parallel_for_stream(
-                            question=req.question,
-                            user_role=user_role,
-                            session_id=req.session_id,
-                            history=history,
-                            mode="chat",
-                            cancellation_check=lambda: request.is_disconnected(),
-                        )
-                    except Exception as _rt_err:
-                        logger.warning(f"⚠️ HR routing failed, fallback: {_rt_err}")
+            is_hr_user = user_role.lower() in ['hr', 'admin', 'manager']
 
-                    if routing and routing.get("mode") == "ab":
-                        # ── A+B merge: stream synthesis ──────────────────────
-                        if _lf_span:
-                            try: _lf_span.update(tags=["skd", "data_hr"])
-                            except Exception: pass
-                        full_response = ""
-                        async for chunk in chat_service._synthesize_results_stream(
-                            question=routing["standalone_question"],
-                            answer_a=routing["answer_a"],
-                            answer_b=routing["answer_b_content"],
-                        ):
-                            full_response += chunk
-                            yield f"data: {json.dumps({'type': 'token', 'content': chunk})}\n\n"
-
-                        if _lf_span:
-                            try: _lf_span.update(output={"answer": full_response[:500]})
-                            except Exception: pass
-
-                        await save_hybrid_message(req.session_id, "user", req.question)
-                        # Embed analytics payload from result_base for persistence after refresh
-                        _ab_base = routing.get("result_base") or {}
-                        _ab_data = _ab_base.get("data") or {}
-                        _ab_payload_json = json.dumps({
-                            "columns": _ab_data.get("columns", []),
-                            "rows": _ab_data.get("rows", []),
-                            "sql_query": _ab_base.get("sql_query", ""),
-                            "sql_explanation": _ab_base.get("sql_explanation", ""),
-                            "query": routing.get("standalone_question", req.question),
-                            "turn_id": _ab_base.get("turn_id", ""),
-                            "visualization_available": _ab_base.get("visualization_available", False),
-                            "chart_hints": _ab_base.get("chart_hints") or [],
-                        })
-                        _ab_hidden_span = f'<span class="denai-hidden-payload" data-payload="{urllib.parse.quote(_ab_payload_json)}" style="display:none"></span>'
-                        await save_hybrid_message(req.session_id, "assistant", full_response + _ab_hidden_span)
-
-                        trace_id = None
-                        if _lf_span:
-                            try: trace_id = _lf_span.trace_id
-                            except Exception: pass
-
-                        if trace_id:
-                            background_tasks.add_task(
-                                evaluate_interaction_background,
-                                trace_id=trace_id,
-                                question=req.question,
-                                context=routing["eval_ctx"],
-                                answer=full_response,
-                            )
-
-                        result_base = routing["result_base"]
-                        result_base["answer"] = full_response
-                        yield f"data: {json.dumps({'type': 'done', 'session_id': req.session_id, 'authorized': True, 'trace_id': trace_id, 'message_type': result_base.get('message_type'), 'data': result_base.get('data'), 'turn_id': result_base.get('turn_id'), 'conversation_id': result_base.get('conversation_id'), 'visualization_available': result_base.get('visualization_available', False), 'chart_hints': result_base.get('chart_hints'), 'sql_query': result_base.get('sql_query'), 'sql_explanation': result_base.get('sql_explanation')})}\n\n"
-                        return
-
-                    elif routing and routing.get("mode") == "a_only":
-                        # ── A-only: SOP succeeded but B failed — stream SOP answer ──
-                        result = routing["result_a"]
-                        answer = result.get("answer", "")
-                        # Replace SOP not-found sentinel with friendly message
-                        _NOT_FOUND_CODE = "[DATA_TIDAK_DITEMUKAN_DI_SOP]"
-                        _FRIENDLY_MSG = "Maaf, informasi mengenai topik yang Anda tanyakan belum tersedia dalam dokumen SOP dan kebijakan perusahaan yang ada saat ini. Silakan hubungi tim HR untuk informasi lebih lanjut."
-                        if _NOT_FOUND_CODE in answer:
-                            answer = _FRIENDLY_MSG
-                        if _lf_span:
-                            try:
-                                _lf_span.update(tags=["skd"], output={"answer": answer[:500]})
-                            except Exception: pass
-                        await save_hybrid_message(req.session_id, "user", req.question)
-                        await save_hybrid_message(req.session_id, "assistant", answer)
-                        trace_id = None
-                        if _lf_span:
-                            try: trace_id = _lf_span.trace_id
-                            except Exception: pass
-                        yield f"data: {json.dumps({'type': 'done', 'answer': answer, 'session_id': req.session_id, 'authorized': True, 'trace_id': trace_id})}\n\n"
-                        return
-
-                    elif routing and routing.get("mode") == "b_only":
-                        # ── B-only: return analytics result directly ──────────
-                        result = routing["result_b"]
-                        answer = result.get("answer", "")
-                        if _lf_span:
-                            try: _lf_span.update(tags=["data_hr"])
-                            except Exception: pass
-                        if _lf_span:
-                            try:
-                                _lf_span.update(output={"answer": answer[:500]})
-                                result["trace_id"] = _lf_span.trace_id
-                            except Exception: pass
-                        await save_hybrid_message(req.session_id, "user", req.question)
-                        # Embed analytics payload as hidden span so it survives DB storage
-                        _b_data = result.get("data") or {}
-                        _b_payload_json = json.dumps({
-                            "columns": _b_data.get("columns", []),
-                            "rows": _b_data.get("rows", []),
-                            "sql_query": result.get("sql_query", ""),
-                            "sql_explanation": result.get("sql_explanation", ""),
-                            "query": routing.get("query_for_b", answer),
-                            "turn_id": result.get("turn_id", ""),
-                            "visualization_available": result.get("visualization_available", False),
-                            "chart_hints": result.get("chart_hints") or [],
-                        })
-                        _b_hidden_span = f'<span class="denai-hidden-payload" data-payload="{urllib.parse.quote(_b_payload_json)}" style="display:none"></span>'
-                        await save_hybrid_message(req.session_id, "assistant", answer + _b_hidden_span)
-                        b_trace_id = result.get("trace_id")
-                        if b_trace_id:
-                            background_tasks.add_task(
-                                evaluate_interaction_background,
-                                trace_id=b_trace_id,
-                                question=req.question,
-                                context=answer,
-                                answer=answer,
-                            )
-
-                        payload = {
-                            "type": "done",
-                            "answer": answer,
-                            "session_id": req.session_id,
-                            "authorized": True,
-                            "message_type": result.get("message_type"),
-                            "data": result.get("data"),
-                            "trace_id": result.get("trace_id"),
-                            "turn_id": result.get("turn_id"),
-                            "conversation_id": result.get("conversation_id"),
-                            "visualization_available": result.get("visualization_available", False),
-                            "chart_hints": result.get("chart_hints"),
-                            "sql_query": result.get("sql_query"),
-                            "sql_explanation": result.get("sql_explanation"),
-                        }
-                        yield f"data: {json.dumps(payload)}\n\n"
-                        return
-                    # routing is None → non-HR user trying to access HR data
-                    if user_role.lower() not in ['hr', 'admin', 'manager']:
-                        deny_answer = (
-                            "🔒 <strong>Akses Terbatas</strong><br><br>"
-                            "Pertanyaan ini membutuhkan akses ke database karyawan yang hanya tersedia untuk tim HR.<br><br>"
-                            "Untuk informasi kebijakan dan prosedur perusahaan, silakan ajukan pertanyaan terkait SOP. "
-                            "Jika Anda membutuhkan data spesifik, hubungi departemen HR."
-                        )
-                        if _lf_span:
-                            try: _lf_span.update(output={"answer": "access_denied"})
-                            except Exception: pass
-                        yield f"data: {json.dumps({'type': 'done', 'answer': deny_answer, 'session_id': req.session_id, 'authorized': False})}\n\n"
-                        return
-
-                # Fallback: greeting / casual_chat
+            # Handle greeting / casual_chat the same for everyone
+            if intent in ("greeting", "casual_chat"):
                 result = await chat_service.process_question(
-                    question=req.question,
-                    user_role=user_role,
-                    session_id=req.session_id,
-                    history=history,
-                    mode="chat",
+                    question=req.question, user_role=user_role,
+                    session_id=req.session_id, history=history, mode="chat",
                     cancellation_check=lambda: request.is_disconnected(),
                 )
                 answer = result.get("answer", "")
@@ -516,35 +355,142 @@ async def ask_question_stream(
                     try:
                         _lf_span.update(output={"answer": answer[:500]})
                         result["trace_id"] = _lf_span.trace_id
-                    except Exception:
-                        pass
+                    except Exception: pass
                 await save_hybrid_message(req.session_id, "user", req.question)
                 await save_hybrid_message(req.session_id, "assistant", answer)
-                payload = {
-                    "type": "done",
-                    "answer": answer,
-                    "session_id": req.session_id,
-                    "authorized": True,
-                    "message_type": result.get("message_type"),
-                    "data": result.get("data"),
-                    "trace_id": result.get("trace_id"),
-                }
-                yield f"data: {json.dumps(payload)}\n\n"
+                yield f"data: {json.dumps({'type': 'done', 'answer': answer, 'session_id': req.session_id, 'authorized': True, 'trace_id': result.get('trace_id')})}\n\n"
                 return
 
+            # ── HR user: always A+B parallel ────────────────────────────────
+            if is_hr_user:
+                routing = None
+                try:
+                    routing = await chat_service.run_ab_parallel_for_stream(
+                        question=req.question,
+                        user_role=user_role,
+                        session_id=req.session_id,
+                        history=history,
+                        mode="chat",
+                        cancellation_check=lambda: request.is_disconnected(),
+                    )
+                except Exception as _rt_err:
+                    logger.warning(f"⚠️ HR routing failed, fallback: {_rt_err}")
+
+                _NOT_FOUND_CODE = "[DATA_TIDAK_DITEMUKAN_DI_SOP]"
+                _FRIENDLY_MSG = "Maaf, informasi mengenai topik yang Anda tanyakan belum tersedia dalam dokumen SOP dan kebijakan perusahaan yang ada saat ini. Silakan hubungi tim HR untuk informasi lebih lanjut."
+
+                if routing and routing.get("mode") == "ab":
+                    if _lf_span:
+                        try: _lf_span.update(tags=["skd", "data_hr"])
+                        except Exception: pass
+                    full_response = ""
+                    async for chunk in chat_service._synthesize_results_stream(
+                        question=routing["standalone_question"],
+                        answer_a=routing["answer_a"],
+                        answer_b=routing["answer_b_content"],
+                    ):
+                        full_response += chunk
+                        yield f"data: {json.dumps({'type': 'token', 'content': chunk})}\n\n"
+
+                    if _lf_span:
+                        try: _lf_span.update(output={"answer": full_response[:500]})
+                        except Exception: pass
+                    await save_hybrid_message(req.session_id, "user", req.question)
+                    _ab_base = routing.get("result_base") or {}
+                    _ab_data = _ab_base.get("data") or {}
+                    _ab_payload_json = json.dumps({
+                        "columns": _ab_data.get("columns", []),
+                        "rows": _ab_data.get("rows", []),
+                        "sql_query": _ab_base.get("sql_query", ""),
+                        "sql_explanation": _ab_base.get("sql_explanation", ""),
+                        "query": routing.get("standalone_question", req.question),
+                        "turn_id": _ab_base.get("turn_id", ""),
+                        "visualization_available": _ab_base.get("visualization_available", False),
+                        "chart_hints": _ab_base.get("chart_hints") or [],
+                    })
+                    _ab_hidden_span = f'<span class="denai-hidden-payload" data-payload="{urllib.parse.quote(_ab_payload_json)}" style="display:none"></span>'
+                    await save_hybrid_message(req.session_id, "assistant", full_response + _ab_hidden_span)
+                    trace_id = None
+                    if _lf_span:
+                        try: trace_id = _lf_span.trace_id
+                        except Exception: pass
+                    if trace_id:
+                        background_tasks.add_task(evaluate_interaction_background, trace_id=trace_id, question=req.question, context=routing["eval_ctx"], answer=full_response)
+                    result_base = routing["result_base"]
+                    result_base["answer"] = full_response
+                    yield f"data: {json.dumps({'type': 'done', 'session_id': req.session_id, 'authorized': True, 'trace_id': trace_id, 'message_type': result_base.get('message_type'), 'data': result_base.get('data'), 'turn_id': result_base.get('turn_id'), 'conversation_id': result_base.get('conversation_id'), 'visualization_available': result_base.get('visualization_available', False), 'chart_hints': result_base.get('chart_hints'), 'sql_query': result_base.get('sql_query'), 'sql_explanation': result_base.get('sql_explanation')})}\n\n"
+                    return
+
+                elif routing and routing.get("mode") == "a_only":
+                    result = routing["result_a"]
+                    answer = result.get("answer", "")
+                    if _NOT_FOUND_CODE in answer:
+                        answer = _FRIENDLY_MSG
+                    if _lf_span:
+                        try: _lf_span.update(tags=["skd"], output={"answer": answer[:500]})
+                        except Exception: pass
+                    await save_hybrid_message(req.session_id, "user", req.question)
+                    await save_hybrid_message(req.session_id, "assistant", answer)
+                    trace_id = None
+                    if _lf_span:
+                        try: trace_id = _lf_span.trace_id
+                        except Exception: pass
+                    yield f"data: {json.dumps({'type': 'done', 'answer': answer, 'session_id': req.session_id, 'authorized': True, 'trace_id': trace_id})}\n\n"
+                    return
+
+                elif routing and routing.get("mode") == "b_only":
+                    result = routing["result_b"]
+                    answer = result.get("answer", "")
+                    if _lf_span:
+                        try:
+                            _lf_span.update(tags=["data_hr"], output={"answer": answer[:500]})
+                            result["trace_id"] = _lf_span.trace_id
+                        except Exception: pass
+                    await save_hybrid_message(req.session_id, "user", req.question)
+                    _b_data = result.get("data") or {}
+                    _b_payload_json = json.dumps({
+                        "columns": _b_data.get("columns", []), "rows": _b_data.get("rows", []),
+                        "sql_query": result.get("sql_query", ""), "sql_explanation": result.get("sql_explanation", ""),
+                        "query": routing.get("query_for_b", answer), "turn_id": result.get("turn_id", ""),
+                        "visualization_available": result.get("visualization_available", False),
+                        "chart_hints": result.get("chart_hints") or [],
+                    })
+                    _b_hidden_span = f'<span class="denai-hidden-payload" data-payload="{urllib.parse.quote(_b_payload_json)}" style="display:none"></span>'
+                    await save_hybrid_message(req.session_id, "assistant", answer + _b_hidden_span)
+                    b_trace_id = result.get("trace_id")
+                    if b_trace_id:
+                        background_tasks.add_task(evaluate_interaction_background, trace_id=b_trace_id, question=req.question, context=answer, answer=answer)
+                    yield f"data: {json.dumps({'type': 'done', 'answer': answer, 'session_id': req.session_id, 'authorized': True, 'message_type': result.get('message_type'), 'data': result.get('data'), 'trace_id': result.get('trace_id'), 'turn_id': result.get('turn_id'), 'conversation_id': result.get('conversation_id'), 'visualization_available': result.get('visualization_available', False), 'chart_hints': result.get('chart_hints'), 'sql_query': result.get('sql_query'), 'sql_explanation': result.get('sql_explanation')})}\n\n"
+                    return
+
+                else:
+                    # routing is None — both A and B failed for HR user
+                    logger.warning("⚠️ HR A+B both failed — returning not-found")
+                    await save_hybrid_message(req.session_id, "user", req.question)
+                    await save_hybrid_message(req.session_id, "assistant", _FRIENDLY_MSG)
+                    if _lf_span:
+                        try: _lf_span.update(output={"answer": "not_found"})
+                        except Exception: pass
+                    yield f"data: {json.dumps({'type': 'done', 'answer': _FRIENDLY_MSG, 'session_id': req.session_id, 'authorized': True})}\n\n"
+                    return
+
+            # ── Employee: Route A only (SOP stream) ─────────────────────────
             # SOP (intent A): stream dari RAG engine
             if _lf_span:
                 try: _lf_span.update(tags=["skd"])
                 except Exception: pass
             from engines.sop.rag_engine import answer_question_stream as rag_stream
 
+            # Contextualize question with history before streaming to RAG
+            sop_question = await chat_service._smart_contextualize(req.question, history)
+
             full_response = ""
             rag_out = {}   # will be populated with {"context": context_str} by rag_stream
             _NOT_FOUND_CODE = "[DATA_TIDAK_DITEMUKAN_DI_SOP]"
-            _FRIENDLY_MSG = "Maaf, informasi mengenai topik yang Anda tanyakan belum tersedia dalam dokumen SOP dan kebijakan perusahaan yang ada saat ini. Silakan hubungi tim HR untuk informasi lebih lanjut."
+            _FRIENDLY_MSG = "Informasi Tidak Ditemukan|Maaf, informasi mengenai topik yang Anda tanyakan belum tersedia dalam dokumen SOP dan kebijakan perusahaan kami saat ini. Silakan hubungi tim HR untuk mendapatkan bantuan lebih lanjut."
             _sentinel_detected = False
             async for chunk in rag_stream(
-                req.question, req.session_id,
+                sop_question, req.session_id,
                 lambda: request.is_disconnected(),
                 out_context=rag_out,
             ):
@@ -552,6 +498,8 @@ async def ask_question_stream(
                 # As soon as sentinel appears, stop forwarding tokens to client
                 if not _sentinel_detected and _NOT_FOUND_CODE in full_response:
                     _sentinel_detected = True
+                    # Clear any partial sentinel text already sent to client
+                    yield f"data: {json.dumps({'type': 'stream_clear'})}\n\n"
                 if not _sentinel_detected:
                     yield f"data: {json.dumps({'type': 'token', 'content': chunk})}\n\n"
 
@@ -581,7 +529,10 @@ async def ask_question_stream(
                     answer=full_response,
                 )
 
-            yield f"data: {json.dumps({'type': 'done', 'session_id': req.session_id, 'authorized': True, 'trace_id': trace_id})}\n\n"
+            done_payload: dict = {'type': 'done', 'session_id': req.session_id, 'authorized': True, 'trace_id': trace_id}
+            if _sentinel_detected:
+                done_payload['answer'] = _FRIENDLY_MSG
+            yield f"data: {json.dumps(done_payload)}\n\n"
 
         except asyncio.CancelledError:
             yield f"data: {json.dumps({'type': 'cancelled'})}\n\n"

@@ -68,8 +68,8 @@ satpam_aturan = ConstraintInterceptor()
 def validate_input(question: str) -> Tuple[bool, str]:
     if not question or not question.strip():
         return False, "Pertanyaan tidak boleh kosong."
-    if len(question) > 500:
-        return False, "Pertanyaan terlalu panjang (maksimal 500 karakter)."
+    if len(question) > 2000:
+        return False, "Pertanyaan terlalu panjang (maksimal 2000 karakter)."
     return True, ""
 
 

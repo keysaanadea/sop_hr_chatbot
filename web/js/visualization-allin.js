@@ -318,7 +318,7 @@ class ProfessionalChartExporter {
     // ── HEADER ───────────────────────────────────────────────────────────
     ctx.fillStyle = '#ffffff'; ctx.fillRect(0, 0, W, HDR);
     ctx.fillStyle = '#191c1e'; ctx.font = `bold 18px ${F}`; ctx.textAlign = 'left';
-    ctx.fillText('DENAI AI', PAD, 32);
+    ctx.fillText('DENAI', PAD, 32);
     ctx.fillStyle = '#5b403d'; ctx.font = `11px ${F}`;
     ctx.fillText(`REPORT ID: DENAI-${String(Date.now()).slice(-9)}`, PAD, 52);
     ctx.fillStyle = '#b7131a'; ctx.font = `bold 11px ${F}`; ctx.textAlign = 'right';
@@ -446,7 +446,7 @@ class ProfessionalChartExporter {
     // ── FOOTER ────────────────────────────────────────────────────────────
     ctx.fillStyle = '#e7e8eb'; ctx.fillRect(0, y, W, 1);
     ctx.fillStyle = '#5b403d'; ctx.font = `10px ${F}`; ctx.textAlign = 'center';
-    ctx.fillText('© 2025 DENAI AI. All rights reserved. Confidential Data Visualization Report.', W / 2, y + 26);
+    ctx.fillText('© 2025 DENAI. All rights reserved. Confidential Data Visualization Report.', W / 2, y + 26);
     ctx.fillStyle = 'rgba(183,19,26,0.45)'; ctx.font = `bold 9px ${F}`;
     ctx.fillText('✦ SYSTEM AUTHENTICATED EXPORT', W / 2, y + 46);
     ctx.fillStyle = 'rgba(183,19,26,0.55)'; ctx.font = `bold 10px ${F}`; ctx.textAlign = 'left';

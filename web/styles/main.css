@@ -1,5 +1,5 @@
 /* ================================================================
-   DENAI AI — Dynamic Content Styles
+   DENAI — Dynamic Content Styles
    Hanya untuk elemen yang di-generate oleh JavaScript.
    Layout statis menggunakan Tailwind di index.html.
    ================================================================ */
@@ -81,7 +81,7 @@
 .msg.bot .avatar .material-symbols-outlined { font-size: 20px; }
 .msg.user-msg .avatar { background: #2e3133; color: #f0f1f4; }
 
-/* DENAI AI label above card */
+/* DENAI label above card */
 .denai-response-label {
     font-size: 10px;
     font-weight: 700;

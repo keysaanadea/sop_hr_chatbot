@@ -271,50 +271,6 @@ Spesifikasi ini memberikan ruang untuk pertumbuhan pengguna dan penambahan fitur
 
 ---
 
-### Opsi Konfigurasi: 1 Server vs 2 Server
-
-**Konfigurasi 1 Server (semua dalam satu mesin)**
-```
-Server Tunggal
-  ├── DENAI Backend + Nginx
-  ├── PostgreSQL / Supabase
-  ├── Qdrant
-  ├── Redis
-  └── Langfuse
-
-Kelebihan : Lebih sederhana, biaya hardware lebih rendah
-Kekurangan: Jika server mati, seluruh layanan ikut mati
-Spesifikasi yang diperlukan: Minimum 16 GB RAM / 8 core
-```
-
-**Konfigurasi 2 Server (aplikasi dan database dipisah)**
-```
-Server 1 — Aplikasi          Server 2 — Database
-  ├── DENAI Backend      ←→    ├── PostgreSQL / Supabase
-  └── Nginx                    ├── Qdrant
-                               ├── Redis
-                               └── Langfuse
-
-Kelebihan : Lebih stabil, database tidak terganggu beban aplikasi
-Kekurangan: Memerlukan dua unit server
-Spesifikasi Server 1: 8 core / 16 GB RAM / 256 GB SSD
-Spesifikasi Server 2: 8 core / 16 GB RAM / 1 TB SSD
-```
-
----
-
-### Kebutuhan Jaringan
-
-| Kebutuhan | Keterangan |
-|---|---|
-| **Koneksi internet** | Diperlukan — aplikasi DENAI tetap menggunakan OpenAI API yang bersifat cloud. Koneksi minimal 50 Mbps dengan latensi rendah |
-| **Akses LAN internal** | Server harus dapat diakses oleh seluruh pengguna melalui jaringan internal perusahaan |
-| **IP statis internal** | Diperlukan agar alamat server tidak berubah |
-| **DNS internal** | Opsional — agar pengguna dapat mengakses via nama domain (contoh: `denai.sig.co.id`) |
-| **Firewall/IDS** | Port yang perlu dibuka ke internal: 80 (HTTP), 443 (HTTPS). Port lain ditutup |
-
----
-
 ## 4. Kemampuan AI — Fitur Aktif dan Potensi Pengembangan
 
 ### Fitur yang Aktif Saat Ini

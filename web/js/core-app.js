@@ -662,7 +662,7 @@ function createRegularMessage(role, text, shouldSave = true, traceId = null) {
 
     const label = document.createElement("div");
     label.className = "denai-response-label";
-    label.textContent = "DENAI AI RESPONSE";
+    label.textContent = "DENAI RESPONSE";
     chatColumn.appendChild(label);
 
     chatColumn.appendChild(bubble);

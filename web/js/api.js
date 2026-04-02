@@ -200,7 +200,7 @@ function _createStreamingBubble() {
 
   const label = document.createElement("div");
   label.className = "denai-response-label";
-  label.textContent = "DENAI AI RESPONSE";
+  label.textContent = "DENAI RESPONSE";
 
   const chatColumn = document.createElement("div");
   chatColumn.className = "chat-column";

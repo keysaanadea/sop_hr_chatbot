@@ -369,41 +369,45 @@
     align-items: center;
     justify-content: space-between;
     gap: 10px;
-    margin-top: 12px;
-    padding-top: 10px;
-    border-top: 1px solid #e7e8eb;
+    margin-top: 16px;
+    padding: 14px 18px;
+    background: #faf8f7;
+    border-top: 1.5px solid #ede8e6;
+    border-radius: 0 0 14px 14px;
 }
 .feedback-text {
-    font-size: 12px;
-    color: #9ca3af;
-    font-style: italic;
+    font-size: 11px;
+    font-weight: 800;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: #7a5a56;
+    font-style: normal;
     flex: 1;
 }
-.feedback-btns { display: flex; align-items: center; gap: 6px; }
+.feedback-btns { display: flex; align-items: center; gap: 8px; }
 
 .feedback-btn {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    width: 32px;
-    height: 32px;
+    width: 40px;
+    height: 40px;
     padding: 0;
-    background: #f8f9fc;
-    border: 1.5px solid #e7e8eb;
-    border-radius: 8px;
-    color: #9ca3af;
+    background: #ede9e8;
+    border: none;
+    border-radius: 50%;
+    color: #3d2b29;
     cursor: pointer;
-    transition: color .15s, background .15s, border-color .15s, transform .12s;
+    transition: color .15s, background .15s, transform .12s;
 }
-.feedback-btn svg { width: 15px; height: 15px; pointer-events: none; }
+.feedback-btn svg { width: 18px; height: 18px; pointer-events: none; }
 .feedback-btn:hover:not(:disabled) {
-    background: #f0f1f4;
-    border-color: #9ca3af;
+    background: #ddd5d3;
     color: #191c1e;
     transform: scale(1.1);
 }
-.feedback-btn.thumbs-up.feedback-selected  { color: #16a34a; border-color: #4ade80; background: #f0fdf4; }
-.feedback-btn.thumbs-down.feedback-selected { color: #b7131a; border-color: #f87171; background: #fff1f1; }
+.feedback-btn.thumbs-up.feedback-selected  { color: #16a34a; background: #dcfce7; }
+.feedback-btn.thumbs-down.feedback-selected { color: #b7131a; background: #fee2e2; }
 .feedback-btn:disabled { cursor: default; opacity: 0.5; }
 
 /* Comment box */

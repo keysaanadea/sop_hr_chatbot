@@ -648,6 +648,93 @@ input, textarea, select {
 
 
 /* ================================================================
+   TABLET / iPAD (768px – 1024px)
+   Hanya memperbaiki isu touch & layout untuk layar tablet.
+   Tidak mempengaruhi desktop (>1024px) maupun mobile (<768px).
+   ================================================================ */
+@media (min-width: 768px) and (max-width: 1024px) {
+
+    /* ── Session actions: tablet adalah touch device, tidak ada hover ── */
+    .session-actions {
+        opacity: 1;
+    }
+
+    /* Tap target lebih besar untuk tombol aksi session */
+    .session-action-btn {
+        width: 30px;
+        height: 30px;
+    }
+
+    /* Session item: sedikit lebih tinggi untuk jari */
+    .session-item {
+        padding: 11px 10px;
+    }
+
+    /* ── Tabel: momentum scroll di iPad Safari ── */
+    .hr-table-wrapper-enhanced {
+        -webkit-overflow-scrolling: touch;
+        overflow-x: auto;
+    }
+
+    .msg.bot .bubble table {
+        display: block;
+        width: 100%;
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+    }
+
+    .msg.bot .bubble pre {
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+    }
+
+    /* ── Landing page: 4 kolom terlalu sempit di iPad + sidebar 288px ── */
+    /* Sidebar (288px) + konten = ~480–736px → 2 kolom lebih nyaman */
+    #landing .grid.grid-cols-2 {
+        grid-template-columns: repeat(2, 1fr);
+    }
+
+    /* ── Call mode: transkrip + visualizer di layar 768px ── */
+    /* Kecilkan aside agar visualizer punya ruang cukup */
+    #callModeOverlay > aside {
+        width: 260px;
+        flex-shrink: 0;
+    }
+
+    /* ── Schema modal: tetap centered (bukan bottom sheet) ── */
+    /* Desktop behavior sudah benar, pastikan tidak ter-override mobile rule */
+    .schema-modal-container {
+        width: 680px;
+        max-width: calc(100vw - 2rem);
+        border-radius: 20px;
+        max-height: 85vh;
+    }
+
+    /* ── Chat input area: sedikit lebih compact ── */
+    .chat-input-area {
+        padding-left: 1.5rem;
+        padding-right: 1.5rem;
+    }
+
+    /* ── Visualization chart selection: 2 kolom di tablet ── */
+    .viz-rec-grid {
+        grid-template-columns: repeat(2, 1fr);
+    }
+
+    /* ── HR Stat cards: pastikan tidak overflow ── */
+    .hr-stat-card {
+        min-width: 0;
+    }
+
+    /* ── Feedback text: tampilkan di tablet (cukup lebar) ── */
+    .feedback-text {
+        display: inline;
+    }
+
+}
+
+
+/* ================================================================
    TAMBAHAN: Layar sangat kecil (≤360px seperti Galaxy A series)
    ================================================================ */
 @media (max-width: 360px) {

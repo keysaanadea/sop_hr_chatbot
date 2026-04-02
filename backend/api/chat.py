@@ -20,6 +20,7 @@ from backend.services.tts_service import TTSService
 from backend.services.stt_service import STTService
 from backend.services.evaluator import evaluate_interaction_background
 from backend.utils.text_utils import clean_text_for_tts
+from backend.limiter import limiter
 
 from memory.memory_hybrid import (
     get_hybrid_history, 
@@ -51,6 +52,7 @@ class FeedbackRequest(BaseModel):
 
 
 @router.post("/ask", response_model=QuestionResponse)
+@limiter.limit("15/minute")
 async def ask_question(
     request: Request,
     req: QuestionRequest,
@@ -293,6 +295,7 @@ async def process_question_with_cancellation(
 
 
 @router.post("/ask/stream")
+@limiter.limit("15/minute")
 async def ask_question_stream(
     request: Request,
     req: QuestionRequest,
@@ -556,6 +559,7 @@ async def ask_question_stream(
 
 
 @router.post("/call/process")
+@limiter.limit("5/minute")
 async def call_mode_natural(
     request: Request,
     audio_file: UploadFile = File(...),

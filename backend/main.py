@@ -8,20 +8,24 @@ import socket
 import logging
 
 # =========================================================================
-# 🚀 MAGIC FIX: OBAT ANTI-HANG OPENAI API (KASUS MAC/IPV6)
-# Memaksa seluruh koneksi Python keluar menggunakan IPv4.
-# Menghilangkan delay 15 detik di setiap pemanggilan LLM.
+# MAGIC FIX: OBAT ANTI-HANG OPENAI API (KASUS MAC/IPV6)
+# Hanya aktif di environment development (Mac/lokal).
+# Di production (Linux), patch ini tidak diperlukan dan dinonaktifkan.
 # =========================================================================
-old_getaddrinfo = socket.getaddrinfo
-def new_getaddrinfo(*args, **kwargs):
-    responses = old_getaddrinfo(*args, **kwargs)
-    # Filter hanya jalur IPv4 (AF_INET)
-    return [response for response in responses if response[0] == socket.AF_INET]
-socket.getaddrinfo = new_getaddrinfo
+import os as _os
+if _os.getenv("ENVIRONMENT", "development") == "development":
+    old_getaddrinfo = socket.getaddrinfo
+    def new_getaddrinfo(*args, **kwargs):
+        responses = old_getaddrinfo(*args, **kwargs)
+        return [response for response in responses if response[0] == socket.AF_INET]
+    socket.getaddrinfo = new_getaddrinfo
 # =========================================================================
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from slowapi import _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
+from backend.limiter import limiter
 
 # ✅ FIX BUG: Import dari config tanpa sys.path hack
 import os
@@ -50,10 +54,14 @@ logger = logging.getLogger(__name__)
 
 # Initialize FastAPI app
 app = FastAPI(
-    title="DENAI - AI Assistant API", 
-    version="8.1.0",  # ✅ BUMPED: Added Schema Explorer feature
+    title="DENAI - AI Assistant API",
+    version="8.1.0",
     description="Modular FastAPI application with Universal Analytics Architecture + Schema Explorer"
 )
+
+# Setup rate limiter
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 # Add CORS middleware
 # Set ALLOWED_ORIGINS in .env for production, e.g.: ALLOWED_ORIGINS=https://yourdomain.com

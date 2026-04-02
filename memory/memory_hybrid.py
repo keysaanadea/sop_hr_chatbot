@@ -9,7 +9,20 @@ from typing import List, Dict, Any
 
 from app.config import UPSTASH_REDIS_URL, UPSTASH_REDIS_TOKEN
 
+import re
+
 logger = logging.getLogger(__name__)
+
+def _strip_html_payload(content: str) -> str:
+    """Buang hidden payload span dan HTML tags sebelum disimpan ke Redis cache.
+    Tujuan: mengecilkan ukuran entry Redis agar tidak bengkak dengan full HTML response."""
+    if not content:
+        return content
+    # Buang <span class="denai-hidden-payload" ...> yang berisi encoded JSON besar
+    content = re.sub(r'<span[^>]*denai-hidden-payload[^>]*>.*?</span>', '', content, flags=re.DOTALL)
+    # Buang semua HTML tags lainnya, sisakan teks bersih
+    content = re.sub(r'<[^>]+>', '', content)
+    return content.strip()
 
 # ---------------------------------------------------------
 # 1. INIT SUPABASE (Async Wrappers)
@@ -46,7 +59,17 @@ except Exception as e:
 # ---------------------------------------------------------
 
 async def setup_hybrid_session(session_id: str, initial_message: str):
-    """Membantu inisialisasi session pertama kali di Supabase"""
+    """Membantu inisialisasi session pertama kali di Supabase.
+    Cek Redis dulu — kalau sudah ada history, session pasti sudah terbuat, skip Supabase."""
+    # Kalau Redis sudah ada history untuk session ini, session sudah terbuat — skip Supabase
+    if REDIS_AVAILABLE:
+        try:
+            exists = await redis_client.exists(f"chat:{session_id}")
+            if exists:
+                return
+        except Exception:
+            pass
+
     if MEMORY_AVAILABLE:
         history = await get_recent_history_async(session_id, limit=1)
         if not history:
@@ -101,8 +124,9 @@ async def save_hybrid_message(session_id: str, role: str, content: str, **kwargs
     if REDIS_AVAILABLE:
         async def save_to_redis():
             try:
-                msg_obj = {"role": role, "message": content}
+                msg_obj = {"role": role, "message": _strip_html_payload(content)}
                 await redis_client.rpush(f"chat:{session_id}", json.dumps(msg_obj))
+                await redis_client.ltrim(f"chat:{session_id}", -20, -1)  # cap list 20 pesan terakhir
                 await redis_client.expire(f"chat:{session_id}", 86400)
             except Exception as e:
                 logger.error(f"❌ Redis Save Error: {e}")

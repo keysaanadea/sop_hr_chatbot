@@ -2,7 +2,8 @@
 # ENV & SECRETS
 # ======================
 .env
-.env.backup
+.env.*
+!.env.example
 
 # ======================
 # DATA SENSITIVE
@@ -27,7 +28,7 @@ web/tailwindcss
 complete_enterprise_evaluation_results/
 logs/
 cache/
-logs/
+
 # ======================
 # NODE
 # ======================
@@ -37,10 +38,14 @@ node_modules/
 # PYTHON
 # ======================
 __pycache__/
+**/__pycache__/
 *.pyc
 *.pyo
 *.pyd
-.DS_Store
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
 
 # ======================
 # VIRTUAL ENV
@@ -55,17 +60,25 @@ venv-camelot/
 *.bak
 rag_engine.py.backup.*
 testing/
-
 evaluation/
 scripts/
+
 # ======================
 # DEBUG FILES
 # ======================
-
 test_db.py
 test_network.py
 thinking-demo.html
 zilliz-cloud-Free-01-username-password.txt
 
+# ======================
+# OS FILES
+# ======================
 .DS_Store
+**/.DS_Store
+Thumbs.db
+
+# ======================
+# CLAUDE CODE
+# ======================
 .claude/

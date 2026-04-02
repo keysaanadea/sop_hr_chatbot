@@ -218,10 +218,9 @@ function _createStreamingBubble() {
 
 function _finalizeStreamingBubble(bubble, fullAnswer, traceId) {
   if (!bubble) return null;
-  const cleaned = fullAnswer.replace(/\*\*(.*?)\*\*/g, "<strong>$1</strong>");
   bubble.innerHTML = window.CoreApp?._renderBotBubbleContent
-    ? window.CoreApp._renderBotBubbleContent(cleaned)
-    : cleaned;
+    ? window.CoreApp._renderBotBubbleContent(fullAnswer)
+    : fullAnswer;
 
   const msgDiv = bubble.closest(".msg");
   const chatColumn = bubble.closest(".chat-column") || msgDiv;

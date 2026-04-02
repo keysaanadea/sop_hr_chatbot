@@ -627,7 +627,7 @@ function _renderBotBubbleContent(text) {
   if (isNotFound) {
     return _buildNotFoundCard(text);
   }
-  return text;
+  return (typeof marked !== 'undefined') ? marked.parse(text) : text;
 }
 
 /**

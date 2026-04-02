@@ -146,11 +146,11 @@ function _applyRoleSwitcherUI(role) {
   const pill1 = document.getElementById('suggestionPill1');
   if (pill1) {
     if (isHRMode) {
-      pill1.textContent = '• Berapa jumlah karyawan di SIG?';
+      pill1.textContent = 'Berapa jumlah karyawan di SIG?';
       pill1.onclick = () => { document.getElementById('landingInput').value = 'Berapa jumlah karyawan di SIG?'; startFromLanding(); };
     } else {
-      pill1.textContent = '• Apa saja hak karyawan kontrak?';
-      pill1.onclick = () => { document.getElementById('landingInput').value = 'Apa saja hak karyawan kontrak?'; startFromLanding(); };
+      pill1.textContent = 'Maksimal PJK';
+      pill1.onclick = () => { document.getElementById('landingInput').value = 'Berapa maksimal pasang Pakaian Kerja Lapangan yang diberikan perusahaan kepada karyawan dalam 1 tahun?'; startFromLanding(); };
     }
   }
 }

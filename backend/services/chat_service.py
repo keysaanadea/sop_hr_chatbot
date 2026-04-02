@@ -240,15 +240,22 @@ class ChatService:
         ])
 
         prompt = f"""Diberikan riwayat percakapan berikut dan pertanyaan lanjutan dari pengguna.
-Tugasmu: tulis ulang pertanyaan lanjutan menjadi pertanyaan mandiri (standalone) yang jelas tanpa perlu membaca riwayat.
+Tugasmu: tulis ulang pertanyaan lanjutan menjadi pertanyaan mandiri (standalone) yang lengkap dan jelas tanpa perlu membaca riwayat.
 
 ATURAN WAJIB:
-- Klarifikasi subjek/objek yang ambigu (kata ganti seperti "ini", "itu", "nya", "peraturan ini") menggunakan konteks dari history
-- BOLEH menyebutkan nama dokumen/SKD yang sedang dibahas dalam history HANYA jika pertanyaan secara eksplisit merujuk ke "peraturan ini", "aturan ini", "dokumen ini", atau sejenisnya
-- DILARANG menambahkan "menurut SKD X" atau nama dokumen apapun jika pertanyaan tidak menyebut atau merujuk ke dokumen tertentu — pertanyaan faktual umum seperti "apa kepanjangan dari X" tidak perlu dikaitkan ke dokumen spesifik
-- DILARANG mengubah maksud atau scope pertanyaan (contoh: jangan tambah "yang sudah pensiun" jika user tidak menyebutnya)
-- DILARANG menambahkan asumsi yang sama sekali tidak ada di history maupun pertanyaan
-- Jika pertanyaan sudah jelas dan tidak ada referensi ambigu, kembalikan PERSIS seperti aslinya
+- WAJIB inject konteks penting dari history ke dalam pertanyaan, terutama:
+  * Kota asal dan kota tujuan perjalanan dinas (misal: "dari Jakarta ke Gresik")
+  * Jarak perjalanan jika disebutkan (misal: "781 km")
+  * Band/level jabatan karyawan jika disebutkan sebelumnya
+  * Topik yang sedang dibahas (misal: lembur, cuti, UPD)
+- Klarifikasi kata ganti ambigu ("ini", "itu", "nya") menggunakan konteks dari history
+- DILARANG menambahkan nama dokumen/SKD kecuali user memang merujuk ke dokumen tertentu
+- DILARANG mengubah maksud atau scope pertanyaan
+- DILARANG menambahkan informasi yang sama sekali tidak ada di history maupun pertanyaan
+
+Contoh:
+- History: "perjalanan dinas ke Gresik dari Jakarta (781 km)" | Follow-up: "totalkan UPD 5 hari Band 2"
+  → Mandiri: "Totalkan UPD perjalanan dinas dari Jakarta ke Gresik (781 km) selama 5 hari untuk Band 2"
 
 Riwayat Percakapan:
 {context_text}

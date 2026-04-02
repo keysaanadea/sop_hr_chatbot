@@ -218,24 +218,8 @@ class ChatService:
             logger.info(f"⚡ SKIP paraphrase: No history")
             return current_question
         
-        # Check for ambiguous patterns
-        ambiguous_patterns = [
-            'ini', 'itu', 'nya', 'dia', 'mereka', 'tersebut', 'yang tadi',
-            'it', 'that', 'this', 'they', 'he', 'she', 'them',
-            'peraturan ini', 'aturan ini', 'kebijakan ini', 'dokumen ini'
-        ]
-        
-        question_lower = current_question.lower()
-        has_ambiguity = any(pattern in question_lower for pattern in ambiguous_patterns)
-        
-        # If question is long (>8 words) and has no ambiguous references → skip!
-        word_count = len(current_question.split())
-        if not has_ambiguity and word_count > 8:
-            logger.info(f"⚡ SKIP paraphrase: Question clear ({word_count} words, no ambiguity)")
-            return current_question
-        
-        # Otherwise, paraphrase
-        logger.info(f"🔄 NEED paraphrase: Ambiguous or short ({word_count} words)")
+        # Always contextualize when history exists — let the LLM decide if context is needed
+        logger.info(f"🔄 Contextualizing with history ({len(history)} messages)")
         return await self._contextualize_query(current_question, history)
 
     async def _contextualize_query(

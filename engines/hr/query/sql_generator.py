@@ -341,6 +341,8 @@ Berikan penjelasan logikanya dalam format HTML tersebut:"""
         """
         Enhanced cleaning untuk Indonesian natural language generated SQL
         """
+        import re
+
         # Remove markdown code blocks
         sql = sql.replace("```sql", "").replace("```", "").strip()
         
@@ -374,6 +376,9 @@ Berikan penjelasan logikanya dalam format HTML tersebut:"""
         if 'hr.' not in sql.lower() and 'FROM' in sql_upper:
             self.logger.warning("Generated SQL may not use hr schema properly")
         
+        # Auto-fix OVER without parentheses (e.g. LLM writes "OVER" instead of "OVER ()")
+        sql = re.sub(r'\bOVER\b(?!\s*\()', 'OVER ()', sql, flags=re.IGNORECASE)
+
         # Validate window function syntax if present
         if 'OVER' in sql_upper:
             self._validate_window_functions(sql)
@@ -388,18 +393,13 @@ Berikan penjelasan logikanya dalam format HTML tersebut:"""
         """
         Validate window function syntax untuk analytical queries
         """
-        sql_upper = sql.upper()
-        
-        if 'OVER' in sql_upper:
-            # Ensure parentheses balance for OVER clauses
-            over_positions = [i for i, _ in enumerate(sql_upper) if sql_upper[i:i+4] == 'OVER']
-            
-            for pos in over_positions:
-                # Find the opening parenthesis after OVER
-                remaining = sql[pos+4:].strip()
-                if not remaining.startswith('('):
-                    raise ValueError("Window function OVER clause must be followed by parentheses")
-        
+        import re
+        # Match OVER as a standalone keyword (not inside a word like MOREOVER/TURNOVER)
+        # After auto-fix in _clean_sql, all OVER should already have parentheses
+        over_without_paren = re.search(r'\bOVER\b(?!\s*\()', sql, flags=re.IGNORECASE)
+        if over_without_paren:
+            raise ValueError("Window function OVER clause must be followed by parentheses")
+
         self.logger.debug("✅ Window function validation passed")
     
     def analyze_indonesian_intent(self, question: str) -> Dict[str, Any]:

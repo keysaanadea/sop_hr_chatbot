@@ -341,27 +341,32 @@ async def ask_question_stream(
             await setup_hybrid_session(req.session_id, req.question)
 
             # Intent classification — only for greeting/casual_chat detection
-            from backend.services.chat_service import classify_intent_unified
+            from backend.services.chat_service import (
+                classify_intent_unified,
+                GREETING_RESPONSE,
+                CASUAL_CHAT_RESPONSE,
+            )
             intent = await classify_intent_unified(req.question, history)
 
             is_hr_user = user_role.lower() in ['hr', 'admin', 'manager']
 
-            # Handle greeting / casual_chat the same for everyone
+            # Handle greeting / casual_chat — return template directly, skip RAG entirely
             if intent in ("greeting", "casual_chat"):
-                result = await chat_service.process_question(
-                    question=req.question, user_role=user_role,
-                    session_id=req.session_id, history=history, mode="chat",
-                    cancellation_check=lambda: request.is_disconnected(),
-                )
-                answer = result.get("answer", "")
+                answer = GREETING_RESPONSE if intent == "greeting" else CASUAL_CHAT_RESPONSE
                 if _lf_span:
                     try:
                         _lf_span.update(output={"answer": answer[:500]})
-                        result["trace_id"] = _lf_span.trace_id
-                    except Exception: pass
+                    except Exception:
+                        pass
                 await save_hybrid_message(req.session_id, "user", req.question)
                 await save_hybrid_message(req.session_id, "assistant", answer)
-                yield f"data: {json.dumps({'type': 'done', 'answer': answer, 'session_id': req.session_id, 'authorized': True, 'trace_id': result.get('trace_id')})}\n\n"
+                trace_id = None
+                if _lf_span:
+                    try:
+                        trace_id = _lf_span.trace_id
+                    except Exception:
+                        pass
+                yield f"data: {json.dumps({'type': 'done', 'answer': answer, 'session_id': req.session_id, 'authorized': True, 'trace_id': trace_id})}\n\n"
                 return
 
             # ── HR user: always A+B parallel ────────────────────────────────

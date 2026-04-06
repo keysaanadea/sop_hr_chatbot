@@ -123,15 +123,8 @@ function initializeSpeechRecognition() {
         } else if (currentInput && window.CoreApp) {
           window.CoreApp.isVoiceToTextMode = true;
           window.CoreApp.isTextOnlyMode = false;
-          
           currentInput.value = finalTranscript.trim();
-          setTimeout(() => {
-            if (currentInput === window.CoreApp.landingInput) {
-              if (typeof startFromLanding === "function") startFromLanding();
-            } else {
-              if (typeof sendMessage === "function") sendMessage();
-            }
-          }, 500);
+          stopRecognition();
         }
         
         // Reset timer
@@ -215,7 +208,7 @@ function restartCallListening() {
 
 function updateSpeechUI(isActive) {
   if (!window.isCallModeActive) {
-    document.querySelectorAll('.speech-btn').forEach(btn => {
+    document.querySelectorAll('.speech-btn, .input-icon-btn, .landing-voice-btn').forEach(btn => {
       if (isActive && btn === currentSpeechButton) {
         btn.classList.add('listening');
       } else if (!isActive) {

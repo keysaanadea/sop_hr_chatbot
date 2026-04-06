@@ -1,105 +1,32 @@
-/* ================= ENHANCED CALL CONTROL BUTTONS ================= */
-
+/* ================= SECONDARY CALL CONTROL BUTTONS ================= */
 .call-control-btn {
-    border-radius: 50%;
-    border: none;
-    cursor: pointer;
     display: flex;
     align-items: center;
-    justify-content: center;
-    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-    color: #fff;
-    position: relative;
-    overflow: hidden;
+    gap: 6px;
+    padding: 8px 14px;
+    border: none;
+    border-radius: 999px;
+    background: transparent;
+    color: #5b403d;
+    font-size: 12px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    font-family: 'Plus Jakarta Sans', sans-serif;
+}
+.call-control-btn:hover {
+    background: rgba(255,255,255,0.8);
+    color: #b7131a;
 }
 
-/* Secondary Buttons (Mute, Skip, dll) with Frosted Glass styling */
-.call-control-btn.mute, 
-.call-control-btn.skip {
-    width: 64px; 
-    height: 64px;
-    background: rgba(255, 255, 255, 0.1);
-    border: 1px solid rgba(255, 255, 255, 0.2);
-    backdrop-filter: blur(12px);
-    -webkit-backdrop-filter: blur(12px);
-}
-
-.call-control-btn.mute:hover, 
-.call-control-btn.skip:hover {
-    background: rgba(255, 255, 255, 0.2);
-    transform: scale(1.05);
-}
-
-/* Active State for Mute */
-.call-control-btn.mute.active {
-    background: #ffffff;
-    color: #111827;
-}
-
-/* Mute Button Icon Toggle */
+/* Mute icon toggle */
 .call-control-btn.mute .icon-unmuted { display: block; }
-.call-control-btn.mute .icon-muted { display: none; }
-
+.call-control-btn.mute .icon-muted   { display: none; }
 .call-control-btn.mute.active .icon-unmuted { display: none; }
-.call-control-btn.mute.active .icon-muted { display: block; }
-
-/* 6. BUTTON DEPTH (Primary End Call Button) */
-.call-control-btn.end-call {
-    width: 88px; 
-    height: 88px;
-    background: #ef4444; 
-    /* Inner and outer shadow for 3D depth */
-    box-shadow: 0 10px 30px rgba(239, 68, 68, 0.4), inset 0 2px 0 rgba(255,255,255,0.2);
-    border: 1px solid rgba(255,255,255,0.1);
-    z-index: 10;
-}
-
-.call-control-btn.end-call:hover {
-    background: #dc2626;
-    transform: scale(1.05);
-    box-shadow: 0 15px 40px rgba(220, 38, 38, 0.5), inset 0 2px 0 rgba(255,255,255,0.1);
-}
-
-.call-control-btn.end-call:active {
-    transform: scale(0.95);
-}
-
-/* ================= ICON SIZES ================= */
-.call-control-btn svg {
-    width: 28px;
-    height: 28px;
-    transition: transform 0.2s ease;
-}
-
-.call-control-btn.end-call svg {
-    width: 40px;
-    height: 40px;
-}
-
-.call-control-btn:hover svg {
-    transform: scale(1.1);
-}
-
-/* ================= RESPONSIVE ================= */
-@media (max-width: 768px) {
-    .call-control-btn.mute, 
-    .call-control-btn.skip {
-        width: 56px;
-        height: 56px;
-    }
-    
-    .call-control-btn.end-call {
-        width: 76px;
-        height: 76px;
-    }
-    
-    .call-control-btn svg {
-        width: 24px;
-        height: 24px;
-    }
-    
-    .call-control-btn.end-call svg {
-        width: 32px;
-        height: 32px;
-    }
+.call-control-btn.mute.active .icon-muted   { display: block; }
+.call-control-btn.mute.active {
+    color: #b7131a;
+    background: rgba(183,19,26,0.06);
 }

@@ -695,12 +695,13 @@ Balas HANYA dengan JSON valid:
                 return None  # A failed → caller shows "Akses Terbatas" for B-only content
             return {"mode": "a_only", "result_a": result_a, "standalone_question": standalone_question}
 
-        # HR users: always run A+B in parallel — no orchestrator needed
-        run_a = True
-        run_b = True
-        query_for_a = standalone_question
-        query_for_b = standalone_question
-        logger.info(f"🧭 [STREAM ORCHESTRATOR] run_a=True | run_b=True (always parallel) | A: {query_for_a[:50]} | B: {query_for_b[:50]}")
+        # HR users: use orchestrator to decompose query — A gets policy question, B gets pure data question
+        decomposed = await self._decompose_query(standalone_question)
+        run_a = decomposed["run_a"]
+        run_b = decomposed["run_b"]
+        query_for_a = decomposed["query_a"] or standalone_question
+        query_for_b = decomposed["query_b"] or standalone_question
+        logger.info(f"🧭 [STREAM ORCHESTRATOR] run_a={run_a} | run_b={run_b} | A: {query_for_a[:50]} | B: {query_for_b[:50]}")
 
         from app.tools import search_sop, query_hr_database, StructuredResponse as _SR
 
@@ -740,20 +741,27 @@ Balas HANYA dengan JSON valid:
                 return _process_b_result(raw, query_for_b)
 
         logger.info(f"⚡ [STREAM A+B] Direct tool calls: A={query_for_a[:40]} | B={query_for_b[:40]}")
-        raw_results = await asyncio.gather(
-            asyncio.create_task(_run_route_a()),
-            asyncio.create_task(_run_route_b_parallel()),
-            return_exceptions=True,
-        )
-        result_a, result_b = raw_results
+
+        tasks = []
+        if run_a:
+            tasks.append(asyncio.create_task(_run_route_a()))
+        if run_b:
+            tasks.append(asyncio.create_task(_run_route_b_parallel()))
+
+        raw_results = await asyncio.gather(*tasks, return_exceptions=True)
+        idx = 0
+        result_a = raw_results[idx] if run_a else {"answer": "", "authorized": True}
+        if run_a:
+            idx += 1
+        result_b = raw_results[idx] if run_b else {"error": "not_run", "answer": "", "authorized": True}
 
         if isinstance(result_a, Exception):
             result_a = {"error": str(result_a), "answer": "maaf, terjadi kesalahan", "authorized": True}
         if isinstance(result_b, Exception):
             result_b = {"error": str(result_b), "answer": "maaf, terjadi kesalahan", "authorized": True}
 
-        a_failed = self._is_failure(result_a)
-        b_failed = self._is_failure(result_b)
+        a_failed = self._is_failure(result_a) if run_a else True
+        b_failed = self._is_failure(result_b) if run_b else True
 
         # If both failed → caller falls back to process_question
         if a_failed and b_failed:

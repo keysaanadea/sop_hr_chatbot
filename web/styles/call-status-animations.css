@@ -128,14 +128,285 @@
     50%       { opacity: 0; }
 }
 
-/* ================= LIVE TRANSCRIPT LOG (Light Theme) ================= */
+/* ================================================================
+   CALL MODE — FULLSCREEN LAYOUT
+   ================================================================ */
+
+/* Left panel: fills remaining space */
+.call-left-panel {
+    flex: 1 1 0;
+    height: 100%;
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    background: #f8f9fc;
+    background-image: radial-gradient(circle at 50% 50%, rgba(183,19,26,0.04), transparent 70%);
+    overflow: hidden;
+}
+
+/* Right panel: fixed 380px */
+.call-right-panel {
+    width: 380px;
+    flex-shrink: 0;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    background: rgba(242,243,246,0.95);
+    border-left: 1px solid rgba(228,190,185,0.18);
+}
+
+/* ================= STATUS PILL ================= */
+.call-status-pill {
+    position: absolute;
+    top: 2rem;
+    left: 50%;
+    transform: translateX(-50%);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background: rgba(255,255,255,0.65);
+    border: 1px solid rgba(255,255,255,0.85);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    padding: 6px 18px;
+    border-radius: 999px;
+    box-shadow: 0 2px 8px rgba(25,28,30,0.06);
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: #5b403d;
+    white-space: nowrap;
+}
+.call-status-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: #22c55e;
+    flex-shrink: 0;
+    animation: statusDotPulse 1.5s ease-in-out infinite;
+}
+@keyframes statusDotPulse {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50%       { opacity: 0.6; transform: scale(1.25); }
+}
+
+/* ================= CENTER CONTENT ================= */
+.call-center-content {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 2rem;
+    width: 100%;
+    max-width: 560px;
+    padding: 0 2rem;
+}
+
+/* ================= LAST INPUT GLASS CARD ================= */
+.call-last-input-card {
+    width: 100%;
+    text-align: center;
+    padding: 1.25rem 2rem;
+    border-radius: 1.75rem;
+    background: rgba(255,255,255,0.65);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border: 1px solid rgba(255,255,255,0.8);
+    box-shadow: 0 8px 32px rgba(25,28,30,0.06), inset 0 1px 0 rgba(255,255,255,0.9);
+}
+.call-last-input-label {
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: rgba(91,64,61,0.4);
+    margin-bottom: 6px;
+}
+.call-last-input-text {
+    font-size: 15px;
+    font-weight: 500;
+    font-style: italic;
+    color: #191c1e;
+    opacity: 0.8;
+    line-height: 1.5;
+    min-height: 1.5rem;
+}
+
+/* ================= WAVEFORM ================= */
+.call-waveform {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 5px;
+    height: 110px;
+}
+
+/* ================= STATE INDICATOR ================= */
+.call-state-indicator {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+}
+.call-state-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+.call-state-name {
+    font-size: 22px;
+    font-weight: 600;
+    color: #191c1e;
+    letter-spacing: -0.02em;
+}
+.call-state-dots {
+    display: flex;
+    gap: 4px;
+    align-items: center;
+}
+.call-state-sub {
+    font-size: 13px;
+    color: rgba(91,64,61,0.55);
+    font-weight: 500;
+    min-height: 1.2rem;
+}
+
+/* ================= THINKING DOTS ANIMATION ================= */
+@keyframes thinkingBounce {
+    0%, 80%, 100% { transform: translateY(0); opacity: 0.4; }
+    40%           { transform: translateY(-6px); opacity: 1; }
+}
+.call-thinking-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: #b7131a;
+    animation: thinkingBounce 1.2s ease-in-out infinite;
+}
+
+/* ================= TIMER ================= */
+.call-timer-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-top: 1.5rem;
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: rgba(91,64,61,0.4);
+}
+
+/* ================= BOTTOM CONTROLS ================= */
+.call-bottom-controls {
+    position: absolute;
+    bottom: 2.5rem;
+    left: 50%;
+    transform: translateX(-50%);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 14px;
+}
+.call-end-btn {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 14px 36px;
+    background: linear-gradient(135deg, #b7131a, #db322f);
+    color: #fff;
+    font-size: 15px;
+    font-weight: 700;
+    border: none;
+    border-radius: 1rem;
+    cursor: pointer;
+    box-shadow: 0 8px 24px rgba(183,19,26,0.3), inset 0 1px 0 rgba(255,255,255,0.15);
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+    white-space: nowrap;
+    font-family: 'Plus Jakarta Sans', sans-serif;
+}
+.call-end-btn:hover  { transform: scale(1.04); box-shadow: 0 12px 32px rgba(183,19,26,0.4); }
+.call-end-btn:active { transform: scale(0.97); }
+
+.call-secondary-controls {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 6px 8px;
+    background: rgba(255,255,255,0.72);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border: 1px solid rgba(255,255,255,0.6);
+    border-radius: 999px;
+    box-shadow: 0 2px 12px rgba(25,28,30,0.08);
+}
+.call-ctrl-divider {
+    width: 1px;
+    height: 16px;
+    background: rgba(228,190,185,0.4);
+    margin: 0 2px;
+}
+
+/* ================= TRANSCRIPT PANEL ================= */
+.call-transcript-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 1.25rem 1.5rem;
+    border-bottom: 1px solid rgba(228,190,185,0.15);
+    background: rgba(255,255,255,0.5);
+    flex-shrink: 0;
+}
+.call-transcript-title {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 14px;
+    font-weight: 700;
+    color: #191c1e;
+}
+.call-live-badge {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: rgba(91,64,61,0.5);
+}
+.call-live-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: #22c55e;
+    animation: statusDotPulse 1.5s ease-in-out infinite;
+}
+.call-transcript-footer {
+    padding: 0.875rem 1.5rem;
+    border-top: 1px solid rgba(228,190,185,0.12);
+    background: rgba(255,255,255,0.3);
+    flex-shrink: 0;
+    font-size: 10px;
+    text-align: center;
+    color: rgba(91,64,61,0.4);
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+
+/* ================= LIVE TRANSCRIPT LOG ================= */
+
+/* ================= LIVE TRANSCRIPT LOG ================= */
 .call-transcript-log {
     width: 100%;
     overflow-y: auto;
     display: flex;
     flex-direction: column;
-    gap: 1rem;
-    padding: 0 0.25rem;
+    gap: 1.25rem;
     scrollbar-width: thin;
     scrollbar-color: #e7e8eb transparent;
 }
@@ -145,24 +416,28 @@
 .call-transcript-hint {
     color: #9CA3AF;
     font-size: 13px;
-    text-align: center;
     font-style: italic;
-    padding: 0.5rem 0;
 }
 
+/* Transcript entry — fade-up animation */
+@keyframes transcriptFadeIn {
+    from { opacity: 0; transform: translateY(8px); }
+    to   { opacity: 1; transform: translateY(0); }
+}
 .transcript-line {
     display: flex;
     flex-direction: column;
-    gap: 0.25rem;
+    gap: 0.3rem;
     animation: transcriptFadeIn 0.3s ease;
 }
-@keyframes transcriptFadeIn {
-    from { opacity: 0; transform: translateY(6px); }
-    to   { opacity: 1; transform: translateY(0); }
-}
-
 .transcript-line .t-icon { display: none; }
 
+/* Meta row (label + timestamp) */
+.transcript-line .t-meta {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
 .transcript-line .t-label {
     font-size: 10px;
     font-weight: 700;
@@ -170,85 +445,133 @@
     text-transform: uppercase;
     line-height: 1;
 }
-.transcript-line .t-text {
-    font-size: 14px;
-    line-height: 1.6;
+.transcript-line .t-time {
+    font-size: 10px;
+    color: #9CA3AF;
+    font-weight: 500;
 }
 
-/* User — label abu muted, teks italic */
-.transcript-line.user .t-label { color: #9CA3AF; }
-.transcript-line.user .t-text  { color: #5b403d; font-style: italic; }
+/* Bubble text */
+.transcript-line .t-text {
+    font-size: 13.5px;
+    line-height: 1.6;
+    padding: 0.6rem 0.875rem;
+    border-radius: 1rem;
+    max-width: 90%;
+}
 
-/* AI — card putih bersih, shadow tipis, label merah kecil */
+/* USER — right-aligned italic bubble */
+.transcript-line.user {
+    align-items: flex-end;
+}
+.transcript-line.user .t-meta { flex-direction: row-reverse; }
+.transcript-line.user .t-label { color: #9CA3AF; }
+.transcript-line.user .t-text {
+    background: #f2f3f6;
+    border: 1px solid rgba(228,190,185,0.2);
+    color: #5b403d;
+    font-style: italic;
+    border-radius: 1rem 1rem 0.25rem 1rem;
+}
+
+/* AI — left-aligned white card bubble */
 .transcript-line.ai {
-    background: #ffffff;
-    border: 1px solid #f0f1f4;
-    border-radius: 10px;
-    padding: 0.625rem 0.875rem;
-    box-shadow: 0 2px 8px rgba(25,28,30,0.05);
+    align-items: flex-start;
 }
 .transcript-line.ai .t-label { color: #b7131a; }
-.transcript-line.ai .t-text  { color: #191c1e; font-weight: 500; }
+.transcript-line.ai .t-text {
+    background: #ffffff;
+    border: 1px solid rgba(25,28,30,0.06);
+    box-shadow: 0 2px 8px rgba(25,28,30,0.05);
+    color: #191c1e;
+    border-radius: 1rem 1rem 1rem 0.25rem;
+    font-weight: normal;
+    max-width: 100%;
+    width: 100%;
+}
+
+/* Markdown rendered inside AI transcript bubble */
+.transcript-line.ai .t-text h1,
+.transcript-line.ai .t-text h2,
+.transcript-line.ai .t-text h3 {
+    font-size: 13px;
+    font-weight: 700;
+    color: #b7131a;
+    margin: 0.5rem 0 0.25rem;
+}
+.transcript-line.ai .t-text p {
+    margin: 0.35rem 0;
+    line-height: 1.6;
+}
+.transcript-line.ai .t-text ul,
+.transcript-line.ai .t-text ol {
+    padding-left: 1.25rem;
+    margin: 0.35rem 0;
+}
+.transcript-line.ai .t-text li {
+    margin: 0.2rem 0;
+    line-height: 1.5;
+}
+.transcript-line.ai .t-text strong { font-weight: 700; }
+.transcript-line.ai .t-text em     { font-style: italic; }
 
 /* ================= WAVEFORM ANIMATION ================= */
-
-/* Idle — pelan, amplitudo kecil */
 @keyframes waveIdle {
-    0%, 100% { transform: scaleY(0.25); opacity: 0.35; }
-    50%       { transform: scaleY(0.6);  opacity: 0.6;  }
+    0%, 100% { transform: scaleY(0.2); opacity: 0.3; }
+    50%       { transform: scaleY(0.5); opacity: 0.55; }
 }
-/* User berbicara — sedang, amplitudo medium */
 @keyframes waveListen {
-    0%, 100% { transform: scaleY(0.4); opacity: 0.6; }
-    50%       { transform: scaleY(1.0); opacity: 1.0; }
-}
-/* Bot berbicara — cepat, amplitudo besar */
-@keyframes waveSpeak {
     0%, 100% { transform: scaleY(0.35); opacity: 0.55; }
-    50%       { transform: scaleY(1.15); opacity: 1.0;  }
+    50%       { transform: scaleY(1.0);  opacity: 1.0; }
+}
+@keyframes waveSpeak {
+    0%, 100% { transform: scaleY(0.3); opacity: 0.5; }
+    50%       { transform: scaleY(1.1); opacity: 1.0; }
 }
 
 .audio-bar {
-    width: 4px;
+    width: 5px;
     border-radius: 999px;
-    transform-origin: center bottom;
+    background: var(--primary, #b7131a);
+    transform-origin: center;
     animation: waveIdle 2s ease-in-out infinite;
 }
 
-/* nth-child delays — spread 21 bars */
-.audio-bar:nth-child(1)  { animation-delay: 0s;      }
-.audio-bar:nth-child(2)  { animation-delay: 0.10s;   }
-.audio-bar:nth-child(3)  { animation-delay: 0.20s;   }
-.audio-bar:nth-child(4)  { animation-delay: 0.30s;   }
-.audio-bar:nth-child(5)  { animation-delay: 0.40s;   }
-.audio-bar:nth-child(6)  { animation-delay: 0.50s;   }
-.audio-bar:nth-child(7)  { animation-delay: 0.40s;   }
-.audio-bar:nth-child(8)  { animation-delay: 0.30s;   }
-.audio-bar:nth-child(9)  { animation-delay: 0.20s;   }
-.audio-bar:nth-child(10) { animation-delay: 0.10s;   }
-.audio-bar:nth-child(11) { animation-delay: 0s;      }
-.audio-bar:nth-child(12) { animation-delay: 0.10s;   }
-.audio-bar:nth-child(13) { animation-delay: 0.20s;   }
-.audio-bar:nth-child(14) { animation-delay: 0.30s;   }
-.audio-bar:nth-child(15) { animation-delay: 0.40s;   }
-.audio-bar:nth-child(16) { animation-delay: 0.50s;   }
-.audio-bar:nth-child(17) { animation-delay: 0.40s;   }
-.audio-bar:nth-child(18) { animation-delay: 0.30s;   }
-.audio-bar:nth-child(19) { animation-delay: 0.20s;   }
-.audio-bar:nth-child(20) { animation-delay: 0.10s;   }
-.audio-bar:nth-child(21) { animation-delay: 0s;      }
+/* Subtle opacity variation for depth */
+.audio-bar:nth-child(odd)  { opacity: 0.85; }
+.audio-bar:nth-child(even) { opacity: 0.65; }
 
-/* User berbicara (listening state) */
+/* Staggered delays across 21 bars */
+.audio-bar:nth-child(1)  { animation-delay: 0s;     }
+.audio-bar:nth-child(2)  { animation-delay: 0.10s;  }
+.audio-bar:nth-child(3)  { animation-delay: 0.20s;  }
+.audio-bar:nth-child(4)  { animation-delay: 0.30s;  }
+.audio-bar:nth-child(5)  { animation-delay: 0.40s;  }
+.audio-bar:nth-child(6)  { animation-delay: 0.50s;  }
+.audio-bar:nth-child(7)  { animation-delay: 0.45s;  }
+.audio-bar:nth-child(8)  { animation-delay: 0.35s;  }
+.audio-bar:nth-child(9)  { animation-delay: 0.25s;  }
+.audio-bar:nth-child(10) { animation-delay: 0.15s;  }
+.audio-bar:nth-child(11) { animation-delay: 0.05s;  }
+.audio-bar:nth-child(12) { animation-delay: 0.15s;  }
+.audio-bar:nth-child(13) { animation-delay: 0.25s;  }
+.audio-bar:nth-child(14) { animation-delay: 0.35s;  }
+.audio-bar:nth-child(15) { animation-delay: 0.45s;  }
+.audio-bar:nth-child(16) { animation-delay: 0.50s;  }
+.audio-bar:nth-child(17) { animation-delay: 0.40s;  }
+.audio-bar:nth-child(18) { animation-delay: 0.30s;  }
+.audio-bar:nth-child(19) { animation-delay: 0.20s;  }
+.audio-bar:nth-child(20) { animation-delay: 0.10s;  }
+.audio-bar:nth-child(21) { animation-delay: 0s;     }
+
 #audioVisualizer.state-listening .audio-bar {
     animation-name: waveListen;
-    animation-duration: 0.7s;
+    animation-duration: 0.65s;
 }
-/* Bot berbicara (speaking state) */
 #audioVisualizer.state-speaking .audio-bar {
     animation-name: waveSpeak;
-    animation-duration: 0.5s;
+    animation-duration: 0.45s;
 }
-/* Processing — berhenti hampir diam */
 #audioVisualizer.state-processing .audio-bar {
     animation-name: waveIdle;
     animation-duration: 3s;

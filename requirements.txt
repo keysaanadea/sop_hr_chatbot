@@ -33,6 +33,7 @@ scikit-learn>=1.0.0
 supabase>=2.3.0
 psycopg2-binary>=2.9.9
 redis>=5.0.0
+upstash-redis>=1.0.0
 
 # =========================
 # SPEECH & GEO (API)

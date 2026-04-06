@@ -76,7 +76,7 @@
 .msg.bot .avatar {
     background: linear-gradient(135deg, #b7131a, #db322f);
     color: #fff;
-    box-shadow: 0 4px 12px rgba(183,19,26,0.3);
+    box-shadow: 0 2px 6px rgba(183,19,26,0.15);
 }
 .msg.bot .avatar .material-symbols-outlined { font-size: 20px; }
 .msg.user-msg .avatar { background: #2e3133; color: #f0f1f4; }
@@ -551,7 +551,16 @@
 
 /* Listening state for mic buttons */
 .input-icon-btn.listening,
-.landing-voice-btn.listening { color: var(--primary) !important; }
+.landing-voice-btn.listening {
+  color: #fff !important;
+  background: var(--primary) !important;
+  border-radius: 12px;
+  animation: mic-pulse 1.2s ease-in-out infinite;
+}
+@keyframes mic-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(183,19,26,0.4); }
+  50% { box-shadow: 0 0 0 6px rgba(183,19,26,0); }
+}
 
 
 /* ================================================================

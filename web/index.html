@@ -52,7 +52,15 @@
         }
 
         /* Call mode overlay */
-        .call-mode-overlay { display: none; }
+        .call-mode-overlay {
+            display: none;
+            position: fixed;
+            inset: 0;
+            width: 100vw;
+            height: 100vh;
+            z-index: 10000;
+            flex-direction: row;
+        }
         .call-mode-overlay.active { display: flex; }
 
         /* Role menu */
@@ -112,121 +120,130 @@
      CALL MODE OVERLAY
      Kiri: waveform visualizer | Kanan: live transcript
      ================================================================ -->
-<div class="call-mode-overlay fixed inset-0 z-[10000]" id="callModeOverlay">
+<div id="callModeOverlay" class="call-mode-overlay">
 
-    <!-- Kiri: Visualizer -->
-    <section class="flex-1 flex flex-col items-center justify-center relative bg-background overflow-hidden">
-        <!-- Ambient glow -->
-        <div class="absolute inset-0 flex items-center justify-center -z-10 pointer-events-none overflow-hidden">
-            <div class="w-[600px] h-[600px] bg-tertiary-fixed opacity-20 blur-[120px] rounded-full"></div>
-            <div class="absolute w-[400px] h-[400px] bg-secondary-fixed opacity-10 blur-[100px] rounded-full translate-x-20 -translate-y-20"></div>
-        </div>
+    <!-- Kiri: Voice Processing (2/3 lebar layar) -->
+    <section class="call-left-panel">
 
         <!-- callAvatar tersembunyi — wajib ada untuk JS -->
         <div id="callAvatar" class="call-avatar" style="position:absolute;width:1px;height:1px;opacity:0;pointer-events:none;"></div>
 
-        <!-- Status -->
-        <div class="mb-10 text-center">
-            <div class="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-surface-container-low border border-outline-variant/10 mb-8">
-                <span class="call-status-dot w-2 h-2 rounded-full bg-green-500 animate-pulse"></span>
-                <span class="call-status text-xs font-bold tracking-widest uppercase text-on-surface-variant" id="callStatus">SIAP</span>
-            </div>
-            <h2 class="text-3xl font-bold tracking-tight text-on-surface mb-2">DENAI</h2>
-            <p class="text-sm text-on-surface-variant font-medium min-h-[1.5rem]" id="callInterimText">Silakan berbicara...</p>
+        <!-- Status pill — top center -->
+        <div class="call-status-pill">
+            <span class="call-status-dot"></span>
+            <span id="callStatus">SIAP</span>
         </div>
 
-        <!-- Waveform — pakai audio-bar supaya JS dan CSS animasi berfungsi -->
-        <div class="relative w-full max-w-2xl flex items-center justify-center gap-1.5 px-12 h-48" id="audioVisualizer">
-            <div class="audio-bar" style="background:#4c56af;height:12px;"></div>
-            <div class="audio-bar" style="background:#006578;height:24px;"></div>
-            <div class="audio-bar" style="background:#4c56af;height:16px;"></div>
-            <div class="audio-bar" style="background:#006578;height:32px;"></div>
-            <div class="audio-bar" style="background:#db322f;height:40px;"></div>
-            <div class="audio-bar" style="background:#006578;height:48px;"></div>
-            <div class="audio-bar" style="background:#b7131a;height:36px;"></div>
-            <div class="audio-bar" style="background:#006578;height:44px;"></div>
-            <div class="audio-bar" style="background:#4c56af;height:28px;"></div>
-            <div class="audio-bar" style="background:#006578;height:40px;"></div>
-            <div class="audio-bar" style="background:#db322f;height:20px;"></div>
-            <div class="audio-bar" style="background:#4c56af;height:16px;"></div>
-            <div class="audio-bar" style="background:#006578;height:36px;"></div>
-            <div class="audio-bar" style="background:#4c56af;height:24px;"></div>
-            <div class="audio-bar" style="background:#006578;height:12px;"></div>
-            <div class="audio-bar" style="background:#4c56af;height:20px;"></div>
-            <div class="audio-bar" style="background:#006578;height:32px;"></div>
-            <div class="audio-bar" style="background:#4c56af;height:16px;"></div>
-            <div class="audio-bar" style="background:#db322f;height:44px;"></div>
-            <div class="audio-bar" style="background:#4c56af;height:24px;"></div>
-            <div class="audio-bar" style="background:#006578;height:12px;"></div>
-        </div>
+        <!-- Main center content -->
+        <div class="call-center-content">
 
-        <!-- Metadata -->
-        <div class="mt-14 flex items-center gap-10 text-xs font-bold text-on-surface-variant/60 uppercase tracking-widest">
-            <div class="flex items-center gap-2">
-                <span class="material-symbols-outlined text-sm">settings_voice</span>
-                <span>DENAI</span>
+            <!-- Last input glass card -->
+            <div class="call-last-input-card">
+                <p class="call-last-input-label">Masukan Terakhir</p>
+                <p class="call-last-input-text" id="callInterimText">Silakan berbicara...</p>
             </div>
-            <div class="flex items-center gap-2">
-                <span class="material-symbols-outlined text-sm">timer</span>
-                <span id="callTimer">00:00</span>
-            </div>
-        </div>
 
-        <!-- Kontrol (pill floating) -->
-        <div class="call-controls mt-16">
-            <div class="flex items-center gap-5 px-8 py-4 bg-white/80 backdrop-blur-xl rounded-full shadow-[0px_12px_32px_rgba(25,28,30,0.10)] border border-white/40">
-                <div class="flex items-center gap-4 border-r border-outline-variant/20 pr-5">
-                    <button class="call-control-btn mute w-12 h-12 rounded-full flex items-center justify-center bg-surface-container-low text-on-surface-variant hover:bg-surface-container hover:scale-105 active:scale-95 transition-all"
-                            id="muteBtn" title="Mute/Unmute">
-                        <svg class="icon-unmuted w-5 h-5" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                            <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"></path>
-                            <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
-                            <line x1="12" y1="19" x2="12" y2="22"></line>
-                        </svg>
-                        <svg class="icon-muted w-5 h-5" style="display:none;" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                            <line x1="2" y1="2" x2="22" y2="22"></line>
-                            <path d="M18.89 13.23A7.12 7.12 0 0 0 19 12v-2"></path>
-                            <path d="M5 10v2a7 7 0 0 0 12 5"></path>
-                            <path d="M15 9.34V5a3 3 0 0 0-5.68-1.33"></path>
-                            <path d="M9 9v3a3 3 0 0 0 5.12 2.12"></path>
-                            <line x1="12" y1="19" x2="12" y2="22"></line>
-                        </svg>
-                    </button>
-                    <button class="call-control-btn skip w-12 h-12 rounded-full flex items-center justify-center bg-surface-container-low text-on-surface-variant hover:bg-surface-container hover:scale-105 active:scale-95 transition-all"
-                            id="skipBtn" title="Lewati" style="display:none;">
-                        <svg class="w-5 h-5" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor">
-                            <path d="M4 18l8.5-6L4 6v12zm9-12v12l8.5-6L13 6z"/>
-                        </svg>
-                    </button>
+            <!-- Waveform -->
+            <div class="call-waveform" id="audioVisualizer">
+                <div class="audio-bar" style="height:18px;"></div>
+                <div class="audio-bar" style="height:32px;"></div>
+                <div class="audio-bar" style="height:22px;"></div>
+                <div class="audio-bar" style="height:48px;"></div>
+                <div class="audio-bar" style="height:36px;"></div>
+                <div class="audio-bar" style="height:64px;"></div>
+                <div class="audio-bar" style="height:52px;"></div>
+                <div class="audio-bar" style="height:80px;"></div>
+                <div class="audio-bar" style="height:60px;"></div>
+                <div class="audio-bar" style="height:90px;"></div>
+                <div class="audio-bar" style="height:72px;"></div>
+                <div class="audio-bar" style="height:56px;"></div>
+                <div class="audio-bar" style="height:80px;"></div>
+                <div class="audio-bar" style="height:64px;"></div>
+                <div class="audio-bar" style="height:44px;"></div>
+                <div class="audio-bar" style="height:72px;"></div>
+                <div class="audio-bar" style="height:52px;"></div>
+                <div class="audio-bar" style="height:36px;"></div>
+                <div class="audio-bar" style="height:60px;"></div>
+                <div class="audio-bar" style="height:28px;"></div>
+                <div class="audio-bar" style="height:16px;"></div>
+            </div>
+
+            <!-- State indicator -->
+            <div class="call-state-indicator">
+                <div class="call-state-row">
+                    <span class="call-state-name" id="callStateText">DENAI</span>
+                    <div class="call-state-dots" id="callStateDots" style="display:none;">
+                        <div class="call-thinking-dot" style="animation-delay:0s;"></div>
+                        <div class="call-thinking-dot" style="animation-delay:0.15s;"></div>
+                        <div class="call-thinking-dot" style="animation-delay:0.3s;"></div>
+                    </div>
                 </div>
-
-                <!-- End Call -->
-                <button class="call-control-btn end-call flex items-center gap-3 px-8 py-4 btn-gradient text-white font-bold rounded-full shadow-lg shadow-primary/20 hover:scale-105 active:scale-95 transition-all"
-                        id="endCallBtn" title="Akhiri Panggilan">
-                    <span class="material-symbols-outlined" style="font-variation-settings:'FILL' 1;">call_end</span>
-                    <span class="call-end-label">Akhiri</span>
-                </button>
-
+                <p class="call-state-sub" id="callStateSubtext">Silakan berbicara...</p>
             </div>
         </div>
 
-        <!-- Mobile mini transcript (hanya terlihat di mobile, desktop tersembunyi) -->
+        <!-- Timer -->
+        <div class="call-timer-row">
+            <span class="material-symbols-outlined" style="font-size:14px;vertical-align:middle;">timer</span>
+            <span id="callTimer">00:00</span>
+        </div>
+
+        <!-- Bottom controls -->
+        <div class="call-bottom-controls">
+            <button class="call-end-btn" id="endCallBtn" title="Akhiri Panggilan">
+                <span class="material-symbols-outlined" style="font-variation-settings:'FILL' 1;font-size:20px;">stop_circle</span>
+                Akhiri
+            </button>
+            <div class="call-secondary-controls">
+                <button class="call-control-btn mute" id="muteBtn" title="Mute/Unmute">
+                    <svg class="icon-unmuted" width="16" height="16" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"></path>
+                        <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
+                        <line x1="12" y1="19" x2="12" y2="22"></line>
+                    </svg>
+                    <svg class="icon-muted" width="16" height="16" style="display:none;" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <line x1="2" y1="2" x2="22" y2="22"></line>
+                        <path d="M18.89 13.23A7.12 7.12 0 0 0 19 12v-2"></path>
+                        <path d="M5 10v2a7 7 0 0 0 12 5"></path>
+                        <path d="M15 9.34V5a3 3 0 0 0-5.68-1.33"></path>
+                        <path d="M9 9v3a3 3 0 0 0 5.12 2.12"></path>
+                        <line x1="12" y1="19" x2="12" y2="22"></line>
+                    </svg>
+                    <span>Mute</span>
+                </button>
+                <div class="call-ctrl-divider"></div>
+                <button class="call-control-btn skip" id="skipBtn" title="Lewati" style="display:none;">
+                    <svg width="16" height="16" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor">
+                        <path d="M4 18l8.5-6L4 6v12zm9-12v12l8.5-6L13 6z"/>
+                    </svg>
+                    <span>Lewati</span>
+                </button>
+            </div>
+        </div>
+
+        <!-- Mobile mini transcript -->
         <div id="callMobileTranscript" class="call-mobile-transcript">
             <p class="call-mobile-hint">Mulai berbicara...</p>
         </div>
     </section>
 
-    <!-- Kanan: Live Transcript -->
-    <aside class="w-80 xl:w-[420px] bg-white/60 backdrop-blur-xl border-l border-outline-variant/10 flex flex-col shadow-2xl">
-        <div class="p-6 border-b border-outline-variant/10 flex items-center justify-between flex-shrink-0">
-            <h3 class="font-bold text-base text-on-surface">Transkrip</h3>
-            <span class="text-[10px] font-bold text-tertiary bg-tertiary-fixed px-2 py-0.5 rounded uppercase tracking-wider">Real-time</span>
+    <!-- Kanan: Live Transcript (1/3 lebar layar) -->
+    <aside class="call-right-panel">
+        <div class="call-transcript-header">
+            <div class="call-transcript-title">
+                <span class="material-symbols-outlined" style="font-size:18px;color:#b7131a;">reorder</span>
+                <span>Transkrip Langsung</span>
+            </div>
+            <div class="call-live-badge">
+                <div class="call-live-dot"></div>
+                <span>Live</span>
+            </div>
         </div>
-        <div class="flex-1 overflow-y-auto p-6 call-transcript-log" id="callTranscriptLog">
-            <p class="text-sm text-on-surface-variant italic call-transcript-hint">Mulai berbicara... DENAI sedang mendengarkan</p>
+        <div class="flex-1 overflow-y-auto p-5 call-transcript-log" id="callTranscriptLog">
+            <p class="call-transcript-hint">Bicara sekarang... DENAI sedang mendengarkan</p>
         </div>
-        <div class="p-4 bg-surface-container-low/50 border-t border-outline-variant/10 flex-shrink-0">
-            <p class="text-center text-[10px] font-medium text-on-surface-variant uppercase tracking-widest">DENAI dapat membuat estimasi. Verifikasi dengan sumber resmi.</p>
+        <div class="call-transcript-footer">
+            <p>DENAI dapat membuat estimasi. Verifikasi dengan sumber resmi.</p>
         </div>
     </aside>
 </div>
@@ -465,7 +482,6 @@
             <!-- Input Bar Chat (glassmorphic, floating feel) -->
             <div class="flex-shrink-0 px-6 md:px-20 pb-8 pt-4 chat-input-area">
                 <div class="w-full max-w-3xl mx-auto ether-glass rounded-2xl shadow-[0px_12px_32px_rgba(25,28,30,0.06)] p-3 flex items-center gap-3 border border-white/40 input-box chat-input-wrap">
-
                     <input type="text" id="chatInput"
                            class="flex-1 bg-transparent border-none focus:ring-0 text-on-surface font-medium placeholder-slate-400 text-sm py-2 outline-none min-w-0 chat-input"
                            placeholder="Tulis pesan Anda..."

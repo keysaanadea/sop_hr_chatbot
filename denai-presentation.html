@@ -1,0 +1,764 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>DENAI — Enterprise HR AI Chatbot</title>
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --red: #b7131a;
+    --red-light: #d9272e;
+    --red-dark: #8c0e13;
+    --red-glow: rgba(183, 19, 26, 0.35);
+    --bg: #0a0a0f;
+    --surface: rgba(255,255,255,0.04);
+    --surface-hover: rgba(255,255,255,0.07);
+    --border: rgba(255,255,255,0.08);
+    --text: #f0f0f5;
+    --muted: rgba(240,240,245,0.5);
+    --accent: #ff6b6b;
+  }
+
+  html, body { height: 100%; font-family: 'Plus Jakarta Sans', sans-serif; background: var(--bg); color: var(--text); overflow: hidden; }
+
+  /* ── SLIDESHOW SHELL ─────────────────────────────────────── */
+  .deck { width: 100vw; height: 100vh; position: relative; }
+
+  .slide {
+    position: absolute; inset: 0;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    padding: 4rem 6rem;
+    opacity: 0; transform: translateX(60px);
+    transition: opacity .5s ease, transform .5s ease;
+    pointer-events: none;
+  }
+  .slide.active { opacity: 1; transform: translateX(0); pointer-events: all; }
+  .slide.exit   { opacity: 0; transform: translateX(-60px); }
+
+  /* animated background */
+  .slide::before {
+    content: '';
+    position: absolute; inset: 0; z-index: -1;
+    background:
+      radial-gradient(ellipse 60% 50% at 15% 20%, rgba(183,19,26,.18) 0%, transparent 70%),
+      radial-gradient(ellipse 50% 40% at 85% 80%, rgba(183,19,26,.12) 0%, transparent 70%),
+      var(--bg);
+  }
+
+  /* grid overlay */
+  .slide::after {
+    content: '';
+    position: absolute; inset: 0; z-index: -1;
+    background-image:
+      linear-gradient(rgba(255,255,255,.025) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(255,255,255,.025) 1px, transparent 1px);
+    background-size: 60px 60px;
+  }
+
+  /* ── NAVIGATION ──────────────────────────────────────────── */
+  .nav {
+    position: fixed; bottom: 2rem; left: 50%; transform: translateX(-50%);
+    display: flex; align-items: center; gap: 1rem; z-index: 100;
+    background: rgba(255,255,255,0.06); backdrop-filter: blur(20px);
+    border: 1px solid var(--border); border-radius: 50px;
+    padding: .6rem 1.4rem;
+  }
+  .nav button {
+    background: none; border: none; color: var(--text);
+    font-size: 1.3rem; cursor: pointer; padding: .2rem .6rem;
+    border-radius: 50px; transition: background .2s;
+  }
+  .nav button:hover { background: rgba(183,19,26,.3); }
+  .nav .counter { font-size: .85rem; color: var(--muted); min-width: 50px; text-align: center; }
+  .nav .dots { display: flex; gap: .4rem; }
+  .nav .dot {
+    width: 6px; height: 6px; border-radius: 50%;
+    background: rgba(255,255,255,0.25); cursor: pointer; transition: all .2s;
+  }
+  .nav .dot.active { background: var(--red); width: 18px; border-radius: 3px; }
+
+  /* ── COMMON ELEMENTS ─────────────────────────────────────── */
+  .badge {
+    display: inline-flex; align-items: center; gap: .4rem;
+    background: rgba(183,19,26,.2); border: 1px solid rgba(183,19,26,.4);
+    color: #ff8a8a; font-size: .75rem; font-weight: 600; letter-spacing: .05em;
+    padding: .3rem .8rem; border-radius: 50px; text-transform: uppercase;
+    margin-bottom: 1.2rem;
+  }
+  .badge .dot-pulse {
+    width: 6px; height: 6px; background: var(--accent); border-radius: 50%;
+    animation: pulse 1.5s infinite;
+  }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.3} }
+
+  h1 { font-size: 4rem; font-weight: 800; line-height: 1.1; }
+  h2 { font-size: 2.6rem; font-weight: 700; line-height: 1.2; }
+  h3 { font-size: 1.5rem; font-weight: 600; }
+
+  .gradient-text {
+    background: linear-gradient(135deg, #fff 30%, var(--accent));
+    -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+  }
+  .red-text { color: var(--accent); }
+
+  p.lead { font-size: 1.15rem; color: var(--muted); line-height: 1.7; max-width: 640px; text-align: center; }
+  p.lead-left { font-size: 1.1rem; color: var(--muted); line-height: 1.7; }
+
+  .divider { width: 60px; height: 3px; background: linear-gradient(90deg, var(--red), transparent); border-radius: 2px; margin: 1.5rem auto; }
+  .divider-left { margin-left: 0; }
+
+  /* ── CARD ────────────────────────────────────────────────── */
+  .card {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 16px; padding: 1.5rem;
+    backdrop-filter: blur(12px);
+    transition: border-color .3s, transform .3s;
+  }
+  .card:hover { border-color: rgba(183,19,26,.5); transform: translateY(-2px); }
+  .card .icon { font-size: 2rem; margin-bottom: .8rem; }
+  .card h4 { font-size: 1rem; font-weight: 700; margin-bottom: .4rem; }
+  .card p { font-size: .85rem; color: var(--muted); line-height: 1.5; }
+
+  .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 1.2rem; width: 100%; }
+  .grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1.2rem; width: 100%; }
+  .grid-4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1rem; width: 100%; }
+
+  /* ── SLIDE 1 — HERO ──────────────────────────────────────── */
+  #s1 { gap: .5rem; }
+  #s1 .logo-ring {
+    width: 90px; height: 90px; border-radius: 24px;
+    background: linear-gradient(135deg, var(--red-dark), var(--red-light));
+    display: flex; align-items: center; justify-content: center;
+    font-size: 2.5rem; font-weight: 800; color: white;
+    box-shadow: 0 0 40px var(--red-glow);
+    margin-bottom: 1.2rem;
+    animation: logoFloat 3s ease-in-out infinite;
+  }
+  @keyframes logoFloat { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-8px)} }
+  #s1 h1 { text-align: center; }
+  #s1 .subtitle { font-size: 1.3rem; color: var(--muted); margin-top: .5rem; text-align: center; }
+  #s1 .tags { display: flex; gap: .8rem; margin-top: 2rem; flex-wrap: wrap; justify-content: center; }
+  #s1 .tag {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 50px; padding: .4rem 1rem; font-size: .8rem; color: var(--muted);
+  }
+
+  /* ── SLIDE 2 — WHAT IS DENAI ─────────────────────────────── */
+  #s2 .big-stat {
+    display: flex; gap: 3rem; margin-top: 2rem;
+  }
+  #s2 .stat { text-align: center; }
+  #s2 .stat .num { font-size: 2.8rem; font-weight: 800; color: var(--accent); line-height: 1; }
+  #s2 .stat .lbl { font-size: .8rem; color: var(--muted); margin-top: .3rem; }
+
+  /* ── SLIDE 3 — TWO MODES ─────────────────────────────────── */
+  #s3 .modes { display: grid; grid-template-columns: 1fr 1fr; gap: 2rem; width: 100%; margin-top: 1.5rem; }
+  #s3 .mode-card {
+    border-radius: 20px; padding: 2rem;
+    border: 1px solid var(--border);
+    position: relative; overflow: hidden;
+  }
+  #s3 .mode-card.chat { background: linear-gradient(135deg, rgba(183,19,26,.12), rgba(183,19,26,.04)); border-color: rgba(183,19,26,.3); }
+  #s3 .mode-card.call { background: linear-gradient(135deg, rgba(100,200,255,.08), rgba(100,200,255,.02)); border-color: rgba(100,200,255,.2); }
+  #s3 .mode-card .mode-icon { font-size: 3rem; margin-bottom: 1rem; }
+  #s3 .mode-card h3 { font-size: 1.4rem; margin-bottom: .8rem; }
+  #s3 .mode-card .feature-list { list-style: none; }
+  #s3 .mode-card .feature-list li { font-size: .9rem; color: var(--muted); padding: .3rem 0; display: flex; align-items: center; gap: .5rem; }
+  #s3 .mode-card .feature-list li::before { content: '→'; color: var(--accent); font-weight: 700; }
+
+  /* ── SLIDE 4 — FEATURES ──────────────────────────────────── */
+  .feature-row {
+    display: grid; grid-template-columns: repeat(3, 1fr); gap: 1rem;
+    width: 100%; margin-top: 1.5rem;
+  }
+  .feat-card {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 14px; padding: 1.2rem;
+  }
+  .feat-card .f-icon { font-size: 1.8rem; margin-bottom: .6rem; }
+  .feat-card h4 { font-size: .95rem; font-weight: 700; margin-bottom: .3rem; }
+  .feat-card p { font-size: .78rem; color: var(--muted); line-height: 1.5; }
+
+  /* ── SLIDE 5 — ARCHITECTURE FLOW ────────────────────────── */
+  #s5 { padding: 3rem 4rem; }
+  .flow {
+    display: flex; align-items: center; gap: 0;
+    width: 100%; margin-top: 2rem; flex-wrap: wrap; justify-content: center;
+  }
+  .flow-step {
+    display: flex; flex-direction: column; align-items: center;
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 12px; padding: 1rem 1.2rem; min-width: 110px;
+    text-align: center;
+  }
+  .flow-step .f-i { font-size: 1.6rem; margin-bottom: .4rem; }
+  .flow-step .f-n { font-size: .78rem; font-weight: 600; }
+  .flow-step .f-s { font-size: .65rem; color: var(--muted); margin-top: .2rem; }
+  .flow-arrow { color: var(--red); font-size: 1.4rem; padding: 0 .3rem; flex-shrink: 0; }
+
+  .route-split {
+    display: flex; flex-direction: column; gap: .8rem; margin: 0 .5rem;
+  }
+  .route-box {
+    background: rgba(183,19,26,.1); border: 1px solid rgba(183,19,26,.25);
+    border-radius: 10px; padding: .7rem 1rem; font-size: .75rem; text-align: center; min-width: 140px;
+  }
+  .route-box span { display: block; font-weight: 700; color: var(--accent); margin-bottom: .2rem; }
+
+  /* ── SLIDE 6 — TECH STACK ────────────────────────────────── */
+  #s6 .stack-grid {
+    display: grid; grid-template-columns: repeat(3, 1fr); gap: 1rem; width: 100%; margin-top: 1.5rem;
+  }
+  .stack-group { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 1.2rem; }
+  .stack-group .sg-title { font-size: .7rem; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; color: var(--red-light); margin-bottom: .8rem; }
+  .tech-pill {
+    display: inline-flex; align-items: center; gap: .35rem;
+    background: rgba(255,255,255,0.06); border: 1px solid var(--border);
+    border-radius: 6px; padding: .25rem .6rem; font-size: .75rem;
+    margin: .2rem; white-space: nowrap;
+  }
+  .tech-pill .dot { width: 5px; height: 5px; border-radius: 50%; background: var(--accent); flex-shrink: 0; }
+
+  /* ── SLIDE 7 — EXTERNAL SERVICES ────────────────────────── */
+  .service-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1rem; width: 100%; margin-top: 1.5rem; }
+  .svc-card {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 14px; padding: 1.2rem 1rem; text-align: center;
+  }
+  .svc-card .s-icon { font-size: 2rem; margin-bottom: .5rem; }
+  .svc-card .s-name { font-size: .9rem; font-weight: 700; margin-bottom: .3rem; }
+  .svc-card .s-role { font-size: .72rem; color: var(--muted); line-height: 1.4; }
+  .svc-card .s-badge {
+    display: inline-block; font-size: .6rem; font-weight: 700;
+    padding: .2rem .5rem; border-radius: 50px; margin-top: .5rem;
+    text-transform: uppercase;
+  }
+  .s-badge.cloud { background: rgba(183,19,26,.2); color: #ff8a8a; border: 1px solid rgba(183,19,26,.3); }
+  .s-badge.self  { background: rgba(80,200,120,.15); color: #7de8a0; border: 1px solid rgba(80,200,120,.3); }
+
+  /* ── SLIDE 8 — DEPLOYMENT ────────────────────────────────── */
+  #s8 .deploy-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; width: 100%; margin-top: 1.5rem; }
+  .dep-box { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 1.5rem; }
+  .dep-box h4 { font-size: .9rem; font-weight: 700; color: var(--accent); margin-bottom: .8rem; }
+  .dep-row { display: flex; justify-content: space-between; align-items: center; padding: .4rem 0; border-bottom: 1px solid rgba(255,255,255,.04); }
+  .dep-row:last-child { border-bottom: none; }
+  .dep-key { font-size: .78rem; color: var(--muted); }
+  .dep-val { font-size: .78rem; font-weight: 600; }
+
+  .arch-opts { display: flex; flex-direction: column; gap: .6rem; }
+  .arch-opt { display: flex; align-items: center; gap: .8rem; }
+  .arch-opt .num {
+    width: 24px; height: 24px; border-radius: 50%;
+    background: linear-gradient(135deg, var(--red-dark), var(--red-light));
+    display: flex; align-items: center; justify-content: center;
+    font-size: .7rem; font-weight: 700; flex-shrink: 0;
+  }
+  .arch-opt p { font-size: .82rem; color: var(--muted); }
+  .arch-opt strong { color: var(--text); }
+
+  /* ── SLIDE 9 — ROLE SYSTEM ───────────────────────────────── */
+  .roles { display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; width: 100%; margin-top: 1.5rem; }
+  .role-card { background: var(--surface); border: 1px solid var(--border); border-radius: 16px; padding: 1.5rem; }
+  .role-card .r-icon { font-size: 2.2rem; margin-bottom: .6rem; }
+  .role-card h4 { font-size: 1rem; font-weight: 700; margin-bottom: .4rem; }
+  .role-card .r-access { display: flex; flex-direction: column; gap: .4rem; margin-top: .8rem; }
+  .access-item { display: flex; align-items: center; gap: .6rem; font-size: .82rem; color: var(--muted); }
+  .access-item .check { color: #7de8a0; font-weight: 700; }
+  .access-item .cross { color: #ff6b6b; font-weight: 700; }
+
+  /* ── SLIDE 10 — OUTRO ────────────────────────────────────── */
+  #s10 { gap: 1rem; }
+  #s10 .big-logo {
+    width: 120px; height: 120px; border-radius: 30px;
+    background: linear-gradient(135deg, var(--red-dark), var(--red-light));
+    display: flex; align-items: center; justify-content: center;
+    font-size: 3.5rem; font-weight: 800; color: white;
+    box-shadow: 0 0 60px rgba(183,19,26,.5);
+    animation: logoFloat 3s ease-in-out infinite;
+  }
+  #s10 h1 { text-align: center; }
+  #s10 .tagline { font-size: 1.4rem; color: var(--muted); text-align: center; }
+  #s10 .url {
+    background: var(--surface); border: 1px solid rgba(183,19,26,.4);
+    border-radius: 50px; padding: .7rem 2rem; font-size: 1.1rem; font-weight: 600;
+    color: var(--accent); margin-top: 1rem;
+  }
+  #s10 .feat-badges { display: flex; gap: .8rem; flex-wrap: wrap; justify-content: center; margin-top: 1rem; }
+  #s10 .fb {
+    background: rgba(255,255,255,.06); border: 1px solid var(--border);
+    border-radius: 50px; padding: .4rem 1rem; font-size: .8rem; color: var(--muted);
+  }
+
+  /* keyboard hint */
+  .key-hint { position: fixed; top: 1.5rem; right: 2rem; font-size: .72rem; color: rgba(255,255,255,.2); }
+
+  /* progress bar */
+  .progress-bar { position: fixed; top: 0; left: 0; height: 2px; background: var(--red); transition: width .4s ease; z-index: 200; }
+</style>
+</head>
+<body>
+
+<div class="progress-bar" id="progressBar"></div>
+<div class="key-hint">← → Arrow keys to navigate</div>
+
+<div class="deck" id="deck">
+
+  <!-- ── SLIDE 1: HERO ──────────────────────────────────────── -->
+  <section class="slide active" id="s1">
+    <div class="logo-ring">D</div>
+    <div class="badge"><span class="dot-pulse"></span> Enterprise AI Chatbot</div>
+    <h1 class="gradient-text">DENAI</h1>
+    <p class="subtitle">Digital Enterprise Navigator with Artificial Intelligence</p>
+    <div class="divider"></div>
+    <p class="lead">Asisten AI enterprise untuk karyawan PT Semen Indonesia Group — menjawab pertanyaan SOP/Kebijakan dan menganalisis data HR secara real-time.</p>
+    <div class="tags">
+      <span class="tag">🏭 PT Semen Indonesia Group</span>
+      <span class="tag">🤖 GPT-4o-mini</span>
+      <span class="tag">🎙️ ElevenLabs TTS</span>
+      <span class="tag">📊 HR Analytics</span>
+      <span class="tag">⚡ FastAPI v8.1.0</span>
+    </div>
+  </section>
+
+  <!-- ── SLIDE 2: APA ITU DENAI ─────────────────────────────── -->
+  <section class="slide" id="s2">
+    <div class="badge">Overview</div>
+    <h2 class="gradient-text">Apa itu DENAI?</h2>
+    <div class="divider"></div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:2.5rem;width:100%;margin-top:1rem;align-items:start">
+      <div>
+        <p class="lead-left">DENAI adalah <strong style="color:white">Enterprise Knowledge Assistant</strong> yang memungkinkan karyawan mendapatkan informasi perusahaan secara instan — baik lewat teks maupun suara.</p>
+        <br>
+        <p class="lead-left">Sistem ini memiliki <strong style="color:white">dua jalur utama</strong>: menjawab pertanyaan tentang SOP & kebijakan perusahaan dari dokumen PDF, dan menganalisis data HR langsung dari database PostgreSQL.</p>
+        <div class="big-stat">
+          <div class="stat"><div class="num">2</div><div class="lbl">Mode Interaksi</div></div>
+          <div class="stat"><div class="num">8+</div><div class="lbl">Layanan Eksternal</div></div>
+          <div class="stat"><div class="num">50</div><div class="lbl">Concurrent Users</div></div>
+        </div>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:1rem">
+        <div class="card"><div class="icon">📋</div><h4>SOP & Kebijakan</h4><p>Jawaban akurat dari dokumen PDF perusahaan menggunakan Retrieval-Augmented Generation (RAG)</p></div>
+        <div class="card"><div class="icon">📊</div><h4>HR Analytics</h4><p>Pertanyaan bahasa natural dikonversi ke SQL, dieksekusi ke database, dan disajikan dengan grafik</p></div>
+        <div class="card"><div class="icon">🎙️</div><h4>Voice AI</h4><p>Mode telepon dengan Speech-to-Text dan Text-to-Speech berbahasa Indonesia yang natural</p></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── SLIDE 3: DUA MODE ──────────────────────────────────── -->
+  <section class="slide" id="s3">
+    <div class="badge">Core Features</div>
+    <h2 class="gradient-text">Dua Mode Interaksi</h2>
+    <div class="divider"></div>
+    <div class="modes">
+      <div class="mode-card chat">
+        <div class="mode-icon">💬</div>
+        <h3>Chat Mode</h3>
+        <p style="font-size:.85rem;color:var(--muted);margin-bottom:1rem">Antarmuka chat teks real-time dengan streaming SSE</p>
+        <ul class="feature-list">
+          <li>Streaming jawaban token per token</li>
+          <li>Tabel data HR interaktif + Chart.js</li>
+          <li>Riwayat sesi multi-percakapan</li>
+          <li>Feedback thumbs up/down per jawaban</li>
+          <li>Role-based access (Employee vs HR)</li>
+          <li>Markdown rendering otomatis</li>
+        </ul>
+      </div>
+      <div class="mode-card call">
+        <div class="mode-icon">📞</div>
+        <h3>Call Mode</h3>
+        <p style="font-size:.85rem;color:var(--muted);margin-bottom:1rem">Overlay telepon full-screen — seperti menelepon AI</p>
+        <ul class="feature-list">
+          <li>Rekam suara via MediaRecorder API</li>
+          <li>Transkripsi real-time (OpenAI Whisper)</li>
+          <li>AI bicara balik via ElevenLabs TTS</li>
+          <li>Loop otomatis: dengar → proses → jawab</li>
+          <li>Transcript muncul di layar</li>
+          <li>Jawaban dikompres max 150 token</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── SLIDE 4: FITUR ──────────────────────────────────────── -->
+  <section class="slide" id="s4">
+    <div class="badge">Features</div>
+    <h2 class="gradient-text">Fitur Lengkap</h2>
+    <div class="divider"></div>
+    <div class="feature-row">
+      <div class="feat-card">
+        <div class="f-icon">🔍</div>
+        <h4>RAG Hybrid v7.2.0</h4>
+        <p>Pinecone vector search (top-15) + Cohere reranking multilingual untuk retrieval SOP yang akurat</p>
+      </div>
+      <div class="feat-card">
+        <div class="f-icon">🗃️</div>
+        <h4>Text-to-SQL</h4>
+        <p>Bahasa natural → SQL → eksekusi Supabase PostgreSQL, dengan validasi keamanan (SELECT only)</p>
+      </div>
+      <div class="feat-card">
+        <div class="f-icon">🗺️</div>
+        <h4>Travel Calculator</h4>
+        <p>Kalkulasi biaya perjalanan dinas via Google Maps API — otomatis sesuai kebijakan perusahaan</p>
+      </div>
+      <div class="feat-card">
+        <div class="f-icon">📈</div>
+        <h4>8 Tipe Grafik</h4>
+        <p>Bar, line, pie, doughnut, radar, dan lebih — direkomendasikan AI, dirender Chart.js</p>
+      </div>
+      <div class="feat-card">
+        <div class="f-icon">⚡</div>
+        <h4>SSE Streaming</h4>
+        <p>Server-Sent Events untuk streaming jawaban real-time — dengan pembatalan request otomatis</p>
+      </div>
+      <div class="feat-card">
+        <div class="f-icon">🧠</div>
+        <h4>Hybrid Memory</h4>
+        <p>Redis (hot cache 24h) + Supabase (persistent) untuk riwayat percakapan yang cepat</p>
+      </div>
+      <div class="feat-card">
+        <div class="f-icon">🔬</div>
+        <h4>LLM-as-a-Judge</h4>
+        <p>Background task mengevaluasi Faithfulness, Relevance, Context Precision setiap interaksi</p>
+      </div>
+      <div class="feat-card">
+        <div class="f-icon">📡</div>
+        <h4>Langfuse Tracing</h4>
+        <p>OTel-compatible observability — setiap request di-trace lengkap dari intent sampai jawaban</p>
+      </div>
+      <div class="feat-card">
+        <div class="f-icon">🛡️</div>
+        <h4>Rate Limiting</h4>
+        <p>SlowAPI: 15 req/menit chat, 5 req/menit call — per IP address</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── SLIDE 5: ARSITEKTUR ────────────────────────────────── -->
+  <section class="slide" id="s5">
+    <div class="badge">Architecture</div>
+    <h2 class="gradient-text">Alur Request</h2>
+    <div class="divider"></div>
+
+    <div class="flow">
+      <div class="flow-step">
+        <div class="f-i">🌐</div>
+        <div class="f-n">Browser</div>
+        <div class="f-s">SSE / fetch</div>
+      </div>
+      <div class="flow-arrow">→</div>
+      <div class="flow-step">
+        <div class="f-i">⚡</div>
+        <div class="f-n">FastAPI</div>
+        <div class="f-s">/ask/stream</div>
+      </div>
+      <div class="flow-arrow">→</div>
+      <div class="flow-step">
+        <div class="f-i">🧩</div>
+        <div class="f-n">Intent</div>
+        <div class="f-s">Classify GPT-4o</div>
+      </div>
+      <div class="flow-arrow">→</div>
+      <div class="route-split">
+        <div class="route-box"><span>Route A: SOP</span>Pinecone → Cohere → RAG Chain → GPT-4o</div>
+        <div class="route-box"><span>Route B: HR Data</span>SQL Gen → Validate → Supabase → Chart</div>
+      </div>
+      <div class="flow-arrow">→</div>
+      <div class="flow-step">
+        <div class="f-i">🔀</div>
+        <div class="f-n">Synthesize</div>
+        <div class="f-s">Merge A+B</div>
+      </div>
+      <div class="flow-arrow">→</div>
+      <div class="flow-step">
+        <div class="f-i">💾</div>
+        <div class="f-n">Memory</div>
+        <div class="f-s">Redis + Supabase</div>
+      </div>
+    </div>
+
+    <div style="display:flex;gap:1rem;margin-top:1.5rem;width:100%">
+      <div class="card" style="flex:1">
+        <div class="icon">🎙️</div>
+        <h4>Voice Path</h4>
+        <p>MediaRecorder → Whisper STT → same pipeline (150 token) → ElevenLabs TTS → Audio stream ke browser</p>
+      </div>
+      <div class="card" style="flex:1">
+        <div class="icon">📊</div>
+        <h4>Background Tasks</h4>
+        <p>LLM-as-a-Judge evaluasi kualitas + Langfuse flush — berjalan paralel tanpa memblok respons user</p>
+      </div>
+      <div class="card" style="flex:1">
+        <div class="icon">❌</div>
+        <h4>Request Cancellation</h4>
+        <p>Jika user kirim pesan baru atau disconnect, request AI yang sedang berjalan langsung dibatalkan</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── SLIDE 6: TECH STACK ────────────────────────────────── -->
+  <section class="slide" id="s6">
+    <div class="badge">Tech Stack</div>
+    <h2 class="gradient-text">Teknologi yang Digunakan</h2>
+    <div class="divider"></div>
+    <div class="stack-grid">
+      <div class="stack-group">
+        <div class="sg-title">🐍 Backend</div>
+        <span class="tech-pill"><span class="dot"></span>FastAPI</span>
+        <span class="tech-pill"><span class="dot"></span>Python 3.11</span>
+        <span class="tech-pill"><span class="dot"></span>Gunicorn</span>
+        <span class="tech-pill"><span class="dot"></span>Uvicorn</span>
+        <span class="tech-pill"><span class="dot"></span>SlowAPI</span>
+        <span class="tech-pill"><span class="dot"></span>Pydantic</span>
+      </div>
+      <div class="stack-group">
+        <div class="sg-title">🤖 AI / LLM</div>
+        <span class="tech-pill"><span class="dot"></span>GPT-4o-mini</span>
+        <span class="tech-pill"><span class="dot"></span>LangChain</span>
+        <span class="tech-pill"><span class="dot"></span>Semantic Router</span>
+        <span class="tech-pill"><span class="dot"></span>OpenAI Whisper</span>
+        <span class="tech-pill"><span class="dot"></span>ElevenLabs</span>
+        <span class="tech-pill"><span class="dot"></span>Cohere Rerank</span>
+      </div>
+      <div class="stack-group">
+        <div class="sg-title">🗄️ Data & Storage</div>
+        <span class="tech-pill"><span class="dot"></span>Pinecone</span>
+        <span class="tech-pill"><span class="dot"></span>Supabase</span>
+        <span class="tech-pill"><span class="dot"></span>Upstash Redis</span>
+        <span class="tech-pill"><span class="dot"></span>PostgreSQL</span>
+        <span class="tech-pill"><span class="dot"></span>psycopg2</span>
+      </div>
+      <div class="stack-group">
+        <div class="sg-title">🌐 Frontend</div>
+        <span class="tech-pill"><span class="dot"></span>Vanilla JS</span>
+        <span class="tech-pill"><span class="dot"></span>Tailwind CSS</span>
+        <span class="tech-pill"><span class="dot"></span>Chart.js</span>
+        <span class="tech-pill"><span class="dot"></span>marked.js</span>
+        <span class="tech-pill"><span class="dot"></span>Web Speech API</span>
+        <span class="tech-pill"><span class="dot"></span>SSE EventSource</span>
+      </div>
+      <div class="stack-group">
+        <div class="sg-title">📡 Observability</div>
+        <span class="tech-pill"><span class="dot"></span>Langfuse v4</span>
+        <span class="tech-pill"><span class="dot"></span>OpenTelemetry</span>
+        <span class="tech-pill"><span class="dot"></span>LLM-as-a-Judge</span>
+        <span class="tech-pill"><span class="dot"></span>RAGAS Eval</span>
+      </div>
+      <div class="stack-group">
+        <div class="sg-title">🚀 Infrastructure</div>
+        <span class="tech-pill"><span class="dot"></span>DigitalOcean</span>
+        <span class="tech-pill"><span class="dot"></span>Nginx</span>
+        <span class="tech-pill"><span class="dot"></span>PM2</span>
+        <span class="tech-pill"><span class="dot"></span>Certbot SSL</span>
+        <span class="tech-pill"><span class="dot"></span>Ubuntu 24.04</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── SLIDE 7: EXTERNAL SERVICES ────────────────────────── -->
+  <section class="slide" id="s7">
+    <div class="badge">Integrations</div>
+    <h2 class="gradient-text">Layanan Eksternal</h2>
+    <div class="divider"></div>
+    <div class="service-grid">
+      <div class="svc-card">
+        <div class="s-icon">🤖</div>
+        <div class="s-name">OpenAI</div>
+        <div class="s-role">GPT-4o-mini (LLM), Whisper (STT), text-embedding-3-small</div>
+        <span class="s-badge cloud">Cloud only</span>
+      </div>
+      <div class="svc-card">
+        <div class="s-icon">📌</div>
+        <div class="s-name">Pinecone</div>
+        <div class="s-role">Vector database untuk menyimpan embedding dokumen SOP</div>
+        <span class="s-badge cloud">Cloud only</span>
+      </div>
+      <div class="svc-card">
+        <div class="s-icon">🔀</div>
+        <div class="s-name">Cohere</div>
+        <div class="s-role">Reranking hasil RAG dengan rerank-multilingual-v3.0</div>
+        <span class="s-badge cloud">Cloud only</span>
+      </div>
+      <div class="svc-card">
+        <div class="s-icon">🎤</div>
+        <div class="s-name">ElevenLabs</div>
+        <div class="s-role">TTS bahasa Indonesia, model eleven_flash_v2_5</div>
+        <span class="s-badge cloud">Cloud only</span>
+      </div>
+      <div class="svc-card">
+        <div class="s-icon">🗺️</div>
+        <div class="s-name">Google Maps</div>
+        <div class="s-role">Kalkulasi jarak untuk aturan biaya perjalanan dinas</div>
+        <span class="s-badge cloud">Cloud only</span>
+      </div>
+      <div class="svc-card">
+        <div class="s-icon">🐘</div>
+        <div class="s-name">Supabase</div>
+        <div class="s-role">PostgreSQL untuk data HR dan riwayat chat persisten</div>
+        <span class="s-badge self">Bisa self-host</span>
+      </div>
+      <div class="svc-card">
+        <div class="s-icon">⚡</div>
+        <div class="s-name">Upstash Redis</div>
+        <div class="s-role">Hot cache riwayat percakapan dengan TTL 24 jam</div>
+        <span class="s-badge self">Bisa self-host</span>
+      </div>
+      <div class="svc-card">
+        <div class="s-icon">📡</div>
+        <div class="s-name">Langfuse</div>
+        <div class="s-role">LLM observability, tracing, scoring per interaksi</div>
+        <span class="s-badge self">Bisa self-host</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── SLIDE 8: ROLE SYSTEM ───────────────────────────────── -->
+  <section class="slide" id="s8">
+    <div class="badge">Access Control</div>
+    <h2 class="gradient-text">Sistem Role Karyawan</h2>
+    <div class="divider"></div>
+    <div class="roles">
+      <div class="role-card">
+        <div class="r-icon">👷</div>
+        <h4>Employee (Karyawan Umum)</h4>
+        <p style="font-size:.82rem;color:var(--muted)">Karyawan operasional perusahaan</p>
+        <div class="r-access">
+          <div class="access-item"><span class="check">✓</span> Tanya SOP & Kebijakan perusahaan</div>
+          <div class="access-item"><span class="check">✓</span> Kalkulasi biaya perjalanan dinas</div>
+          <div class="access-item"><span class="check">✓</span> Mode Voice (telepon AI)</div>
+          <div class="access-item"><span class="check">✓</span> Riwayat sesi percakapan</div>
+          <div class="access-item"><span class="cross">✗</span> Akses HR Analytics & database</div>
+          <div class="access-item"><span class="cross">✗</span> Schema explorer database</div>
+        </div>
+      </div>
+      <div class="role-card">
+        <div class="r-icon">👔</div>
+        <h4>HR / Admin / Manager</h4>
+        <p style="font-size:.82rem;color:var(--muted)">Tim HR, Admin, dan Manajer</p>
+        <div class="r-access">
+          <div class="access-item"><span class="check">✓</span> Semua akses Employee</div>
+          <div class="access-item"><span class="check">✓</span> HR Analytics (Text-to-SQL)</div>
+          <div class="access-item"><span class="check">✓</span> Visualisasi data & grafik interaktif</div>
+          <div class="access-item"><span class="check">✓</span> Database Schema Explorer UI</div>
+          <div class="access-item"><span class="check">✓</span> Parallel routing A+B (SOP + Data)</div>
+          <div class="access-item"><span class="check">✓</span> Hasil sintesis dari dua sumber</div>
+        </div>
+      </div>
+    </div>
+    <div style="margin-top:1.2rem;padding:1rem 1.5rem;background:rgba(183,19,26,.08);border:1px solid rgba(183,19,26,.2);border-radius:12px;font-size:.82rem;color:var(--muted);text-align:center">
+      Role dipilih manual di UI saat ini — bisa diintegrasikan ke SSO/LDAP perusahaan untuk otentikasi otomatis
+    </div>
+  </section>
+
+  <!-- ── SLIDE 9: DEPLOYMENT ────────────────────────────────── -->
+  <section class="slide" id="s9">
+    <div class="badge">Deployment</div>
+    <h2 class="gradient-text">Infrastruktur & Deployment</h2>
+    <div class="divider"></div>
+    <div class="deploy-grid">
+      <div>
+        <div class="dep-box" style="margin-bottom:1rem">
+          <h4>⚙️ Spesifikasi Server (Current)</h4>
+          <div class="dep-row"><span class="dep-key">Provider</span><span class="dep-val">DigitalOcean SGP1</span></div>
+          <div class="dep-row"><span class="dep-key">Spesifikasi</span><span class="dep-val">1 vCPU / 2 GB RAM</span></div>
+          <div class="dep-row"><span class="dep-key">OS</span><span class="dep-val">Ubuntu 24.04 LTS</span></div>
+          <div class="dep-row"><span class="dep-key">Web Server</span><span class="dep-val">Nginx + PM2</span></div>
+          <div class="dep-row"><span class="dep-key">Backend</span><span class="dep-val">Gunicorn 3 workers</span></div>
+          <div class="dep-row"><span class="dep-key">Domain</span><span class="dep-val">denai.online (HTTPS)</span></div>
+          <div class="dep-row"><span class="dep-key">Kapasitas</span><span class="dep-val">~30–50 concurrent users</span></div>
+        </div>
+      </div>
+      <div class="dep-box">
+        <h4>🏗️ Opsi Arsitektur Deployment</h4>
+        <div class="arch-opts">
+          <div class="arch-opt">
+            <div class="num">1</div>
+            <p><strong>Cloud-only</strong> — Semua layanan di cloud. Mudah scale, setup cepat. Cocok untuk MVP & pilot.</p>
+          </div>
+          <div class="arch-opt">
+            <div class="num">2</div>
+            <p><strong>Hybrid</strong> — Backend on-premise, LLM/vector di cloud. Balance antara kontrol data dan kemudahan.</p>
+          </div>
+          <div class="arch-opt">
+            <div class="num">3</div>
+            <p><strong>On-premise</strong> — Semua di server lokal. Kontrol penuh, data tidak keluar, butuh hardware lebih besar.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── SLIDE 10: OUTRO ────────────────────────────────────── -->
+  <section class="slide" id="s10">
+    <div class="big-logo">D</div>
+    <h1 class="gradient-text">DENAI</h1>
+    <p class="tagline">Enterprise AI untuk Karyawan yang Lebih Produktif</p>
+    <div class="url">🌐 denai.online</div>
+    <div class="feat-badges">
+      <span class="fb">💬 Chat Mode</span>
+      <span class="fb">📞 Call Mode</span>
+      <span class="fb">📋 SOP Q&A</span>
+      <span class="fb">📊 HR Analytics</span>
+      <span class="fb">🎙️ Voice AI</span>
+      <span class="fb">⚡ Real-time Streaming</span>
+      <span class="fb">🔬 LLM Evaluation</span>
+    </div>
+    <div style="margin-top:1.5rem;font-size:.8rem;color:rgba(255,255,255,.2)">PT Semen Indonesia Group · FastAPI v8.1.0 · GPT-4o-mini · ElevenLabs · Pinecone · Cohere</div>
+  </section>
+
+</div><!-- /deck -->
+
+<!-- Navigation -->
+<div class="nav">
+  <button id="prevBtn" onclick="navigate(-1)">←</button>
+  <div class="dots" id="dots"></div>
+  <span class="counter" id="counter">1 / 10</span>
+  <button id="nextBtn" onclick="navigate(1)">→</button>
+</div>
+
+<script>
+  const slides = document.querySelectorAll('.slide');
+  const dots = document.getElementById('dots');
+  const counter = document.getElementById('counter');
+  const progressBar = document.getElementById('progressBar');
+  let current = 0;
+  const total = slides.length;
+
+  // build dots
+  for (let i = 0; i < total; i++) {
+    const d = document.createElement('div');
+    d.className = 'dot' + (i === 0 ? ' active' : '');
+    d.onclick = () => goTo(i);
+    dots.appendChild(d);
+  }
+
+  function updateUI() {
+    counter.textContent = `${current + 1} / ${total}`;
+    progressBar.style.width = `${((current + 1) / total) * 100}%`;
+    document.querySelectorAll('.dot').forEach((d, i) => d.classList.toggle('active', i === current));
+  }
+
+  function goTo(n) {
+    if (n < 0 || n >= total) return;
+    slides[current].classList.remove('active');
+    slides[current].classList.add('exit');
+    const prev = current;
+    current = n;
+    slides[current].classList.add('active');
+    setTimeout(() => slides[prev].classList.remove('exit'), 500);
+    updateUI();
+  }
+
+  function navigate(dir) { goTo(current + dir); }
+
+  document.addEventListener('keydown', e => {
+    if (e.key === 'ArrowRight' || e.key === 'ArrowDown') navigate(1);
+    if (e.key === 'ArrowLeft'  || e.key === 'ArrowUp')   navigate(-1);
+  });
+
+  updateUI();
+</script>
+</body>
+</html>

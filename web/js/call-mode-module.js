@@ -56,8 +56,10 @@ async function startCallMode() {
     // UI Resets
     callModeOverlay?.classList.add('active');
     if (callTranscriptLog) {
-      callTranscriptLog.innerHTML = '<p class="call-transcript-hint">Bicara sekarang... DENAI sedang mendengarkan</p>';
+      callTranscriptLog.innerHTML = '<p class="text-sm text-on-surface-variant italic call-transcript-hint text-center mt-8">Bicara sekarang... DENAI sedang mendengarkan</p>';
     }
+    const lastInputEl = document.getElementById('callInterimText');
+    if (lastInputEl) lastInputEl.textContent = 'Silakan berbicara...';
     
     startTimer();
     setCallStatus('connected');
@@ -79,15 +81,24 @@ function endCallMode() {
   isCallModeActive = false;
   continuousListening = false;
   isProcessingCall = false;
-  
+
   if (window.SpeechModule?.isListening) window.SpeechModule.stopRecognition();
   if (window.SpeechModule?.isSpeaking) window.SpeechModule.stopTextToSpeech();
   window.SpeechModule?.clearTTSQueue();
-  
+
   callModeOverlay?.classList.remove('active');
   showAudioVisualization(false);
   stopTimer();
-  
+
+  // Ensure chat view is visible and scrolled to bottom after call ends
+  if (window.CoreApp) {
+    if (window.CoreApp.landing) window.CoreApp.landing.style.display = 'none';
+    if (window.CoreApp.chat) window.CoreApp.chat.style.display = 'flex';
+    const msgs = window.CoreApp.messages;
+    if (msgs) msgs.scrollTop = msgs.scrollHeight;
+    if (window.CoreApp.chatInput) window.CoreApp.chatInput.focus();
+  }
+
   console.log('CALL MODE: Ended');
 }
 
@@ -97,6 +108,7 @@ async function handleCallModeInput(transcript) {
   isProcessingCall = true;
   
   setCallStatus('processing');
+  _updateLastInput(transcript);
   appendCallTranscript('user', transcript);
   
   if (window.SpeechModule?.isListening) window.SpeechModule.stopRecognition();
@@ -183,35 +195,54 @@ function updateTimerDisplay() {
 
 /* ================= UI STATUS ANIMATOR ================= */
 function setCallStatus(type) {
-  if (!callStatus || !callAvatar) return;
-  
-  // Clear previous animations
+  if (!callAvatar) return;
+
   callAvatar.classList.remove('listening', 'processing', 'speaking');
-  
-  // Update waveform state
   if (audioVisualizer) {
     audioVisualizer.classList.remove('state-listening', 'state-processing', 'state-speaking');
   }
 
+  const statusEl   = document.getElementById('callStatus');
+  const stateText  = document.getElementById('callStateText');
+  const stateDots  = document.getElementById('callStateDots');
+  const stateSub   = document.getElementById('callStateSubtext');
+  const statusDot  = document.querySelector('.call-status-dot');
+
   switch(type) {
     case 'connected':
-      callStatus.textContent = 'MENGHUBUNGKAN';
+      if (statusEl) statusEl.textContent = 'MENGHUBUNGKAN';
+      if (stateText) stateText.textContent = 'DENAI';
+      if (stateDots) stateDots.style.display = 'none';
+      if (stateSub)  stateSub.textContent = '';
+      if (statusDot) { statusDot.className = 'call-status-dot w-2 h-2 rounded-full bg-yellow-400 animate-pulse'; }
       break;
 
     case 'listening':
-      callStatus.textContent = 'MENDENGARKAN ANDA';
+      if (statusEl) statusEl.textContent = 'MENDENGARKAN ANDA';
+      if (stateText) stateText.textContent = 'DENAI';
+      if (stateDots) stateDots.style.display = 'none';
+      if (stateSub)  stateSub.textContent = 'Silakan berbicara...';
+      if (statusDot) { statusDot.className = 'call-status-dot w-2 h-2 rounded-full bg-green-500 animate-pulse'; }
       callAvatar.classList.add('listening');
       if (audioVisualizer) audioVisualizer.classList.add('state-listening');
       break;
 
     case 'processing':
-      callStatus.textContent = 'MEMPROSES JAWABAN';
+      if (statusEl) statusEl.textContent = 'MEMPROSES JAWABAN';
+      if (stateText) stateText.textContent = 'DENAI sedang berpikir';
+      if (stateDots) { stateDots.style.cssText = ''; stateDots.style.display = 'flex'; }
+      if (stateSub)  stateSub.textContent = 'Menganalisis pertanyaan Anda...';
+      if (statusDot) { statusDot.className = 'call-status-dot w-2 h-2 rounded-full bg-yellow-400 animate-pulse'; }
       callAvatar.classList.add('processing');
       if (audioVisualizer) audioVisualizer.classList.add('state-processing');
       break;
 
     case 'speaking':
-      callStatus.textContent = 'DENAI BERBICARA';
+      if (statusEl) statusEl.textContent = 'DENAI BERBICARA';
+      if (stateText) stateText.textContent = 'DENAI berbicara';
+      if (stateDots) stateDots.style.display = 'none';
+      if (stateSub)  stateSub.textContent = '';
+      if (statusDot) { statusDot.className = 'call-status-dot w-2 h-2 rounded-full bg-primary animate-pulse'; }
       callAvatar.classList.add('speaking');
       if (audioVisualizer) audioVisualizer.classList.add('state-speaking');
       break;
@@ -219,32 +250,90 @@ function setCallStatus(type) {
 }
 
 /* ================= LIVE TRANSCRIPT ================= */
+function _cleanTranscriptText(text) {
+  let clean = text.replace(/<[^>]*>/g, ' ');
+  clean = clean
+    .replace(/#{1,6}\s*/g, '')
+    .replace(/\*{1,2}([^*]+)\*{1,2}/g, '$1')
+    .replace(/`{1,3}[^`]*`{1,3}/g, '')
+    .replace(/^\s*[-*]\s+/gm, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+  return clean;
+}
+
+function _getTimestamp() {
+  const now = new Date();
+  return now.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+}
+
 function appendCallTranscript(role, text) {
   if (!callTranscriptLog || !text?.trim()) return;
 
-  // Remove hint text on first real entry
   const hint = callTranscriptLog.querySelector('.call-transcript-hint');
   if (hint) hint.remove();
 
+  const timestamp = _getTimestamp();
+  const isAI      = role === 'ai';
+
+  // AI: render markdown → HTML; User: plain cleaned text
+  let bubbleContent;
+  if (isAI) {
+    try {
+      bubbleContent = (window.marked?.parse || window.marked)(text.trim());
+    } catch (e) {
+      bubbleContent = _cleanTranscriptText(text);
+    }
+  } else {
+    bubbleContent = _cleanTranscriptText(text);
+  }
+
   const line = document.createElement('div');
   line.className = `transcript-line ${role}`;
-  line.innerHTML = `
-    <span class="t-icon">${role === 'user' ? '👤' : '🤖'}</span>
-    <span class="t-label">${role === 'user' ? 'Anda' : 'Denai'}</span>
-    <span class="t-text">${text.trim()}</span>
-  `;
+
+  const meta = document.createElement('div');
+  meta.className = 't-meta';
+  meta.innerHTML = `<span class="t-label">${isAI ? 'DENAI' : 'ANDA'}</span><span class="t-time">${timestamp}</span>`;
+
+  const bubble = document.createElement('div');
+  bubble.className = 't-text';
+  bubble.innerHTML = bubbleContent;
+
+  line.appendChild(meta);
+  line.appendChild(bubble);
   callTranscriptLog.appendChild(line);
   callTranscriptLog.scrollTop = callTranscriptLog.scrollHeight;
 
-  // Update mobile mini transcript (only last message shown)
+  // Update mobile mini transcript (plain text only)
   const mobileTx = document.getElementById('callMobileTranscript');
   if (mobileTx) {
+    const mobileText = _cleanTranscriptText(text);
     mobileTx.innerHTML = `
       <div class="call-mobile-msg">
-        <span class="call-mobile-label">${role === 'user' ? 'Anda' : 'Denai'}</span>
-        <p class="call-mobile-text">${text.trim()}</p>
+        <span class="call-mobile-label">${isAI ? 'Denai' : 'Anda'}</span>
+        <p class="call-mobile-text">${mobileText}</p>
       </div>
     `;
+  }
+}
+
+function _updateLastInput(text) {
+  const el = document.getElementById('callInterimText');
+  if (el && text?.trim()) el.textContent = `"${text.trim()}"`;
+}
+
+/* ================= SKIP (INTERRUPT TTS) ================= */
+function skipSpeaking() {
+  window.SpeechModule?.stopTextToSpeech();
+  window.SpeechModule?.clearTTSQueue();
+  window.isProcessingCall = false;
+
+  const skipBtn = document.getElementById('skipBtn');
+  if (skipBtn) skipBtn.style.display = 'none';
+
+  if (isCallModeActive && continuousListening) {
+    setCallStatus('listening');
+    setTimeout(() => window.SpeechModule?.restartCallListening(), 300);
   }
 }
 
@@ -252,7 +341,7 @@ function appendCallTranscript(role, text) {
 function setupCallModeEvents() {
   endCallBtn?.addEventListener("click", endCallMode);
   muteBtn?.addEventListener("click", toggleMute);
-  speakerBtn?.addEventListener("click", toggleSpeaker);
+  document.getElementById('skipBtn')?.addEventListener("click", skipSpeaking);
 }
 
 /* ================= MODULE INITIALIZATION ================= */

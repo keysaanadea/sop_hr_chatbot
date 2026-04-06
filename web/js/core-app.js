@@ -581,14 +581,14 @@ function addMessage(role, text, shouldSave = true, responseData = null) {
   return createRegularMessage(role, text, shouldSave, responseData?.trace_id || null);
 }
 
-function _buildNotFoundCard(body) {
+function _buildNotFoundCard() {
   return `
     <div class="not-found-card">
       <div class="not-found-header">
         <span class="material-symbols-outlined">error</span>
         <h3>Informasi Tidak Ditemukan</h3>
       </div>
-      <p class="not-found-body">${body || "Maaf, data spesifik atau panduan aturan yang Anda tanyakan tidak tersedia di <strong>Sistem Database</strong> maupun <strong>Buku Panduan (SOP)</strong> kami saat ini."}</p>
+      <p class="not-found-body">Maaf, informasi yang Anda cari belum tersedia dalam dokumen SOP dan kebijakan perusahaan kami. Silakan coba dengan kata kunci yang berbeda atau hubungi tim HR.</p>
       <div class="not-found-tips">
         <h4><span class="material-symbols-outlined">lightbulb</span>Saran Pencarian:</h4>
         <ul>
@@ -609,10 +609,14 @@ function _buildNotFoundCard(body) {
  * Renders bot bubble inner HTML — special card for "not found", markdown for everything else.
  */
 function _renderBotBubbleContent(text) {
-  // Format: "Judul|Pesan" untuk not-found card dengan custom body
-  if (text.includes("|") && text.startsWith("Informasi Tidak Ditemukan|")) {
-    const body = text.split("|")[1] || "";
-    return _buildNotFoundCard(body);
+  // Guard: already rendered as not-found card (e.g. loaded from history) — don't double-wrap
+  if (text.includes('not-found-card')) {
+    return text;
+  }
+
+  // Format: "Informasi Tidak Ditemukan|..." from backend
+  if (text.startsWith("Informasi Tidak Ditemukan")) {
+    return _buildNotFoundCard();
   }
 
   const _NOT_FOUND_KEYWORDS = [
@@ -623,11 +627,36 @@ function _renderBotBubbleContent(text) {
     "saya adalah asisten khusus untuk informasi HR",
     "Pertanyaan ini membutuhkan akses ke database karyawan",
   ];
-  const isNotFound = _NOT_FOUND_KEYWORDS.some(k => text.includes(k));
-  if (isNotFound) {
-    return _buildNotFoundCard(text);
+  if (_NOT_FOUND_KEYWORDS.some(k => text.includes(k))) {
+    return _buildNotFoundCard();
   }
-  return (typeof marked !== 'undefined') ? marked.parse(text) : text;
+  // Consolidate repeated "Sumber: X\nSumber: Y" into a single numbered list
+  // Handles both plain "Sumber:" and markdown bold "**Sumber:**" variants
+  text = text.replace(
+    /(\*{0,2}Sumber:\*{0,2} [^\n]+(?:\n\*{0,2}Sumber:\*{0,2} [^\n]+)+)/g,
+    (match) => {
+      const sources = match.split('\n')
+        .map(line => line.replace(/^\*{0,2}Sumber:\*{0,2}\s*/, '').trim())
+        .filter(Boolean);
+      return '**Sumber:**\n' + sources.map((s, i) => `${i + 1}. ${s}`).join('\n');
+    }
+  );
+
+  if (typeof marked !== 'undefined') {
+    try {
+      const rendered = marked.parse(text);
+      // Catch any ** that marked failed to render (e.g. from vector DB markdown content)
+      return rendered
+        .replace(/\*\*([^*<\n]+)\*\*/g, '<strong>$1</strong>')
+        .replace(/(?<!\*)\*(?!\*)([^*<\n]+)(?<!\*)\*(?!\*)/g, '<em>$1</em>');
+    } catch (e) {
+      // marked threw — fall through to manual conversion
+    }
+  }
+  // Fallback: manual inline markdown conversion
+  return text
+    .replace(/\*\*([^*\n]+)\*\*/g, '<strong>$1</strong>')
+    .replace(/(?<!\*)\*(?!\*)([^*\n]+)(?<!\*)\*(?!\*)/g, '<em>$1</em>');
 }
 
 /**
@@ -701,7 +730,7 @@ function createRegularMessage(role, text, shouldSave = true, traceId = null) {
   }
 
   // Push AI reply text to the live call transcript log
-  if (role === 'bot' && window.isCallModeActive) {
+  if (role === 'bot' && window.CallModeModule?.isCallModeActive) {
     window.CallModeModule?.appendCallTranscript('ai', stripHtml(text));
   }
 
@@ -977,6 +1006,9 @@ function sendMessage(textOverride) {
   if (conversationHistory.length === 0) {
     window.SessionModule?.addOptimisticSession(activeChatId, text);
   }
+
+  // Cancel any pending speech transcript timer to prevent repopulating the input
+  window.SpeechModule?.stopRecognition();
 
   addMessage("user", text);
   if (window.askBackend) askBackend(text);

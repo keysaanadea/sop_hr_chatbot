@@ -427,7 +427,7 @@ async def answer_question_async(
             text = m['metadata'].get('text', '').strip()[:2000]
             source = m['metadata'].get('filename') or m['metadata'].get('source_file') or 'Unknown'
             _section_path = m['metadata'].get('section_path', '')
-            _section_full = ' > '.join(p.strip() for p in _section_path.split('|') if p.strip()) if _section_path else ''
+            _section_full = ', '.join(p.strip() for p in _section_path.split('|') if p.strip()) if _section_path else ''
             parent = m['metadata'].get('parent_section') or m['metadata'].get('heading') or _section_full or 'Tidak spesifik'
             score = m.get('score', 0.0)
             
@@ -723,7 +723,7 @@ async def answer_question_stream(
             text = m['metadata'].get('text', '').strip()[:2000]
             source = m['metadata'].get('filename') or m['metadata'].get('source_file') or 'Unknown'
             _section_path = m['metadata'].get('section_path', '')
-            _section_full = ' > '.join(p.strip() for p in _section_path.split('|') if p.strip()) if _section_path else ''
+            _section_full = ', '.join(p.strip() for p in _section_path.split('|') if p.strip()) if _section_path else ''
             parent = m['metadata'].get('parent_section') or m['metadata'].get('heading') or _section_full or 'Tidak spesifik'
             if source != 'Unknown':
                 relevant_filenames.append(source)

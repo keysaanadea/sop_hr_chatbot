@@ -31,6 +31,7 @@ async function askBackend(text) {
   };
 
   let streamingBubble = null;
+  let fullAnswer = "";
 
   try {
     const timeoutId = setTimeout(() => controller.abort(), 120000);
@@ -53,7 +54,6 @@ async function askBackend(text) {
     const reader = res.body.getReader();
     const decoder = new TextDecoder();
     let buffer = "";
-    let fullAnswer = "";
 
     while (true) {
       const { done, value } = await reader.read();
@@ -69,15 +69,23 @@ async function askBackend(text) {
         try { event = JSON.parse(part.slice(6)); } catch { continue; }
 
         if (event.type === "token") {
-          // First token: remove thinking animation, create streaming bubble
-          if (thinkingMessage) {
-            window.CoreApp?.removeThinkingAnimation();
-            thinkingMessage = null;
+          // First token: remove thinking animation and create streaming bubble
+          if (!streamingBubble) {
+            if (thinkingMessage) {
+              window.CoreApp?.removeThinkingAnimation();
+              thinkingMessage = null;
+            }
             streamingBubble = _createStreamingBubble();
           }
           fullAnswer += event.content;
           if (streamingBubble) {
-            streamingBubble.innerHTML = fullAnswer;
+            try {
+              streamingBubble.innerHTML = (typeof marked !== 'undefined')
+                ? marked.parse(fullAnswer)
+                : fullAnswer;
+            } catch (e) {
+              streamingBubble.innerHTML = fullAnswer;
+            }
             const msgs = document.getElementById("messages");
             if (msgs) msgs.scrollTop = msgs.scrollHeight;
           }
@@ -119,6 +127,9 @@ async function askBackend(text) {
             // Streaming path: finalize bubble, get msgDiv back
             const finishedMsgDiv = _finalizeStreamingBubble(streamingBubble, fullAnswer, event.trace_id);
             streamingBubble = null;
+            if (window.isCallModeActive) {
+              window.CallModeModule?.appendCallTranscript('ai', fullAnswer);
+            }
             scheduleAutoSpeech(fullAnswer);
 
             // A+B merge: append analytics table INSIDE the same chat bubble
@@ -151,7 +162,8 @@ async function askBackend(text) {
           window.CoreApp?.addMessage("bot", `❌ ${event.message}`);
 
         } else if (event.type === "cancelled") {
-          if (streamingBubble) { streamingBubble.closest(".msg")?.remove(); streamingBubble = null; }
+          _stopAndKeepPartial(streamingBubble, fullAnswer);
+          streamingBubble = null;
         }
       }
     }
@@ -159,12 +171,14 @@ async function askBackend(text) {
   } catch (err) {
     window.SpeechModule?.stopProcessingFeedback();
     window.CoreApp?.removeThinkingAnimation();
-    if (streamingBubble) { streamingBubble.closest(".msg")?.remove(); streamingBubble = null; }
 
     if (err.name === "AbortError") {
       console.log("🛑 Request was cancelled by user");
+      _stopAndKeepPartial(streamingBubble, fullAnswer);
+      streamingBubble = null;
       return;
     }
+    if (streamingBubble) { streamingBubble.closest(".msg")?.remove(); streamingBubble = null; }
     const errorMessage = err.message.includes("Failed to fetch")
       ? "❌ Connection Error: Unable to reach server."
       : `❌ ${err.message}`;
@@ -233,6 +247,21 @@ function _finalizeStreamingBubble(bubble, fullAnswer, traceId) {
   }
 
   return msgDiv; // return so caller can append analytics into same message
+}
+
+function _stopAndKeepPartial(streamingBubble, fullAnswer) {
+  if (!streamingBubble) return;
+
+  // Hapus cursor streaming terlebih dahulu secara eksplisit
+  document.querySelectorAll("[data-stream-cursor]").forEach(el => el.remove());
+
+  if (fullAnswer.trim()) {
+    // Sanitasi partial HTML: buang karakter '<' menggantung di akhir
+    const sanitized = fullAnswer.replace(/<[^>]*$/, "").trimEnd();
+    _finalizeStreamingBubble(streamingBubble, sanitized || fullAnswer, null);
+  } else {
+    streamingBubble.closest(".msg")?.remove();
+  }
 }
 
 function _appendAnalyticsToMessage(msgDiv, eventData) {
@@ -329,7 +358,7 @@ async function checkAPIHealth() {
 
 function scheduleAutoSpeech(text) {
   if (!text || window.CoreApp?.isTextOnlyMode) return;
-  
+
   setTimeout(() => {
     window.SpeechModule?.speakText(text, { language: 'id' });
   }, window.isCallModeActive ? 200 : 800);

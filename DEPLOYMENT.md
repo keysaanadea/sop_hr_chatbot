@@ -85,6 +85,12 @@ pm2 start "venv/bin/gunicorn backend.main:app \
 pm2 startup
 # Jalankan perintah yang muncul dari output pm2 startup (biasanya dimulai dengan sudo env ...)
 pm2 save
+
+# Setup log rotation — wajib agar log tidak memenuhi disk server
+pm2 install pm2-logrotate
+pm2 set pm2-logrotate:max_size 50M    # rotate jika log mencapai 50MB
+pm2 set pm2-logrotate:retain 7        # simpan log 7 hari terakhir
+pm2 set pm2-logrotate:compress true   # kompres log lama
 ```
 
 Perintah PM2 yang sering digunakan:
@@ -94,6 +100,7 @@ pm2 logs denai          # lihat log aplikasi secara live
 pm2 restart denai       # restart aplikasi
 pm2 stop denai          # hentikan aplikasi
 pm2 delete denai        # hapus proses dari PM2
+pm2 monit               # monitor CPU dan RAM secara real-time
 ```
 
 ### G. Konfigurasi Nginx
@@ -104,6 +111,10 @@ nano /etc/nginx/sites-available/denai
 server {
     listen 80;
     server_name denai.online www.denai.online;
+
+    # Batas ukuran upload — wajib untuk fitur Call Mode (audio upload)
+    # Default Nginx hanya 1MB, audio bisa sampai 5–10MB
+    client_max_body_size 20m;
 
     root /var/www/denai/web;
     index index.html;

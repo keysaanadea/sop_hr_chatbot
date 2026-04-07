@@ -5,733 +5,874 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>DENAI — Enterprise HR AI Chatbot</title>
 <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+<script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
 <style>
-  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+:root {
+  --red: #b7131a; --red-light: #d9272e; --red-dark: #8c0e13;
+  --red-glow: rgba(183,19,26,.35); --bg: #0a0a0f;
+  --surface: rgba(255,255,255,.045); --border: rgba(255,255,255,.08);
+  --text: #f0f0f5; --muted: rgba(240,240,245,.5); --accent: #ff6b6b;
+  --green: #4ade80; --blue: #60a5fa; --purple: #a78bfa; --orange: #fb923c;
+}
+html, body { height: 100%; font-family: 'Plus Jakarta Sans', sans-serif; background: var(--bg); color: var(--text); overflow: hidden; }
+.deck { width: 100vw; height: 100vh; position: relative; }
+.slide {
+  position: absolute; inset: 0;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  padding: 3.5rem 5.5rem;
+  opacity: 0; transform: translateX(60px);
+  transition: opacity .45s ease, transform .45s ease;
+  pointer-events: none;
+}
+.slide.active { opacity: 1; transform: translateX(0); pointer-events: all; }
+.slide.exit   { opacity: 0; transform: translateX(-60px); }
+.slide::before {
+  content: ''; position: absolute; inset: 0; z-index: -1;
+  background:
+    radial-gradient(ellipse 60% 50% at 15% 20%, rgba(183,19,26,.16) 0%, transparent 70%),
+    radial-gradient(ellipse 50% 40% at 85% 80%, rgba(183,19,26,.10) 0%, transparent 70%),
+    var(--bg);
+}
+.slide::after {
+  content: ''; position: absolute; inset: 0; z-index: -1;
+  background-image:
+    linear-gradient(rgba(255,255,255,.022) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255,255,255,.022) 1px, transparent 1px);
+  background-size: 60px 60px;
+}
 
-  :root {
-    --red: #b7131a;
-    --red-light: #d9272e;
-    --red-dark: #8c0e13;
-    --red-glow: rgba(183, 19, 26, 0.35);
-    --bg: #0a0a0f;
-    --surface: rgba(255,255,255,0.04);
-    --surface-hover: rgba(255,255,255,0.07);
-    --border: rgba(255,255,255,0.08);
-    --text: #f0f0f5;
-    --muted: rgba(240,240,245,0.5);
-    --accent: #ff6b6b;
-  }
+/* NAV */
+.nav {
+  position: fixed; bottom: 1.8rem; left: 50%; transform: translateX(-50%);
+  display: flex; align-items: center; gap: 1rem; z-index: 100;
+  background: rgba(255,255,255,.06); backdrop-filter: blur(20px);
+  border: 1px solid var(--border); border-radius: 50px; padding: .55rem 1.3rem;
+}
+.nav button {
+  background: none; border: none; color: var(--text); font-size: 1.1rem;
+  cursor: pointer; padding: .25rem .6rem; border-radius: 50px; transition: background .2s;
+  display: flex; align-items: center;
+}
+.nav button:hover { background: rgba(183,19,26,.3); }
+.nav .counter { font-size: .8rem; color: var(--muted); min-width: 48px; text-align: center; }
+.nav .dots { display: flex; gap: .4rem; }
+.nav .dot { width: 6px; height: 6px; border-radius: 50%; background: rgba(255,255,255,.22); cursor: pointer; transition: all .2s; }
+.nav .dot.active { background: var(--red); width: 18px; border-radius: 3px; }
+.progress-bar { position: fixed; top: 0; left: 0; height: 2px; background: linear-gradient(90deg, var(--red-dark), var(--accent)); transition: width .4s ease; z-index: 200; }
+.key-hint { position: fixed; top: 1.4rem; right: 2rem; font-size: .7rem; color: rgba(255,255,255,.18); letter-spacing: .03em; }
 
-  html, body { height: 100%; font-family: 'Plus Jakarta Sans', sans-serif; background: var(--bg); color: var(--text); overflow: hidden; }
+/* COMMON */
+.badge {
+  display: inline-flex; align-items: center; gap: .4rem;
+  background: rgba(183,19,26,.18); border: 1px solid rgba(183,19,26,.38);
+  color: #ff8a8a; font-size: .72rem; font-weight: 700; letter-spacing: .08em;
+  padding: .28rem .85rem; border-radius: 50px; text-transform: uppercase; margin-bottom: 1rem;
+}
+.pulse-dot { width: 5px; height: 5px; background: var(--accent); border-radius: 50%; animation: pulse 1.6s infinite; }
+@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.25} }
+h1 { font-size: 3.8rem; font-weight: 800; line-height: 1.1; }
+h2 { font-size: 2.4rem; font-weight: 700; line-height: 1.2; }
+h3 { font-size: 1.4rem; font-weight: 600; }
+.gradient-text { background: linear-gradient(135deg, #fff 20%, var(--accent)); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+.divider { width: 56px; height: 3px; background: linear-gradient(90deg, var(--red), transparent); border-radius: 2px; margin: 1.2rem auto; }
+.divider-left { margin-left: 0; }
+.lead { font-size: 1.1rem; color: var(--muted); line-height: 1.7; max-width: 620px; text-align: center; }
+.lead-left { font-size: 1rem; color: var(--muted); line-height: 1.7; }
+.icon-wrap { display: flex; align-items: center; justify-content: center; }
+.icon-wrap svg { flex-shrink: 0; }
+.ic { display: inline-flex; align-items: center; justify-content: center; }
 
-  /* ── SLIDESHOW SHELL ─────────────────────────────────────── */
-  .deck { width: 100vw; height: 100vh; position: relative; }
+/* CARD */
+.card { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 1.3rem; backdrop-filter: blur(10px); transition: border-color .25s, transform .25s; }
+.card:hover { border-color: rgba(183,19,26,.45); transform: translateY(-2px); }
+.card-icon { width: 36px; height: 36px; border-radius: 10px; display: flex; align-items: center; justify-content: center; margin-bottom: .7rem; }
+.card h4 { font-size: .92rem; font-weight: 700; margin-bottom: .3rem; }
+.card p { font-size: .78rem; color: var(--muted); line-height: 1.5; }
 
-  .slide {
-    position: absolute; inset: 0;
-    display: flex; flex-direction: column; align-items: center; justify-content: center;
-    padding: 4rem 6rem;
-    opacity: 0; transform: translateX(60px);
-    transition: opacity .5s ease, transform .5s ease;
-    pointer-events: none;
-  }
-  .slide.active { opacity: 1; transform: translateX(0); pointer-events: all; }
-  .slide.exit   { opacity: 0; transform: translateX(-60px); }
+/* ── SLIDE 1: HERO ── */
+#s1 { gap: .6rem; }
+.logo-ring {
+  width: 88px; height: 88px; border-radius: 22px;
+  background: linear-gradient(135deg, var(--red-dark), var(--red-light));
+  display: flex; align-items: center; justify-content: center;
+  box-shadow: 0 0 50px var(--red-glow); margin-bottom: 1rem;
+  animation: float 3.5s ease-in-out infinite;
+}
+@keyframes float { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-8px)} }
+#s1 h1 { text-align: center; }
+#s1 .subtitle { font-size: 1.15rem; color: var(--muted); text-align: center; margin-top: .4rem; }
+#s1 .tags { display: flex; gap: .7rem; margin-top: 1.8rem; flex-wrap: wrap; justify-content: center; }
+.tag { display: flex; align-items: center; gap: .4rem; background: var(--surface); border: 1px solid var(--border); border-radius: 50px; padding: .35rem .9rem; font-size: .77rem; color: var(--muted); }
+.tag svg { color: var(--accent); }
 
-  /* animated background */
-  .slide::before {
-    content: '';
-    position: absolute; inset: 0; z-index: -1;
-    background:
-      radial-gradient(ellipse 60% 50% at 15% 20%, rgba(183,19,26,.18) 0%, transparent 70%),
-      radial-gradient(ellipse 50% 40% at 85% 80%, rgba(183,19,26,.12) 0%, transparent 70%),
-      var(--bg);
-  }
+/* ── SLIDE 2: WHAT IS DENAI ── */
+#s2 .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 2.5rem; width: 100%; margin-top: 1rem; align-items: start; }
+#s2 .stats { display: flex; gap: 2.5rem; margin-top: 1.5rem; }
+#s2 .stat .num { font-size: 2.6rem; font-weight: 800; color: var(--accent); line-height: 1; }
+#s2 .stat .lbl { font-size: .72rem; color: var(--muted); margin-top: .25rem; }
 
-  /* grid overlay */
-  .slide::after {
-    content: '';
-    position: absolute; inset: 0; z-index: -1;
-    background-image:
-      linear-gradient(rgba(255,255,255,.025) 1px, transparent 1px),
-      linear-gradient(90deg, rgba(255,255,255,.025) 1px, transparent 1px);
-    background-size: 60px 60px;
-  }
+/* ── SLIDE 3: TWO MODES ── */
+#s3 .modes { display: grid; grid-template-columns: 1fr 1fr; gap: 2rem; width: 100%; margin-top: 1.2rem; }
+.mode-card { border-radius: 18px; padding: 1.8rem; border: 1px solid var(--border); position: relative; overflow: hidden; }
+.mode-card.chat { background: linear-gradient(135deg, rgba(183,19,26,.12), rgba(183,19,26,.03)); border-color: rgba(183,19,26,.28); }
+.mode-card.call { background: linear-gradient(135deg, rgba(96,165,250,.09), rgba(96,165,250,.02)); border-color: rgba(96,165,250,.2); }
+.mode-card .m-icon { width: 48px; height: 48px; border-radius: 14px; display: flex; align-items: center; justify-content: center; margin-bottom: .9rem; }
+.mode-card.chat .m-icon { background: rgba(183,19,26,.2); }
+.mode-card.call .m-icon { background: rgba(96,165,250,.15); }
+.mode-card h3 { font-size: 1.3rem; margin-bottom: .6rem; }
+.feature-list { list-style: none; }
+.feature-list li { font-size: .83rem; color: var(--muted); padding: .3rem 0; display: flex; align-items: center; gap: .55rem; }
+.feature-list li svg { color: var(--accent); flex-shrink: 0; }
 
-  /* ── NAVIGATION ──────────────────────────────────────────── */
-  .nav {
-    position: fixed; bottom: 2rem; left: 50%; transform: translateX(-50%);
-    display: flex; align-items: center; gap: 1rem; z-index: 100;
-    background: rgba(255,255,255,0.06); backdrop-filter: blur(20px);
-    border: 1px solid var(--border); border-radius: 50px;
-    padding: .6rem 1.4rem;
-  }
-  .nav button {
-    background: none; border: none; color: var(--text);
-    font-size: 1.3rem; cursor: pointer; padding: .2rem .6rem;
-    border-radius: 50px; transition: background .2s;
-  }
-  .nav button:hover { background: rgba(183,19,26,.3); }
-  .nav .counter { font-size: .85rem; color: var(--muted); min-width: 50px; text-align: center; }
-  .nav .dots { display: flex; gap: .4rem; }
-  .nav .dot {
-    width: 6px; height: 6px; border-radius: 50%;
-    background: rgba(255,255,255,0.25); cursor: pointer; transition: all .2s;
-  }
-  .nav .dot.active { background: var(--red); width: 18px; border-radius: 3px; }
+/* ── SLIDE 4: FEATURES ── */
+.feature-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: .9rem; width: 100%; margin-top: 1.2rem; }
+.feat-card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 1.1rem; }
+.feat-card .fi { width: 32px; height: 32px; border-radius: 8px; background: rgba(183,19,26,.15); display: flex; align-items: center; justify-content: center; margin-bottom: .55rem; }
+.feat-card h4 { font-size: .88rem; font-weight: 700; margin-bottom: .25rem; }
+.feat-card p { font-size: .73rem; color: var(--muted); line-height: 1.45; }
 
-  /* ── COMMON ELEMENTS ─────────────────────────────────────── */
-  .badge {
-    display: inline-flex; align-items: center; gap: .4rem;
-    background: rgba(183,19,26,.2); border: 1px solid rgba(183,19,26,.4);
-    color: #ff8a8a; font-size: .75rem; font-weight: 600; letter-spacing: .05em;
-    padding: .3rem .8rem; border-radius: 50px; text-transform: uppercase;
-    margin-bottom: 1.2rem;
-  }
-  .badge .dot-pulse {
-    width: 6px; height: 6px; background: var(--accent); border-radius: 50%;
-    animation: pulse 1.5s infinite;
-  }
-  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.3} }
+/* ── SLIDE 5: ARCHITECTURE FLOW ── */
+#s5 { padding: 2.5rem 4.5rem; justify-content: flex-start; padding-top: 3rem; }
+#s5 .flow-wrap { width: 100%; margin-top: 1rem; display: flex; flex-direction: column; align-items: center; gap: 0; }
 
-  h1 { font-size: 4rem; font-weight: 800; line-height: 1.1; }
-  h2 { font-size: 2.6rem; font-weight: 700; line-height: 1.2; }
-  h3 { font-size: 1.5rem; font-weight: 600; }
+.flow-layer { display: flex; align-items: center; justify-content: center; gap: 1rem; width: 100%; }
+.flow-node {
+  display: flex; flex-direction: column; align-items: center; gap: .3rem;
+  background: var(--surface); border: 1px solid var(--border); border-radius: 10px;
+  padding: .65rem 1rem; min-width: 110px; text-align: center; position: relative;
+}
+.flow-node.highlight { border-color: rgba(183,19,26,.45); background: rgba(183,19,26,.08); }
+.flow-node .fn-icon { display: flex; align-items: center; justify-content: center; }
+.flow-node .fn-title { font-size: .72rem; font-weight: 700; white-space: nowrap; }
+.flow-node .fn-sub { font-size: .6rem; color: var(--muted); white-space: nowrap; }
+.flow-connector { display: flex; flex-direction: column; align-items: center; }
+.flow-connector svg { color: rgba(183,19,26,.6); }
 
-  .gradient-text {
-    background: linear-gradient(135deg, #fff 30%, var(--accent));
-    -webkit-background-clip: text; -webkit-text-fill-color: transparent;
-  }
-  .red-text { color: var(--accent); }
+.flow-branch { display: flex; gap: 1.5rem; align-items: flex-start; }
+.branch-box {
+  display: flex; flex-direction: column; gap: .4rem; align-items: center;
+  background: rgba(183,19,26,.06); border: 1px solid rgba(183,19,26,.2); border-radius: 10px; padding: .8rem 1rem;
+}
+.branch-box.blue { background: rgba(96,165,250,.06); border-color: rgba(96,165,250,.2); }
+.branch-title { font-size: .65rem; font-weight: 800; letter-spacing: .07em; text-transform: uppercase; color: var(--accent); margin-bottom: .2rem; }
+.branch-box.blue .branch-title { color: var(--blue); }
+.branch-step { display: flex; align-items: center; gap: .4rem; font-size: .68rem; color: var(--muted); white-space: nowrap; }
+.branch-step svg { flex-shrink: 0; color: var(--accent); }
+.branch-box.blue .branch-step svg { color: var(--blue); }
+.branch-connector { display: flex; align-items: center; padding-top: .5rem; }
+.branch-connector svg { color: rgba(255,255,255,.2); }
 
-  p.lead { font-size: 1.15rem; color: var(--muted); line-height: 1.7; max-width: 640px; text-align: center; }
-  p.lead-left { font-size: 1.1rem; color: var(--muted); line-height: 1.7; }
+.flow-side-tasks { display: flex; gap: .8rem; margin-top: .5rem; }
+.side-task { background: rgba(255,255,255,.03); border: 1px solid rgba(255,255,255,.06); border-radius: 8px; padding: .5rem .8rem; display: flex; align-items: center; gap: .4rem; font-size: .68rem; color: var(--muted); }
+.side-task svg { color: var(--purple); }
 
-  .divider { width: 60px; height: 3px; background: linear-gradient(90deg, var(--red), transparent); border-radius: 2px; margin: 1.5rem auto; }
-  .divider-left { margin-left: 0; }
+.vline { width: 1px; height: 16px; background: rgba(183,19,26,.4); }
+.hfork { display: flex; align-items: flex-start; gap: 0; margin: 2px 0; }
+.hfork .fork-line-left { width: 60px; height: 1px; background: rgba(183,19,26,.35); margin-top: 10px; }
+.hfork .fork-line-right { width: 60px; height: 1px; background: rgba(96,165,250,.35); margin-top: 10px; }
+.hfork .fork-center { display: flex; flex-direction: column; align-items: center; }
+.hfork .fork-center .vl { width: 1px; height: 10px; background: rgba(255,255,255,.2); }
 
-  /* ── CARD ────────────────────────────────────────────────── */
-  .card {
-    background: var(--surface); border: 1px solid var(--border);
-    border-radius: 16px; padding: 1.5rem;
-    backdrop-filter: blur(12px);
-    transition: border-color .3s, transform .3s;
-  }
-  .card:hover { border-color: rgba(183,19,26,.5); transform: translateY(-2px); }
-  .card .icon { font-size: 2rem; margin-bottom: .8rem; }
-  .card h4 { font-size: 1rem; font-weight: 700; margin-bottom: .4rem; }
-  .card p { font-size: .85rem; color: var(--muted); line-height: 1.5; }
+/* ── SLIDE 6: TECH STACK ── */
+.stack-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: .9rem; width: 100%; margin-top: 1.2rem; }
+.stack-group { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 1.1rem; }
+.sg-head { display: flex; align-items: center; gap: .5rem; margin-bottom: .75rem; }
+.sg-head svg { color: var(--accent); }
+.sg-title { font-size: .68rem; font-weight: 800; letter-spacing: .09em; text-transform: uppercase; color: var(--accent); }
+.tech-pill { display: inline-flex; align-items: center; gap: .3rem; background: rgba(255,255,255,.05); border: 1px solid var(--border); border-radius: 5px; padding: .22rem .55rem; font-size: .71rem; margin: .18rem; }
+.tech-pill .dp { width: 4px; height: 4px; border-radius: 50%; background: var(--accent); flex-shrink: 0; }
 
-  .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 1.2rem; width: 100%; }
-  .grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1.2rem; width: 100%; }
-  .grid-4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1rem; width: 100%; }
+/* ── SLIDE 7: EXTERNAL SERVICES ── */
+.service-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: .9rem; width: 100%; margin-top: 1.2rem; }
+.svc-card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 1.1rem; text-align: center; }
+.svc-icon { width: 40px; height: 40px; border-radius: 12px; display: flex; align-items: center; justify-content: center; margin: 0 auto .6rem; }
+.svc-card .s-name { font-size: .88rem; font-weight: 700; margin-bottom: .3rem; }
+.svc-card .s-role { font-size: .7rem; color: var(--muted); line-height: 1.4; }
+.s-badge { display: inline-block; font-size: .58rem; font-weight: 700; padding: .18rem .5rem; border-radius: 50px; margin-top: .5rem; text-transform: uppercase; letter-spacing: .04em; }
+.s-badge.cloud { background: rgba(183,19,26,.18); color: #ff8a8a; border: 1px solid rgba(183,19,26,.3); }
+.s-badge.self  { background: rgba(74,222,128,.12); color: var(--green); border: 1px solid rgba(74,222,128,.28); }
 
-  /* ── SLIDE 1 — HERO ──────────────────────────────────────── */
-  #s1 { gap: .5rem; }
-  #s1 .logo-ring {
-    width: 90px; height: 90px; border-radius: 24px;
-    background: linear-gradient(135deg, var(--red-dark), var(--red-light));
-    display: flex; align-items: center; justify-content: center;
-    font-size: 2.5rem; font-weight: 800; color: white;
-    box-shadow: 0 0 40px var(--red-glow);
-    margin-bottom: 1.2rem;
-    animation: logoFloat 3s ease-in-out infinite;
-  }
-  @keyframes logoFloat { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-8px)} }
-  #s1 h1 { text-align: center; }
-  #s1 .subtitle { font-size: 1.3rem; color: var(--muted); margin-top: .5rem; text-align: center; }
-  #s1 .tags { display: flex; gap: .8rem; margin-top: 2rem; flex-wrap: wrap; justify-content: center; }
-  #s1 .tag {
-    background: var(--surface); border: 1px solid var(--border);
-    border-radius: 50px; padding: .4rem 1rem; font-size: .8rem; color: var(--muted);
-  }
+/* ── SLIDE 8: ROLE SYSTEM ── */
+#s8 .roles { display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; width: 100%; margin-top: 1.2rem; }
+.role-card { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 1.5rem; }
+.role-head { display: flex; align-items: center; gap: .8rem; margin-bottom: .4rem; }
+.role-icon { width: 42px; height: 42px; border-radius: 12px; display: flex; align-items: center; justify-content: center; }
+.role-card h4 { font-size: .95rem; font-weight: 700; }
+.role-card .sub { font-size: .75rem; color: var(--muted); margin-bottom: .9rem; }
+.access-list { display: flex; flex-direction: column; gap: .35rem; }
+.access-item { display: flex; align-items: center; gap: .55rem; font-size: .8rem; color: var(--muted); }
+.access-item svg.ok { color: var(--green); }
+.access-item svg.no { color: #f87171; }
+#s8 .note { margin-top: 1rem; padding: .85rem 1.3rem; background: rgba(183,19,26,.07); border: 1px solid rgba(183,19,26,.18); border-radius: 10px; font-size: .78rem; color: var(--muted); text-align: center; display: flex; align-items: center; justify-content: center; gap: .5rem; }
+#s8 .note svg { color: var(--accent); flex-shrink: 0; }
 
-  /* ── SLIDE 2 — WHAT IS DENAI ─────────────────────────────── */
-  #s2 .big-stat {
-    display: flex; gap: 3rem; margin-top: 2rem;
-  }
-  #s2 .stat { text-align: center; }
-  #s2 .stat .num { font-size: 2.8rem; font-weight: 800; color: var(--accent); line-height: 1; }
-  #s2 .stat .lbl { font-size: .8rem; color: var(--muted); margin-top: .3rem; }
+/* ── SLIDE 9: INFRASTRUCTURE ── */
+#s9 { padding: 2.8rem 4.5rem; justify-content: flex-start; padding-top: 3rem; }
+.infra-diagram { width: 100%; margin-top: 1rem; display: flex; gap: 1.2rem; align-items: flex-start; }
+.infra-col { display: flex; flex-direction: column; gap: .7rem; }
+.infra-col.main { flex: 1.4; }
+.infra-col.services { flex: 1; }
 
-  /* ── SLIDE 3 — TWO MODES ─────────────────────────────────── */
-  #s3 .modes { display: grid; grid-template-columns: 1fr 1fr; gap: 2rem; width: 100%; margin-top: 1.5rem; }
-  #s3 .mode-card {
-    border-radius: 20px; padding: 2rem;
-    border: 1px solid var(--border);
-    position: relative; overflow: hidden;
-  }
-  #s3 .mode-card.chat { background: linear-gradient(135deg, rgba(183,19,26,.12), rgba(183,19,26,.04)); border-color: rgba(183,19,26,.3); }
-  #s3 .mode-card.call { background: linear-gradient(135deg, rgba(100,200,255,.08), rgba(100,200,255,.02)); border-color: rgba(100,200,255,.2); }
-  #s3 .mode-card .mode-icon { font-size: 3rem; margin-bottom: 1rem; }
-  #s3 .mode-card h3 { font-size: 1.4rem; margin-bottom: .8rem; }
-  #s3 .mode-card .feature-list { list-style: none; }
-  #s3 .mode-card .feature-list li { font-size: .9rem; color: var(--muted); padding: .3rem 0; display: flex; align-items: center; gap: .5rem; }
-  #s3 .mode-card .feature-list li::before { content: '→'; color: var(--accent); font-weight: 700; }
+.infra-layer {
+  background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 1rem 1.2rem;
+}
+.infra-layer .il-head { display: flex; align-items: center; gap: .5rem; margin-bottom: .6rem; }
+.infra-layer .il-title { font-size: .7rem; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
+.infra-layer .il-content { display: flex; flex-wrap: wrap; gap: .5rem; }
+.infra-node {
+  display: flex; align-items: center; gap: .4rem;
+  background: rgba(255,255,255,.04); border: 1px solid var(--border);
+  border-radius: 7px; padding: .4rem .7rem; font-size: .72rem; font-weight: 600;
+}
+.infra-node svg { flex-shrink: 0; }
+.infra-node.red { border-color: rgba(183,19,26,.35); background: rgba(183,19,26,.08); }
+.infra-node.red svg { color: var(--accent); }
+.infra-node.blue { border-color: rgba(96,165,250,.3); background: rgba(96,165,250,.07); }
+.infra-node.blue svg { color: var(--blue); }
+.infra-node.green { border-color: rgba(74,222,128,.28); background: rgba(74,222,128,.07); }
+.infra-node.green svg { color: var(--green); }
+.infra-node.purple { border-color: rgba(167,139,250,.28); background: rgba(167,139,250,.07); }
+.infra-node.purple svg { color: var(--purple); }
+.infra-node.orange { border-color: rgba(251,146,60,.28); background: rgba(251,146,60,.07); }
+.infra-node.orange svg { color: var(--orange); }
 
-  /* ── SLIDE 4 — FEATURES ──────────────────────────────────── */
-  .feature-row {
-    display: grid; grid-template-columns: repeat(3, 1fr); gap: 1rem;
-    width: 100%; margin-top: 1.5rem;
-  }
-  .feat-card {
-    background: var(--surface); border: 1px solid var(--border);
-    border-radius: 14px; padding: 1.2rem;
-  }
-  .feat-card .f-icon { font-size: 1.8rem; margin-bottom: .6rem; }
-  .feat-card h4 { font-size: .95rem; font-weight: 700; margin-bottom: .3rem; }
-  .feat-card p { font-size: .78rem; color: var(--muted); line-height: 1.5; }
+.infra-arrow { display: flex; align-items: center; justify-content: center; padding: .1rem 0; }
+.infra-arrow svg { color: rgba(183,19,26,.5); }
 
-  /* ── SLIDE 5 — ARCHITECTURE FLOW ────────────────────────── */
-  #s5 { padding: 3rem 4rem; }
-  .flow {
-    display: flex; align-items: center; gap: 0;
-    width: 100%; margin-top: 2rem; flex-wrap: wrap; justify-content: center;
-  }
-  .flow-step {
-    display: flex; flex-direction: column; align-items: center;
-    background: var(--surface); border: 1px solid var(--border);
-    border-radius: 12px; padding: 1rem 1.2rem; min-width: 110px;
-    text-align: center;
-  }
-  .flow-step .f-i { font-size: 1.6rem; margin-bottom: .4rem; }
-  .flow-step .f-n { font-size: .78rem; font-weight: 600; }
-  .flow-step .f-s { font-size: .65rem; color: var(--muted); margin-top: .2rem; }
-  .flow-arrow { color: var(--red); font-size: 1.4rem; padding: 0 .3rem; flex-shrink: 0; }
+.svc-section-title { font-size: .65rem; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); margin-bottom: .5rem; padding: 0 .2rem; }
 
-  .route-split {
-    display: flex; flex-direction: column; gap: .8rem; margin: 0 .5rem;
-  }
-  .route-box {
-    background: rgba(183,19,26,.1); border: 1px solid rgba(183,19,26,.25);
-    border-radius: 10px; padding: .7rem 1rem; font-size: .75rem; text-align: center; min-width: 140px;
-  }
-  .route-box span { display: block; font-weight: 700; color: var(--accent); margin-bottom: .2rem; }
+.ext-svc-row { display: flex; flex-direction: column; gap: .4rem; }
+.ext-svc-item {
+  display: flex; align-items: center; gap: .6rem;
+  background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: .5rem .8rem;
+}
+.ext-svc-item .esv-icon { width: 26px; height: 26px; border-radius: 7px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+.ext-svc-item .esv-info .esv-name { font-size: .75rem; font-weight: 700; }
+.ext-svc-item .esv-info .esv-desc { font-size: .63rem; color: var(--muted); }
 
-  /* ── SLIDE 6 — TECH STACK ────────────────────────────────── */
-  #s6 .stack-grid {
-    display: grid; grid-template-columns: repeat(3, 1fr); gap: 1rem; width: 100%; margin-top: 1.5rem;
-  }
-  .stack-group { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 1.2rem; }
-  .stack-group .sg-title { font-size: .7rem; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; color: var(--red-light); margin-bottom: .8rem; }
-  .tech-pill {
-    display: inline-flex; align-items: center; gap: .35rem;
-    background: rgba(255,255,255,0.06); border: 1px solid var(--border);
-    border-radius: 6px; padding: .25rem .6rem; font-size: .75rem;
-    margin: .2rem; white-space: nowrap;
-  }
-  .tech-pill .dot { width: 5px; height: 5px; border-radius: 50%; background: var(--accent); flex-shrink: 0; }
+.server-specs { background: rgba(183,19,26,.06); border: 1px solid rgba(183,19,26,.2); border-radius: 10px; padding: .8rem 1rem; }
+.spec-row { display: flex; justify-content: space-between; align-items: center; padding: .28rem 0; border-bottom: 1px solid rgba(255,255,255,.04); }
+.spec-row:last-child { border-bottom: none; }
+.spec-key { font-size: .72rem; color: var(--muted); }
+.spec-val { font-size: .72rem; font-weight: 600; }
 
-  /* ── SLIDE 7 — EXTERNAL SERVICES ────────────────────────── */
-  .service-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1rem; width: 100%; margin-top: 1.5rem; }
-  .svc-card {
-    background: var(--surface); border: 1px solid var(--border);
-    border-radius: 14px; padding: 1.2rem 1rem; text-align: center;
-  }
-  .svc-card .s-icon { font-size: 2rem; margin-bottom: .5rem; }
-  .svc-card .s-name { font-size: .9rem; font-weight: 700; margin-bottom: .3rem; }
-  .svc-card .s-role { font-size: .72rem; color: var(--muted); line-height: 1.4; }
-  .svc-card .s-badge {
-    display: inline-block; font-size: .6rem; font-weight: 700;
-    padding: .2rem .5rem; border-radius: 50px; margin-top: .5rem;
-    text-transform: uppercase;
-  }
-  .s-badge.cloud { background: rgba(183,19,26,.2); color: #ff8a8a; border: 1px solid rgba(183,19,26,.3); }
-  .s-badge.self  { background: rgba(80,200,120,.15); color: #7de8a0; border: 1px solid rgba(80,200,120,.3); }
-
-  /* ── SLIDE 8 — DEPLOYMENT ────────────────────────────────── */
-  #s8 .deploy-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; width: 100%; margin-top: 1.5rem; }
-  .dep-box { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 1.5rem; }
-  .dep-box h4 { font-size: .9rem; font-weight: 700; color: var(--accent); margin-bottom: .8rem; }
-  .dep-row { display: flex; justify-content: space-between; align-items: center; padding: .4rem 0; border-bottom: 1px solid rgba(255,255,255,.04); }
-  .dep-row:last-child { border-bottom: none; }
-  .dep-key { font-size: .78rem; color: var(--muted); }
-  .dep-val { font-size: .78rem; font-weight: 600; }
-
-  .arch-opts { display: flex; flex-direction: column; gap: .6rem; }
-  .arch-opt { display: flex; align-items: center; gap: .8rem; }
-  .arch-opt .num {
-    width: 24px; height: 24px; border-radius: 50%;
-    background: linear-gradient(135deg, var(--red-dark), var(--red-light));
-    display: flex; align-items: center; justify-content: center;
-    font-size: .7rem; font-weight: 700; flex-shrink: 0;
-  }
-  .arch-opt p { font-size: .82rem; color: var(--muted); }
-  .arch-opt strong { color: var(--text); }
-
-  /* ── SLIDE 9 — ROLE SYSTEM ───────────────────────────────── */
-  .roles { display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; width: 100%; margin-top: 1.5rem; }
-  .role-card { background: var(--surface); border: 1px solid var(--border); border-radius: 16px; padding: 1.5rem; }
-  .role-card .r-icon { font-size: 2.2rem; margin-bottom: .6rem; }
-  .role-card h4 { font-size: 1rem; font-weight: 700; margin-bottom: .4rem; }
-  .role-card .r-access { display: flex; flex-direction: column; gap: .4rem; margin-top: .8rem; }
-  .access-item { display: flex; align-items: center; gap: .6rem; font-size: .82rem; color: var(--muted); }
-  .access-item .check { color: #7de8a0; font-weight: 700; }
-  .access-item .cross { color: #ff6b6b; font-weight: 700; }
-
-  /* ── SLIDE 10 — OUTRO ────────────────────────────────────── */
-  #s10 { gap: 1rem; }
-  #s10 .big-logo {
-    width: 120px; height: 120px; border-radius: 30px;
-    background: linear-gradient(135deg, var(--red-dark), var(--red-light));
-    display: flex; align-items: center; justify-content: center;
-    font-size: 3.5rem; font-weight: 800; color: white;
-    box-shadow: 0 0 60px rgba(183,19,26,.5);
-    animation: logoFloat 3s ease-in-out infinite;
-  }
-  #s10 h1 { text-align: center; }
-  #s10 .tagline { font-size: 1.4rem; color: var(--muted); text-align: center; }
-  #s10 .url {
-    background: var(--surface); border: 1px solid rgba(183,19,26,.4);
-    border-radius: 50px; padding: .7rem 2rem; font-size: 1.1rem; font-weight: 600;
-    color: var(--accent); margin-top: 1rem;
-  }
-  #s10 .feat-badges { display: flex; gap: .8rem; flex-wrap: wrap; justify-content: center; margin-top: 1rem; }
-  #s10 .fb {
-    background: rgba(255,255,255,.06); border: 1px solid var(--border);
-    border-radius: 50px; padding: .4rem 1rem; font-size: .8rem; color: var(--muted);
-  }
-
-  /* keyboard hint */
-  .key-hint { position: fixed; top: 1.5rem; right: 2rem; font-size: .72rem; color: rgba(255,255,255,.2); }
-
-  /* progress bar */
-  .progress-bar { position: fixed; top: 0; left: 0; height: 2px; background: var(--red); transition: width .4s ease; z-index: 200; }
+/* ── SLIDE 10: OUTRO ── */
+#s10 { gap: .8rem; }
+.big-logo {
+  width: 110px; height: 110px; border-radius: 28px;
+  background: linear-gradient(135deg, var(--red-dark), var(--red-light));
+  display: flex; align-items: center; justify-content: center;
+  box-shadow: 0 0 70px rgba(183,19,26,.5); animation: float 3.5s ease-in-out infinite;
+}
+#s10 h1, #s10 .tagline { text-align: center; }
+#s10 .tagline { font-size: 1.25rem; color: var(--muted); }
+#s10 .url { background: var(--surface); border: 1px solid rgba(183,19,26,.38); border-radius: 50px; padding: .6rem 1.8rem; font-size: 1rem; font-weight: 600; color: var(--accent); margin-top: .8rem; display: flex; align-items: center; gap: .5rem; }
+#s10 .feat-badges { display: flex; gap: .6rem; flex-wrap: wrap; justify-content: center; margin-top: .8rem; }
+.fb { display: flex; align-items: center; gap: .4rem; background: rgba(255,255,255,.05); border: 1px solid var(--border); border-radius: 50px; padding: .35rem .9rem; font-size: .77rem; color: var(--muted); }
+.fb svg { color: var(--accent); }
+#s10 .credit { font-size: .72rem; color: rgba(255,255,255,.17); margin-top: 1.2rem; }
 </style>
 </head>
 <body>
 
 <div class="progress-bar" id="progressBar"></div>
-<div class="key-hint">← → Arrow keys to navigate</div>
+<div class="key-hint">← → Arrow keys</div>
 
 <div class="deck" id="deck">
 
-  <!-- ── SLIDE 1: HERO ──────────────────────────────────────── -->
-  <section class="slide active" id="s1">
-    <div class="logo-ring">D</div>
-    <div class="badge"><span class="dot-pulse"></span> Enterprise AI Chatbot</div>
-    <h1 class="gradient-text">DENAI</h1>
-    <p class="subtitle">Digital Enterprise Navigator with Artificial Intelligence</p>
-    <div class="divider"></div>
-    <p class="lead">Asisten AI enterprise untuk karyawan PT Semen Indonesia Group — menjawab pertanyaan SOP/Kebijakan dan menganalisis data HR secara real-time.</p>
-    <div class="tags">
-      <span class="tag">🏭 PT Semen Indonesia Group</span>
-      <span class="tag">🤖 GPT-4o-mini</span>
-      <span class="tag">🎙️ ElevenLabs TTS</span>
-      <span class="tag">📊 HR Analytics</span>
-      <span class="tag">⚡ FastAPI v8.1.0</span>
-    </div>
-  </section>
+<!-- ══════════════════════════════════════════════════
+     SLIDE 1 — HERO
+══════════════════════════════════════════════════ -->
+<section class="slide active" id="s1">
+  <div class="logo-ring">
+    <i data-lucide="bot" style="width:44px;height:44px;color:white;stroke-width:1.8"></i>
+  </div>
+  <div class="badge"><span class="pulse-dot"></span>Enterprise AI Chatbot</div>
+  <h1 class="gradient-text">DENAI</h1>
+  <p style="font-size:1.15rem;color:var(--muted);text-align:center;margin-top:.4rem">Digital Enterprise Navigator with Artificial Intelligence</p>
+  <div class="divider"></div>
+  <p class="lead">Asisten AI enterprise untuk karyawan PT Semen Indonesia Group — menjawab pertanyaan SOP & Kebijakan dan menganalisis data HR secara real-time.</p>
+  <div class="tags" style="margin-top:1.8rem">
+    <span class="tag"><i data-lucide="building-2" style="width:13px;height:13px"></i> PT Semen Indonesia Group</span>
+    <span class="tag"><i data-lucide="cpu" style="width:13px;height:13px"></i> GPT-4o-mini</span>
+    <span class="tag"><i data-lucide="mic" style="width:13px;height:13px"></i> ElevenLabs TTS</span>
+    <span class="tag"><i data-lucide="bar-chart-2" style="width:13px;height:13px"></i> HR Analytics</span>
+    <span class="tag"><i data-lucide="zap" style="width:13px;height:13px"></i> FastAPI v8.1.0</span>
+  </div>
+</section>
 
-  <!-- ── SLIDE 2: APA ITU DENAI ─────────────────────────────── -->
-  <section class="slide" id="s2">
-    <div class="badge">Overview</div>
-    <h2 class="gradient-text">Apa itu DENAI?</h2>
-    <div class="divider"></div>
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:2.5rem;width:100%;margin-top:1rem;align-items:start">
+<!-- ══════════════════════════════════════════════════
+     SLIDE 2 — APA ITU DENAI
+══════════════════════════════════════════════════ -->
+<section class="slide" id="s2">
+  <div class="badge">Overview</div>
+  <h2 class="gradient-text">Apa itu DENAI?</h2>
+  <div class="divider"></div>
+  <div class="two-col">
+    <div>
+      <p class="lead-left">DENAI adalah <strong style="color:white">Enterprise Knowledge Assistant</strong> yang memungkinkan karyawan mendapatkan informasi perusahaan secara instan — baik lewat teks maupun suara.</p>
+      <br>
+      <p class="lead-left">Sistem memiliki <strong style="color:white">dua jalur utama</strong>: menjawab SOP & kebijakan dari dokumen PDF, dan menganalisis data HR langsung dari database.</p>
+      <div class="stats">
+        <div class="stat"><div class="num">2</div><div class="lbl">Mode Interaksi</div></div>
+        <div class="stat"><div class="num">8+</div><div class="lbl">Layanan Eksternal</div></div>
+        <div class="stat"><div class="num">50</div><div class="lbl">Concurrent Users</div></div>
+      </div>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:.8rem">
+      <div class="card">
+        <div class="card-icon" style="background:rgba(183,19,26,.15)"><i data-lucide="file-text" style="width:18px;height:18px;color:var(--accent)"></i></div>
+        <h4>SOP & Kebijakan</h4>
+        <p>Jawaban akurat dari dokumen PDF perusahaan menggunakan Retrieval-Augmented Generation (RAG) dengan Pinecone + Cohere</p>
+      </div>
+      <div class="card">
+        <div class="card-icon" style="background:rgba(96,165,250,.12)"><i data-lucide="bar-chart-2" style="width:18px;height:18px;color:var(--blue)"></i></div>
+        <h4>HR Analytics</h4>
+        <p>Pertanyaan bahasa natural dikonversi ke SQL, dieksekusi ke database, dan disajikan dengan tabel & grafik interaktif</p>
+      </div>
+      <div class="card">
+        <div class="card-icon" style="background:rgba(167,139,250,.12)"><i data-lucide="phone-call" style="width:18px;height:18px;color:var(--purple)"></i></div>
+        <h4>Voice AI</h4>
+        <p>Mode telepon dengan Speech-to-Text dan Text-to-Speech berbahasa Indonesia yang natural</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ══════════════════════════════════════════════════
+     SLIDE 3 — DUA MODE
+══════════════════════════════════════════════════ -->
+<section class="slide" id="s3">
+  <div class="badge">Core Features</div>
+  <h2 class="gradient-text">Dua Mode Interaksi</h2>
+  <div class="divider"></div>
+  <div class="modes" id="s3">
+    <div class="mode-card chat">
+      <div class="m-icon"><i data-lucide="message-square" style="width:22px;height:22px;color:var(--accent)"></i></div>
+      <h3>Chat Mode</h3>
+      <p style="font-size:.82rem;color:var(--muted);margin-bottom:1rem">Antarmuka chat teks real-time dengan streaming SSE</p>
+      <ul class="feature-list">
+        <li><i data-lucide="chevron-right" style="width:13px;height:13px"></i> Streaming jawaban token per token</li>
+        <li><i data-lucide="chevron-right" style="width:13px;height:13px"></i> Tabel data HR interaktif + Chart.js</li>
+        <li><i data-lucide="chevron-right" style="width:13px;height:13px"></i> Riwayat sesi multi-percakapan</li>
+        <li><i data-lucide="chevron-right" style="width:13px;height:13px"></i> Feedback thumbs up/down per jawaban</li>
+        <li><i data-lucide="chevron-right" style="width:13px;height:13px"></i> Role-based access (Employee vs HR)</li>
+        <li><i data-lucide="chevron-right" style="width:13px;height:13px"></i> Markdown rendering otomatis</li>
+      </ul>
+    </div>
+    <div class="mode-card call">
+      <div class="m-icon"><i data-lucide="phone" style="width:22px;height:22px;color:var(--blue)"></i></div>
+      <h3>Call Mode</h3>
+      <p style="font-size:.82rem;color:var(--muted);margin-bottom:1rem">Overlay telepon full-screen — seperti menelepon AI</p>
+      <ul class="feature-list">
+        <li><i data-lucide="chevron-right" style="width:13px;height:13px"></i> Rekam suara via MediaRecorder API</li>
+        <li><i data-lucide="chevron-right" style="width:13px;height:13px"></i> Transkripsi real-time (OpenAI Whisper)</li>
+        <li><i data-lucide="chevron-right" style="width:13px;height:13px"></i> AI bicara balik via ElevenLabs TTS</li>
+        <li><i data-lucide="chevron-right" style="width:13px;height:13px"></i> Loop: dengar → proses → jawab → ulang</li>
+        <li><i data-lucide="chevron-right" style="width:13px;height:13px"></i> Transcript muncul di layar</li>
+        <li><i data-lucide="chevron-right" style="width:13px;height:13px"></i> Jawaban dikompres maks 150 token</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- ══════════════════════════════════════════════════
+     SLIDE 4 — FITUR
+══════════════════════════════════════════════════ -->
+<section class="slide" id="s4">
+  <div class="badge">Features</div>
+  <h2 class="gradient-text">Fitur Utama</h2>
+  <div class="divider"></div>
+  <div class="feature-row">
+    <div class="feat-card">
+      <div class="fi"><i data-lucide="search" style="width:16px;height:16px;color:var(--accent)"></i></div>
+      <h4>RAG Hybrid v7.2.0</h4>
+      <p>Pinecone vector search (top-15 chunks) + Cohere reranking multilingual untuk retrieval SOP yang akurat</p>
+    </div>
+    <div class="feat-card">
+      <div class="fi"><i data-lucide="database" style="width:16px;height:16px;color:var(--accent)"></i></div>
+      <h4>Text-to-SQL</h4>
+      <p>Bahasa natural → SQL → eksekusi Supabase PostgreSQL, dengan validasi keamanan (SELECT only, no injection)</p>
+    </div>
+    <div class="feat-card">
+      <div class="fi"><i data-lucide="map-pin" style="width:16px;height:16px;color:var(--accent)"></i></div>
+      <h4>Travel Calculator</h4>
+      <p>Kalkulasi biaya perjalanan dinas via Google Maps API — otomatis sesuai kebijakan perusahaan</p>
+    </div>
+    <div class="feat-card">
+      <div class="fi"><i data-lucide="line-chart" style="width:16px;height:16px;color:var(--accent)"></i></div>
+      <h4>8 Tipe Visualisasi</h4>
+      <p>Bar, line, pie, doughnut, radar, dan lainnya — jenis grafik direkomendasikan AI, dirender Chart.js</p>
+    </div>
+    <div class="feat-card">
+      <div class="fi"><i data-lucide="radio" style="width:16px;height:16px;color:var(--accent)"></i></div>
+      <h4>SSE Streaming</h4>
+      <p>Server-Sent Events untuk streaming jawaban real-time — dengan pembatalan request otomatis jika user pindah</p>
+    </div>
+    <div class="feat-card">
+      <div class="fi"><i data-lucide="layers" style="width:16px;height:16px;color:var(--accent)"></i></div>
+      <h4>Hybrid Memory</h4>
+      <p>Redis hot cache 24 jam + Supabase persistent storage untuk riwayat percakapan yang cepat dan tahan lama</p>
+    </div>
+    <div class="feat-card">
+      <div class="fi"><i data-lucide="flask-conical" style="width:16px;height:16px;color:var(--accent)"></i></div>
+      <h4>LLM-as-a-Judge</h4>
+      <p>Background task mengevaluasi Faithfulness, Answer Relevance, dan Context Precision setiap interaksi</p>
+    </div>
+    <div class="feat-card">
+      <div class="fi"><i data-lucide="activity" style="width:16px;height:16px;color:var(--accent)"></i></div>
+      <h4>Langfuse Tracing</h4>
+      <p>OTel-compatible observability — setiap request di-trace lengkap dari intent klasifikasi sampai jawaban akhir</p>
+    </div>
+    <div class="feat-card">
+      <div class="fi"><i data-lucide="shield" style="width:16px;height:16px;color:var(--accent)"></i></div>
+      <h4>Rate Limiting</h4>
+      <p>SlowAPI per-IP: 15 req/menit untuk chat, 5 req/menit untuk call mode — mencegah penyalahgunaan API</p>
+    </div>
+  </div>
+</section>
+
+<!-- ══════════════════════════════════════════════════
+     SLIDE 5 — ARCHITECTURE FLOW
+══════════════════════════════════════════════════ -->
+<section class="slide" id="s5">
+  <div class="badge">Architecture</div>
+  <h2 class="gradient-text" style="font-size:2rem">Alur Request — Chat Mode</h2>
+  <div class="divider"></div>
+
+  <div class="flow-wrap">
+    <!-- Layer 1: User -->
+    <div class="flow-layer">
+      <div class="flow-node">
+        <div class="fn-icon"><i data-lucide="monitor" style="width:15px;height:15px;color:var(--blue)"></i></div>
+        <div class="fn-title">Browser</div>
+        <div class="fn-sub">SSE / fetch POST</div>
+      </div>
+      <div style="width:32px;height:1px;background:rgba(255,255,255,.12)"></div>
+      <div class="flow-node">
+        <div class="fn-icon"><i data-lucide="shield" style="width:15px;height:15px;color:var(--green)"></i></div>
+        <div class="fn-title">Nginx</div>
+        <div class="fn-sub">Reverse proxy · SSL</div>
+      </div>
+      <div style="width:32px;height:1px;background:rgba(255,255,255,.12)"></div>
+      <div class="flow-node highlight">
+        <div class="fn-icon"><i data-lucide="zap" style="width:15px;height:15px;color:var(--accent)"></i></div>
+        <div class="fn-title">FastAPI</div>
+        <div class="fn-sub">/ask/stream · Rate limit</div>
+      </div>
+      <div style="width:32px;height:1px;background:rgba(255,255,255,.12)"></div>
+      <div class="flow-node highlight">
+        <div class="fn-icon"><i data-lucide="cpu" style="width:15px;height:15px;color:var(--accent)"></i></div>
+        <div class="fn-title">Intent Classifier</div>
+        <div class="fn-sub">GPT-4o-mini · 4 kelas</div>
+      </div>
+    </div>
+
+    <!-- Connector down -->
+    <div style="display:flex;align-items:center;justify-content:center;padding:.25rem 0">
+      <i data-lucide="arrow-down" style="width:16px;height:16px;color:rgba(183,19,26,.6)"></i>
+    </div>
+
+    <!-- Layer 2: Branch -->
+    <div class="flow-layer" style="align-items:flex-start">
+      <!-- Route A -->
+      <div class="branch-box" style="min-width:200px">
+        <div class="branch-title">Route A — SOP &amp; Kebijakan</div>
+        <div class="branch-step"><i data-lucide="search" style="width:11px;height:11px"></i> Pinecone vector search (top-15)</div>
+        <div class="branch-step"><i data-lucide="filter" style="width:11px;height:11px"></i> Cohere reranking multilingual</div>
+        <div class="branch-step"><i data-lucide="link-2" style="width:11px;height:11px"></i> LangChain RAG chain</div>
+        <div class="branch-step"><i data-lucide="cpu" style="width:11px;height:11px"></i> GPT-4o-mini stream</div>
+        <div class="branch-step"><i data-lucide="map-pin" style="width:11px;height:11px"></i> Travel Analyzer (Google Maps)</div>
+      </div>
+
+      <!-- Fork center -->
+      <div style="display:flex;flex-direction:column;align-items:center;padding-top:.5rem;gap:.2rem">
+        <div style="width:1px;height:20px;background:rgba(255,255,255,.15)"></div>
+        <div style="display:flex;align-items:center;gap:0">
+          <div style="width:60px;height:1px;background:rgba(183,19,26,.4)"></div>
+          <div style="width:1px;height:12px;background:rgba(255,255,255,.2)"></div>
+          <div style="width:60px;height:1px;background:rgba(96,165,250,.4)"></div>
+        </div>
+        <div style="font-size:.6rem;color:var(--muted);letter-spacing:.06em;text-transform:uppercase;padding:.2rem .5rem;background:rgba(255,255,255,.04);border:1px solid var(--border);border-radius:4px">Parallel</div>
+      </div>
+
+      <!-- Route B -->
+      <div class="branch-box blue" style="min-width:200px">
+        <div class="branch-title">Route B — HR Analytics</div>
+        <div class="branch-step"><i data-lucide="brain" style="width:11px;height:11px"></i> HR Intent Analyzer</div>
+        <div class="branch-step"><i data-lucide="terminal" style="width:11px;height:11px"></i> SQL Generator (GPT-4o-mini)</div>
+        <div class="branch-step"><i data-lucide="shield-check" style="width:11px;height:11px"></i> SQL Validator (SELECT only)</div>
+        <div class="branch-step"><i data-lucide="database" style="width:11px;height:11px"></i> Query Executor → Supabase</div>
+        <div class="branch-step"><i data-lucide="pie-chart" style="width:11px;height:11px"></i> Data Analyzer + Viz Recommender</div>
+      </div>
+    </div>
+
+    <!-- Connector down -->
+    <div style="display:flex;align-items:center;justify-content:center;padding:.25rem 0">
+      <i data-lucide="arrow-down" style="width:16px;height:16px;color:rgba(183,19,26,.6)"></i>
+    </div>
+
+    <!-- Layer 3: Synthesize + Memory + BG tasks -->
+    <div class="flow-layer">
+      <div class="flow-node highlight">
+        <div class="fn-icon"><i data-lucide="git-merge" style="width:15px;height:15px;color:var(--accent)"></i></div>
+        <div class="fn-title">Synthesize</div>
+        <div class="fn-sub">Merge A + B · Stream</div>
+      </div>
+      <div style="width:24px;height:1px;background:rgba(255,255,255,.12)"></div>
+      <div class="flow-node">
+        <div class="fn-icon"><i data-lucide="hard-drive" style="width:15px;height:15px;color:var(--purple)"></i></div>
+        <div class="fn-title">Hybrid Memory</div>
+        <div class="fn-sub">Redis + Supabase</div>
+      </div>
+      <div style="width:24px;height:1px;background:rgba(255,255,255,.08)"></div>
+      <div class="flow-node" style="border-style:dashed;opacity:.8">
+        <div class="fn-icon"><i data-lucide="activity" style="width:15px;height:15px;color:var(--purple)"></i></div>
+        <div class="fn-title">Background Tasks</div>
+        <div class="fn-sub">LLM-Judge · Langfuse</div>
+      </div>
+      <div style="width:24px;height:1px;background:rgba(255,255,255,.12)"></div>
+      <div class="flow-node">
+        <div class="fn-icon"><i data-lucide="monitor" style="width:15px;height:15px;color:var(--blue)"></i></div>
+        <div class="fn-title">Browser</div>
+        <div class="fn-sub">Render · Chart.js</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ══════════════════════════════════════════════════
+     SLIDE 6 — TECH STACK
+══════════════════════════════════════════════════ -->
+<section class="slide" id="s6">
+  <div class="badge">Tech Stack</div>
+  <h2 class="gradient-text">Teknologi yang Digunakan</h2>
+  <div class="divider"></div>
+  <div class="stack-grid">
+    <div class="stack-group">
+      <div class="sg-head"><i data-lucide="server" style="width:14px;height:14px"></i><span class="sg-title">Backend</span></div>
+      <span class="tech-pill"><span class="dp"></span>FastAPI</span>
+      <span class="tech-pill"><span class="dp"></span>Python 3.11</span>
+      <span class="tech-pill"><span class="dp"></span>Gunicorn</span>
+      <span class="tech-pill"><span class="dp"></span>Uvicorn Workers</span>
+      <span class="tech-pill"><span class="dp"></span>SlowAPI</span>
+      <span class="tech-pill"><span class="dp"></span>Pydantic v2</span>
+    </div>
+    <div class="stack-group">
+      <div class="sg-head"><i data-lucide="cpu" style="width:14px;height:14px"></i><span class="sg-title">AI / LLM</span></div>
+      <span class="tech-pill"><span class="dp"></span>GPT-4o-mini</span>
+      <span class="tech-pill"><span class="dp"></span>LangChain</span>
+      <span class="tech-pill"><span class="dp"></span>Semantic Router</span>
+      <span class="tech-pill"><span class="dp"></span>OpenAI Whisper</span>
+      <span class="tech-pill"><span class="dp"></span>ElevenLabs TTS</span>
+      <span class="tech-pill"><span class="dp"></span>Cohere Rerank v3</span>
+    </div>
+    <div class="stack-group">
+      <div class="sg-head"><i data-lucide="database" style="width:14px;height:14px"></i><span class="sg-title">Data &amp; Storage</span></div>
+      <span class="tech-pill"><span class="dp"></span>Pinecone</span>
+      <span class="tech-pill"><span class="dp"></span>Supabase</span>
+      <span class="tech-pill"><span class="dp"></span>Upstash Redis</span>
+      <span class="tech-pill"><span class="dp"></span>PostgreSQL</span>
+      <span class="tech-pill"><span class="dp"></span>psycopg2</span>
+    </div>
+    <div class="stack-group">
+      <div class="sg-head"><i data-lucide="layout" style="width:14px;height:14px"></i><span class="sg-title">Frontend</span></div>
+      <span class="tech-pill"><span class="dp"></span>Vanilla JS</span>
+      <span class="tech-pill"><span class="dp"></span>Tailwind CSS</span>
+      <span class="tech-pill"><span class="dp"></span>Chart.js</span>
+      <span class="tech-pill"><span class="dp"></span>marked.js</span>
+      <span class="tech-pill"><span class="dp"></span>Web Speech API</span>
+      <span class="tech-pill"><span class="dp"></span>SSE EventSource</span>
+    </div>
+    <div class="stack-group">
+      <div class="sg-head"><i data-lucide="activity" style="width:14px;height:14px"></i><span class="sg-title">Observability</span></div>
+      <span class="tech-pill"><span class="dp"></span>Langfuse v4</span>
+      <span class="tech-pill"><span class="dp"></span>OpenTelemetry</span>
+      <span class="tech-pill"><span class="dp"></span>LLM-as-a-Judge</span>
+      <span class="tech-pill"><span class="dp"></span>RAGAS Eval</span>
+    </div>
+    <div class="stack-group">
+      <div class="sg-head"><i data-lucide="cloud" style="width:14px;height:14px"></i><span class="sg-title">Infrastructure</span></div>
+      <span class="tech-pill"><span class="dp"></span>DigitalOcean SGP1</span>
+      <span class="tech-pill"><span class="dp"></span>Nginx</span>
+      <span class="tech-pill"><span class="dp"></span>PM2</span>
+      <span class="tech-pill"><span class="dp"></span>Certbot SSL</span>
+      <span class="tech-pill"><span class="dp"></span>Ubuntu 24.04</span>
+    </div>
+  </div>
+</section>
+
+<!-- ══════════════════════════════════════════════════
+     SLIDE 7 — EXTERNAL SERVICES
+══════════════════════════════════════════════════ -->
+<section class="slide" id="s7">
+  <div class="badge">Integrations</div>
+  <h2 class="gradient-text">Layanan Eksternal</h2>
+  <div class="divider"></div>
+  <div class="service-grid">
+    <div class="svc-card">
+      <div class="svc-icon" style="background:rgba(96,165,250,.12)"><i data-lucide="cpu" style="width:20px;height:20px;color:var(--blue)"></i></div>
+      <div class="s-name">OpenAI</div>
+      <div class="s-role">GPT-4o-mini (LLM), Whisper (STT), text-embedding-3-small</div>
+      <span class="s-badge cloud">Cloud only</span>
+    </div>
+    <div class="svc-card">
+      <div class="svc-icon" style="background:rgba(167,139,250,.12)"><i data-lucide="search" style="width:20px;height:20px;color:var(--purple)"></i></div>
+      <div class="s-name">Pinecone</div>
+      <div class="s-role">Vector database untuk embedding dokumen SOP (1536 dimensi)</div>
+      <span class="s-badge cloud">Cloud only</span>
+    </div>
+    <div class="svc-card">
+      <div class="svc-icon" style="background:rgba(251,146,60,.12)"><i data-lucide="filter" style="width:20px;height:20px;color:var(--orange)"></i></div>
+      <div class="s-name">Cohere</div>
+      <div class="s-role">Reranking hasil RAG dengan rerank-multilingual-v3.0</div>
+      <span class="s-badge cloud">Cloud only</span>
+    </div>
+    <div class="svc-card">
+      <div class="svc-icon" style="background:rgba(183,19,26,.15)"><i data-lucide="mic" style="width:20px;height:20px;color:var(--accent)"></i></div>
+      <div class="s-name">ElevenLabs</div>
+      <div class="s-role">TTS bahasa Indonesia, model eleven_flash_v2_5</div>
+      <span class="s-badge cloud">Cloud only</span>
+    </div>
+    <div class="svc-card">
+      <div class="svc-icon" style="background:rgba(74,222,128,.1)"><i data-lucide="map" style="width:20px;height:20px;color:var(--green)"></i></div>
+      <div class="s-name">Google Maps</div>
+      <div class="s-role">Kalkulasi jarak untuk aturan biaya perjalanan dinas</div>
+      <span class="s-badge cloud">Cloud only</span>
+    </div>
+    <div class="svc-card">
+      <div class="svc-icon" style="background:rgba(74,222,128,.1)"><i data-lucide="database" style="width:20px;height:20px;color:var(--green)"></i></div>
+      <div class="s-name">Supabase</div>
+      <div class="s-role">PostgreSQL untuk data HR dan riwayat chat persisten</div>
+      <span class="s-badge self">Bisa self-host</span>
+    </div>
+    <div class="svc-card">
+      <div class="svc-icon" style="background:rgba(74,222,128,.1)"><i data-lucide="zap" style="width:20px;height:20px;color:var(--green)"></i></div>
+      <div class="s-name">Upstash Redis</div>
+      <div class="s-role">Hot cache riwayat percakapan dengan TTL 24 jam, async</div>
+      <span class="s-badge self">Bisa self-host</span>
+    </div>
+    <div class="svc-card">
+      <div class="svc-icon" style="background:rgba(74,222,128,.1)"><i data-lucide="activity" style="width:20px;height:20px;color:var(--green)"></i></div>
+      <div class="s-name">Langfuse</div>
+      <div class="s-role">LLM observability, OTel tracing, scoring per interaksi</div>
+      <span class="s-badge self">Bisa self-host</span>
+    </div>
+  </div>
+</section>
+
+<!-- ══════════════════════════════════════════════════
+     SLIDE 8 — ROLE SYSTEM
+══════════════════════════════════════════════════ -->
+<section class="slide" id="s8">
+  <div class="badge">Access Control</div>
+  <h2 class="gradient-text">Sistem Role Karyawan</h2>
+  <div class="divider"></div>
+  <div class="roles">
+    <div class="role-card">
+      <div class="role-head">
+        <div class="role-icon" style="background:rgba(255,255,255,.06)"><i data-lucide="hard-hat" style="width:20px;height:20px;color:var(--muted)"></i></div>
+        <div><h4>Employee</h4><p class="sub" style="margin:0">Karyawan operasional umum</p></div>
+      </div>
+      <div class="access-list">
+        <div class="access-item"><i data-lucide="check-circle" class="ok" style="width:15px;height:15px"></i> Tanya SOP &amp; Kebijakan perusahaan</div>
+        <div class="access-item"><i data-lucide="check-circle" class="ok" style="width:15px;height:15px"></i> Kalkulasi biaya perjalanan dinas</div>
+        <div class="access-item"><i data-lucide="check-circle" class="ok" style="width:15px;height:15px"></i> Mode Voice (call AI)</div>
+        <div class="access-item"><i data-lucide="check-circle" class="ok" style="width:15px;height:15px"></i> Riwayat sesi percakapan</div>
+        <div class="access-item"><i data-lucide="x-circle" class="no" style="width:15px;height:15px"></i> Akses HR Analytics &amp; database</div>
+        <div class="access-item"><i data-lucide="x-circle" class="no" style="width:15px;height:15px"></i> Schema explorer database</div>
+      </div>
+    </div>
+    <div class="role-card" style="border-color:rgba(183,19,26,.28)">
+      <div class="role-head">
+        <div class="role-icon" style="background:rgba(183,19,26,.15)"><i data-lucide="briefcase" style="width:20px;height:20px;color:var(--accent)"></i></div>
+        <div><h4>HR / Admin / Manager</h4><p class="sub" style="margin:0">Tim HR, Admin, dan Manajer</p></div>
+      </div>
+      <div class="access-list">
+        <div class="access-item"><i data-lucide="check-circle" class="ok" style="width:15px;height:15px"></i> Semua akses Employee</div>
+        <div class="access-item"><i data-lucide="check-circle" class="ok" style="width:15px;height:15px"></i> HR Analytics (Text-to-SQL)</div>
+        <div class="access-item"><i data-lucide="check-circle" class="ok" style="width:15px;height:15px"></i> Visualisasi data &amp; grafik interaktif</div>
+        <div class="access-item"><i data-lucide="check-circle" class="ok" style="width:15px;height:15px"></i> Database Schema Explorer UI</div>
+        <div class="access-item"><i data-lucide="check-circle" class="ok" style="width:15px;height:15px"></i> Parallel routing A+B (SOP + Data)</div>
+        <div class="access-item"><i data-lucide="check-circle" class="ok" style="width:15px;height:15px"></i> Hasil sintesis dari dua sumber</div>
+      </div>
+    </div>
+  </div>
+  <div class="note">
+    <i data-lucide="info" style="width:15px;height:15px"></i>
+    Role dipilih manual di UI saat ini — dapat diintegrasikan ke SSO/LDAP perusahaan untuk otentikasi otomatis
+  </div>
+</section>
+
+<!-- ══════════════════════════════════════════════════
+     SLIDE 9 — INFRASTRUKTUR
+══════════════════════════════════════════════════ -->
+<section class="slide" id="s9">
+  <div class="badge">Infrastructure</div>
+  <h2 class="gradient-text" style="font-size:2rem">Infrastruktur &amp; Deployment</h2>
+  <div class="divider"></div>
+
+  <div class="infra-diagram">
+    <!-- LEFT: Server topology -->
+    <div class="infra-col main">
+
+      <!-- Internet layer -->
+      <div class="infra-layer">
+        <div class="il-head" style="margin-bottom:.4rem">
+          <i data-lucide="globe" style="width:13px;height:13px;color:var(--blue)"></i>
+          <span class="il-title" style="color:var(--blue)">Internet Layer</span>
+        </div>
+        <div class="il-content">
+          <div class="infra-node blue"><i data-lucide="users" style="width:12px;height:12px"></i> User Browser</div>
+          <div class="infra-node blue"><i data-lucide="globe" style="width:12px;height:12px"></i> denai.online (DNS)</div>
+        </div>
+      </div>
+
+      <div class="infra-arrow"><i data-lucide="arrow-down" style="width:14px;height:14px"></i></div>
+
+      <!-- Web server layer -->
+      <div class="infra-layer">
+        <div class="il-head" style="margin-bottom:.4rem">
+          <i data-lucide="shield" style="width:13px;height:13px;color:var(--green)"></i>
+          <span class="il-title" style="color:var(--green)">Web Server Layer — DigitalOcean SGP1</span>
+        </div>
+        <div class="il-content">
+          <div class="infra-node green"><i data-lucide="shield" style="width:12px;height:12px"></i> Nginx (443/80)</div>
+          <div class="infra-node green"><i data-lucide="lock" style="width:12px;height:12px"></i> Certbot SSL/TLS</div>
+          <div class="infra-node green"><i data-lucide="folder" style="width:12px;height:12px"></i> Static Files /web/</div>
+        </div>
+      </div>
+
+      <div class="infra-arrow"><i data-lucide="arrow-down" style="width:14px;height:14px"></i></div>
+
+      <!-- Process layer -->
+      <div class="infra-layer">
+        <div class="il-head" style="margin-bottom:.4rem">
+          <i data-lucide="cpu" style="width:13px;height:13px;color:var(--orange)"></i>
+          <span class="il-title" style="color:var(--orange)">Process Layer — Dikelola PM2</span>
+        </div>
+        <div class="il-content">
+          <div class="infra-node orange"><i data-lucide="git-fork" style="width:12px;height:12px"></i> Gunicorn (3 workers)</div>
+          <div class="infra-node orange"><i data-lucide="zap" style="width:12px;height:12px"></i> Uvicorn ASGI</div>
+          <div class="infra-node orange"><i data-lucide="refresh-cw" style="width:12px;height:12px"></i> PM2 (auto-restart)</div>
+        </div>
+      </div>
+
+      <div class="infra-arrow"><i data-lucide="arrow-down" style="width:14px;height:14px"></i></div>
+
+      <!-- App layer -->
+      <div class="infra-layer" style="border-color:rgba(183,19,26,.3);background:rgba(183,19,26,.06)">
+        <div class="il-head" style="margin-bottom:.4rem">
+          <i data-lucide="layers" style="width:13px;height:13px;color:var(--accent)"></i>
+          <span class="il-title" style="color:var(--accent)">Application Layer — FastAPI v8.1.0</span>
+        </div>
+        <div class="il-content">
+          <div class="infra-node red"><i data-lucide="message-square" style="width:12px;height:12px"></i> Chat Engine</div>
+          <div class="infra-node red"><i data-lucide="search" style="width:12px;height:12px"></i> RAG Engine</div>
+          <div class="infra-node red"><i data-lucide="database" style="width:12px;height:12px"></i> HR SQL Engine</div>
+          <div class="infra-node red"><i data-lucide="mic" style="width:12px;height:12px"></i> STT / TTS</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- RIGHT: Specs + External services -->
+    <div class="infra-col services">
+      <!-- Server specs -->
+      <div class="server-specs">
+        <div style="display:flex;align-items:center;gap:.5rem;margin-bottom:.7rem">
+          <i data-lucide="server" style="width:13px;height:13px;color:var(--accent)"></i>
+          <span style="font-size:.68rem;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:var(--accent)">Spesifikasi Server</span>
+        </div>
+        <div class="spec-row"><span class="spec-key">Provider</span><span class="spec-val">DigitalOcean SGP1</span></div>
+        <div class="spec-row"><span class="spec-key">CPU / RAM</span><span class="spec-val">1 vCPU / 2 GB</span></div>
+        <div class="spec-row"><span class="spec-key">OS</span><span class="spec-val">Ubuntu 24.04 LTS</span></div>
+        <div class="spec-row"><span class="spec-key">Workers</span><span class="spec-val">Gunicorn × 3</span></div>
+        <div class="spec-row"><span class="spec-key">Domain</span><span class="spec-val">denai.online (HTTPS)</span></div>
+        <div class="spec-row"><span class="spec-key">Kapasitas</span><span class="spec-val">~30–50 concurrent users</span></div>
+      </div>
+
+      <!-- External services compact -->
       <div>
-        <p class="lead-left">DENAI adalah <strong style="color:white">Enterprise Knowledge Assistant</strong> yang memungkinkan karyawan mendapatkan informasi perusahaan secara instan — baik lewat teks maupun suara.</p>
-        <br>
-        <p class="lead-left">Sistem ini memiliki <strong style="color:white">dua jalur utama</strong>: menjawab pertanyaan tentang SOP & kebijakan perusahaan dari dokumen PDF, dan menganalisis data HR langsung dari database PostgreSQL.</p>
-        <div class="big-stat">
-          <div class="stat"><div class="num">2</div><div class="lbl">Mode Interaksi</div></div>
-          <div class="stat"><div class="num">8+</div><div class="lbl">Layanan Eksternal</div></div>
-          <div class="stat"><div class="num">50</div><div class="lbl">Concurrent Users</div></div>
-        </div>
-      </div>
-      <div style="display:flex;flex-direction:column;gap:1rem">
-        <div class="card"><div class="icon">📋</div><h4>SOP & Kebijakan</h4><p>Jawaban akurat dari dokumen PDF perusahaan menggunakan Retrieval-Augmented Generation (RAG)</p></div>
-        <div class="card"><div class="icon">📊</div><h4>HR Analytics</h4><p>Pertanyaan bahasa natural dikonversi ke SQL, dieksekusi ke database, dan disajikan dengan grafik</p></div>
-        <div class="card"><div class="icon">🎙️</div><h4>Voice AI</h4><p>Mode telepon dengan Speech-to-Text dan Text-to-Speech berbahasa Indonesia yang natural</p></div>
-      </div>
-    </div>
-  </section>
-
-  <!-- ── SLIDE 3: DUA MODE ──────────────────────────────────── -->
-  <section class="slide" id="s3">
-    <div class="badge">Core Features</div>
-    <h2 class="gradient-text">Dua Mode Interaksi</h2>
-    <div class="divider"></div>
-    <div class="modes">
-      <div class="mode-card chat">
-        <div class="mode-icon">💬</div>
-        <h3>Chat Mode</h3>
-        <p style="font-size:.85rem;color:var(--muted);margin-bottom:1rem">Antarmuka chat teks real-time dengan streaming SSE</p>
-        <ul class="feature-list">
-          <li>Streaming jawaban token per token</li>
-          <li>Tabel data HR interaktif + Chart.js</li>
-          <li>Riwayat sesi multi-percakapan</li>
-          <li>Feedback thumbs up/down per jawaban</li>
-          <li>Role-based access (Employee vs HR)</li>
-          <li>Markdown rendering otomatis</li>
-        </ul>
-      </div>
-      <div class="mode-card call">
-        <div class="mode-icon">📞</div>
-        <h3>Call Mode</h3>
-        <p style="font-size:.85rem;color:var(--muted);margin-bottom:1rem">Overlay telepon full-screen — seperti menelepon AI</p>
-        <ul class="feature-list">
-          <li>Rekam suara via MediaRecorder API</li>
-          <li>Transkripsi real-time (OpenAI Whisper)</li>
-          <li>AI bicara balik via ElevenLabs TTS</li>
-          <li>Loop otomatis: dengar → proses → jawab</li>
-          <li>Transcript muncul di layar</li>
-          <li>Jawaban dikompres max 150 token</li>
-        </ul>
-      </div>
-    </div>
-  </section>
-
-  <!-- ── SLIDE 4: FITUR ──────────────────────────────────────── -->
-  <section class="slide" id="s4">
-    <div class="badge">Features</div>
-    <h2 class="gradient-text">Fitur Lengkap</h2>
-    <div class="divider"></div>
-    <div class="feature-row">
-      <div class="feat-card">
-        <div class="f-icon">🔍</div>
-        <h4>RAG Hybrid v7.2.0</h4>
-        <p>Pinecone vector search (top-15) + Cohere reranking multilingual untuk retrieval SOP yang akurat</p>
-      </div>
-      <div class="feat-card">
-        <div class="f-icon">🗃️</div>
-        <h4>Text-to-SQL</h4>
-        <p>Bahasa natural → SQL → eksekusi Supabase PostgreSQL, dengan validasi keamanan (SELECT only)</p>
-      </div>
-      <div class="feat-card">
-        <div class="f-icon">🗺️</div>
-        <h4>Travel Calculator</h4>
-        <p>Kalkulasi biaya perjalanan dinas via Google Maps API — otomatis sesuai kebijakan perusahaan</p>
-      </div>
-      <div class="feat-card">
-        <div class="f-icon">📈</div>
-        <h4>8 Tipe Grafik</h4>
-        <p>Bar, line, pie, doughnut, radar, dan lebih — direkomendasikan AI, dirender Chart.js</p>
-      </div>
-      <div class="feat-card">
-        <div class="f-icon">⚡</div>
-        <h4>SSE Streaming</h4>
-        <p>Server-Sent Events untuk streaming jawaban real-time — dengan pembatalan request otomatis</p>
-      </div>
-      <div class="feat-card">
-        <div class="f-icon">🧠</div>
-        <h4>Hybrid Memory</h4>
-        <p>Redis (hot cache 24h) + Supabase (persistent) untuk riwayat percakapan yang cepat</p>
-      </div>
-      <div class="feat-card">
-        <div class="f-icon">🔬</div>
-        <h4>LLM-as-a-Judge</h4>
-        <p>Background task mengevaluasi Faithfulness, Relevance, Context Precision setiap interaksi</p>
-      </div>
-      <div class="feat-card">
-        <div class="f-icon">📡</div>
-        <h4>Langfuse Tracing</h4>
-        <p>OTel-compatible observability — setiap request di-trace lengkap dari intent sampai jawaban</p>
-      </div>
-      <div class="feat-card">
-        <div class="f-icon">🛡️</div>
-        <h4>Rate Limiting</h4>
-        <p>SlowAPI: 15 req/menit chat, 5 req/menit call — per IP address</p>
-      </div>
-    </div>
-  </section>
-
-  <!-- ── SLIDE 5: ARSITEKTUR ────────────────────────────────── -->
-  <section class="slide" id="s5">
-    <div class="badge">Architecture</div>
-    <h2 class="gradient-text">Alur Request</h2>
-    <div class="divider"></div>
-
-    <div class="flow">
-      <div class="flow-step">
-        <div class="f-i">🌐</div>
-        <div class="f-n">Browser</div>
-        <div class="f-s">SSE / fetch</div>
-      </div>
-      <div class="flow-arrow">→</div>
-      <div class="flow-step">
-        <div class="f-i">⚡</div>
-        <div class="f-n">FastAPI</div>
-        <div class="f-s">/ask/stream</div>
-      </div>
-      <div class="flow-arrow">→</div>
-      <div class="flow-step">
-        <div class="f-i">🧩</div>
-        <div class="f-n">Intent</div>
-        <div class="f-s">Classify GPT-4o</div>
-      </div>
-      <div class="flow-arrow">→</div>
-      <div class="route-split">
-        <div class="route-box"><span>Route A: SOP</span>Pinecone → Cohere → RAG Chain → GPT-4o</div>
-        <div class="route-box"><span>Route B: HR Data</span>SQL Gen → Validate → Supabase → Chart</div>
-      </div>
-      <div class="flow-arrow">→</div>
-      <div class="flow-step">
-        <div class="f-i">🔀</div>
-        <div class="f-n">Synthesize</div>
-        <div class="f-s">Merge A+B</div>
-      </div>
-      <div class="flow-arrow">→</div>
-      <div class="flow-step">
-        <div class="f-i">💾</div>
-        <div class="f-n">Memory</div>
-        <div class="f-s">Redis + Supabase</div>
-      </div>
-    </div>
-
-    <div style="display:flex;gap:1rem;margin-top:1.5rem;width:100%">
-      <div class="card" style="flex:1">
-        <div class="icon">🎙️</div>
-        <h4>Voice Path</h4>
-        <p>MediaRecorder → Whisper STT → same pipeline (150 token) → ElevenLabs TTS → Audio stream ke browser</p>
-      </div>
-      <div class="card" style="flex:1">
-        <div class="icon">📊</div>
-        <h4>Background Tasks</h4>
-        <p>LLM-as-a-Judge evaluasi kualitas + Langfuse flush — berjalan paralel tanpa memblok respons user</p>
-      </div>
-      <div class="card" style="flex:1">
-        <div class="icon">❌</div>
-        <h4>Request Cancellation</h4>
-        <p>Jika user kirim pesan baru atau disconnect, request AI yang sedang berjalan langsung dibatalkan</p>
-      </div>
-    </div>
-  </section>
-
-  <!-- ── SLIDE 6: TECH STACK ────────────────────────────────── -->
-  <section class="slide" id="s6">
-    <div class="badge">Tech Stack</div>
-    <h2 class="gradient-text">Teknologi yang Digunakan</h2>
-    <div class="divider"></div>
-    <div class="stack-grid">
-      <div class="stack-group">
-        <div class="sg-title">🐍 Backend</div>
-        <span class="tech-pill"><span class="dot"></span>FastAPI</span>
-        <span class="tech-pill"><span class="dot"></span>Python 3.11</span>
-        <span class="tech-pill"><span class="dot"></span>Gunicorn</span>
-        <span class="tech-pill"><span class="dot"></span>Uvicorn</span>
-        <span class="tech-pill"><span class="dot"></span>SlowAPI</span>
-        <span class="tech-pill"><span class="dot"></span>Pydantic</span>
-      </div>
-      <div class="stack-group">
-        <div class="sg-title">🤖 AI / LLM</div>
-        <span class="tech-pill"><span class="dot"></span>GPT-4o-mini</span>
-        <span class="tech-pill"><span class="dot"></span>LangChain</span>
-        <span class="tech-pill"><span class="dot"></span>Semantic Router</span>
-        <span class="tech-pill"><span class="dot"></span>OpenAI Whisper</span>
-        <span class="tech-pill"><span class="dot"></span>ElevenLabs</span>
-        <span class="tech-pill"><span class="dot"></span>Cohere Rerank</span>
-      </div>
-      <div class="stack-group">
-        <div class="sg-title">🗄️ Data & Storage</div>
-        <span class="tech-pill"><span class="dot"></span>Pinecone</span>
-        <span class="tech-pill"><span class="dot"></span>Supabase</span>
-        <span class="tech-pill"><span class="dot"></span>Upstash Redis</span>
-        <span class="tech-pill"><span class="dot"></span>PostgreSQL</span>
-        <span class="tech-pill"><span class="dot"></span>psycopg2</span>
-      </div>
-      <div class="stack-group">
-        <div class="sg-title">🌐 Frontend</div>
-        <span class="tech-pill"><span class="dot"></span>Vanilla JS</span>
-        <span class="tech-pill"><span class="dot"></span>Tailwind CSS</span>
-        <span class="tech-pill"><span class="dot"></span>Chart.js</span>
-        <span class="tech-pill"><span class="dot"></span>marked.js</span>
-        <span class="tech-pill"><span class="dot"></span>Web Speech API</span>
-        <span class="tech-pill"><span class="dot"></span>SSE EventSource</span>
-      </div>
-      <div class="stack-group">
-        <div class="sg-title">📡 Observability</div>
-        <span class="tech-pill"><span class="dot"></span>Langfuse v4</span>
-        <span class="tech-pill"><span class="dot"></span>OpenTelemetry</span>
-        <span class="tech-pill"><span class="dot"></span>LLM-as-a-Judge</span>
-        <span class="tech-pill"><span class="dot"></span>RAGAS Eval</span>
-      </div>
-      <div class="stack-group">
-        <div class="sg-title">🚀 Infrastructure</div>
-        <span class="tech-pill"><span class="dot"></span>DigitalOcean</span>
-        <span class="tech-pill"><span class="dot"></span>Nginx</span>
-        <span class="tech-pill"><span class="dot"></span>PM2</span>
-        <span class="tech-pill"><span class="dot"></span>Certbot SSL</span>
-        <span class="tech-pill"><span class="dot"></span>Ubuntu 24.04</span>
-      </div>
-    </div>
-  </section>
-
-  <!-- ── SLIDE 7: EXTERNAL SERVICES ────────────────────────── -->
-  <section class="slide" id="s7">
-    <div class="badge">Integrations</div>
-    <h2 class="gradient-text">Layanan Eksternal</h2>
-    <div class="divider"></div>
-    <div class="service-grid">
-      <div class="svc-card">
-        <div class="s-icon">🤖</div>
-        <div class="s-name">OpenAI</div>
-        <div class="s-role">GPT-4o-mini (LLM), Whisper (STT), text-embedding-3-small</div>
-        <span class="s-badge cloud">Cloud only</span>
-      </div>
-      <div class="svc-card">
-        <div class="s-icon">📌</div>
-        <div class="s-name">Pinecone</div>
-        <div class="s-role">Vector database untuk menyimpan embedding dokumen SOP</div>
-        <span class="s-badge cloud">Cloud only</span>
-      </div>
-      <div class="svc-card">
-        <div class="s-icon">🔀</div>
-        <div class="s-name">Cohere</div>
-        <div class="s-role">Reranking hasil RAG dengan rerank-multilingual-v3.0</div>
-        <span class="s-badge cloud">Cloud only</span>
-      </div>
-      <div class="svc-card">
-        <div class="s-icon">🎤</div>
-        <div class="s-name">ElevenLabs</div>
-        <div class="s-role">TTS bahasa Indonesia, model eleven_flash_v2_5</div>
-        <span class="s-badge cloud">Cloud only</span>
-      </div>
-      <div class="svc-card">
-        <div class="s-icon">🗺️</div>
-        <div class="s-name">Google Maps</div>
-        <div class="s-role">Kalkulasi jarak untuk aturan biaya perjalanan dinas</div>
-        <span class="s-badge cloud">Cloud only</span>
-      </div>
-      <div class="svc-card">
-        <div class="s-icon">🐘</div>
-        <div class="s-name">Supabase</div>
-        <div class="s-role">PostgreSQL untuk data HR dan riwayat chat persisten</div>
-        <span class="s-badge self">Bisa self-host</span>
-      </div>
-      <div class="svc-card">
-        <div class="s-icon">⚡</div>
-        <div class="s-name">Upstash Redis</div>
-        <div class="s-role">Hot cache riwayat percakapan dengan TTL 24 jam</div>
-        <span class="s-badge self">Bisa self-host</span>
-      </div>
-      <div class="svc-card">
-        <div class="s-icon">📡</div>
-        <div class="s-name">Langfuse</div>
-        <div class="s-role">LLM observability, tracing, scoring per interaksi</div>
-        <span class="s-badge self">Bisa self-host</span>
-      </div>
-    </div>
-  </section>
-
-  <!-- ── SLIDE 8: ROLE SYSTEM ───────────────────────────────── -->
-  <section class="slide" id="s8">
-    <div class="badge">Access Control</div>
-    <h2 class="gradient-text">Sistem Role Karyawan</h2>
-    <div class="divider"></div>
-    <div class="roles">
-      <div class="role-card">
-        <div class="r-icon">👷</div>
-        <h4>Employee (Karyawan Umum)</h4>
-        <p style="font-size:.82rem;color:var(--muted)">Karyawan operasional perusahaan</p>
-        <div class="r-access">
-          <div class="access-item"><span class="check">✓</span> Tanya SOP & Kebijakan perusahaan</div>
-          <div class="access-item"><span class="check">✓</span> Kalkulasi biaya perjalanan dinas</div>
-          <div class="access-item"><span class="check">✓</span> Mode Voice (telepon AI)</div>
-          <div class="access-item"><span class="check">✓</span> Riwayat sesi percakapan</div>
-          <div class="access-item"><span class="cross">✗</span> Akses HR Analytics & database</div>
-          <div class="access-item"><span class="cross">✗</span> Schema explorer database</div>
-        </div>
-      </div>
-      <div class="role-card">
-        <div class="r-icon">👔</div>
-        <h4>HR / Admin / Manager</h4>
-        <p style="font-size:.82rem;color:var(--muted)">Tim HR, Admin, dan Manajer</p>
-        <div class="r-access">
-          <div class="access-item"><span class="check">✓</span> Semua akses Employee</div>
-          <div class="access-item"><span class="check">✓</span> HR Analytics (Text-to-SQL)</div>
-          <div class="access-item"><span class="check">✓</span> Visualisasi data & grafik interaktif</div>
-          <div class="access-item"><span class="check">✓</span> Database Schema Explorer UI</div>
-          <div class="access-item"><span class="check">✓</span> Parallel routing A+B (SOP + Data)</div>
-          <div class="access-item"><span class="check">✓</span> Hasil sintesis dari dua sumber</div>
-        </div>
-      </div>
-    </div>
-    <div style="margin-top:1.2rem;padding:1rem 1.5rem;background:rgba(183,19,26,.08);border:1px solid rgba(183,19,26,.2);border-radius:12px;font-size:.82rem;color:var(--muted);text-align:center">
-      Role dipilih manual di UI saat ini — bisa diintegrasikan ke SSO/LDAP perusahaan untuk otentikasi otomatis
-    </div>
-  </section>
-
-  <!-- ── SLIDE 9: DEPLOYMENT ────────────────────────────────── -->
-  <section class="slide" id="s9">
-    <div class="badge">Deployment</div>
-    <h2 class="gradient-text">Infrastruktur & Deployment</h2>
-    <div class="divider"></div>
-    <div class="deploy-grid">
-      <div>
-        <div class="dep-box" style="margin-bottom:1rem">
-          <h4>⚙️ Spesifikasi Server (Current)</h4>
-          <div class="dep-row"><span class="dep-key">Provider</span><span class="dep-val">DigitalOcean SGP1</span></div>
-          <div class="dep-row"><span class="dep-key">Spesifikasi</span><span class="dep-val">1 vCPU / 2 GB RAM</span></div>
-          <div class="dep-row"><span class="dep-key">OS</span><span class="dep-val">Ubuntu 24.04 LTS</span></div>
-          <div class="dep-row"><span class="dep-key">Web Server</span><span class="dep-val">Nginx + PM2</span></div>
-          <div class="dep-row"><span class="dep-key">Backend</span><span class="dep-val">Gunicorn 3 workers</span></div>
-          <div class="dep-row"><span class="dep-key">Domain</span><span class="dep-val">denai.online (HTTPS)</span></div>
-          <div class="dep-row"><span class="dep-key">Kapasitas</span><span class="dep-val">~30–50 concurrent users</span></div>
-        </div>
-      </div>
-      <div class="dep-box">
-        <h4>🏗️ Opsi Arsitektur Deployment</h4>
-        <div class="arch-opts">
-          <div class="arch-opt">
-            <div class="num">1</div>
-            <p><strong>Cloud-only</strong> — Semua layanan di cloud. Mudah scale, setup cepat. Cocok untuk MVP & pilot.</p>
+        <div class="svc-section-title" style="margin-top:.5rem">Koneksi Eksternal dari Server</div>
+        <div class="ext-svc-row">
+          <div class="ext-svc-item">
+            <div class="esv-icon" style="background:rgba(96,165,250,.12)"><i data-lucide="cpu" style="width:13px;height:13px;color:var(--blue)"></i></div>
+            <div class="esv-info"><div class="esv-name">OpenAI API</div><div class="esv-desc">LLM · Whisper · Embeddings</div></div>
           </div>
-          <div class="arch-opt">
-            <div class="num">2</div>
-            <p><strong>Hybrid</strong> — Backend on-premise, LLM/vector di cloud. Balance antara kontrol data dan kemudahan.</p>
+          <div class="ext-svc-item">
+            <div class="esv-icon" style="background:rgba(167,139,250,.12)"><i data-lucide="search" style="width:13px;height:13px;color:var(--purple)"></i></div>
+            <div class="esv-info"><div class="esv-name">Pinecone + Cohere</div><div class="esv-desc">Vector search + Reranking</div></div>
           </div>
-          <div class="arch-opt">
-            <div class="num">3</div>
-            <p><strong>On-premise</strong> — Semua di server lokal. Kontrol penuh, data tidak keluar, butuh hardware lebih besar.</p>
+          <div class="ext-svc-item">
+            <div class="esv-icon" style="background:rgba(183,19,26,.12)"><i data-lucide="mic" style="width:13px;height:13px;color:var(--accent)"></i></div>
+            <div class="esv-info"><div class="esv-name">ElevenLabs</div><div class="esv-desc">Indonesian TTS</div></div>
+          </div>
+          <div class="ext-svc-item">
+            <div class="esv-icon" style="background:rgba(74,222,128,.1)"><i data-lucide="database" style="width:13px;height:13px;color:var(--green)"></i></div>
+            <div class="esv-info"><div class="esv-name">Supabase + Redis</div><div class="esv-desc">Persistent + Cache storage</div></div>
+          </div>
+          <div class="ext-svc-item">
+            <div class="esv-icon" style="background:rgba(251,146,60,.1)"><i data-lucide="activity" style="width:13px;height:13px;color:var(--orange)"></i></div>
+            <div class="esv-info"><div class="esv-name">Langfuse + Google Maps</div><div class="esv-desc">Observability + Distance API</div></div>
           </div>
         </div>
       </div>
     </div>
-  </section>
+  </div>
+</section>
 
-  <!-- ── SLIDE 10: OUTRO ────────────────────────────────────── -->
-  <section class="slide" id="s10">
-    <div class="big-logo">D</div>
-    <h1 class="gradient-text">DENAI</h1>
-    <p class="tagline">Enterprise AI untuk Karyawan yang Lebih Produktif</p>
-    <div class="url">🌐 denai.online</div>
-    <div class="feat-badges">
-      <span class="fb">💬 Chat Mode</span>
-      <span class="fb">📞 Call Mode</span>
-      <span class="fb">📋 SOP Q&A</span>
-      <span class="fb">📊 HR Analytics</span>
-      <span class="fb">🎙️ Voice AI</span>
-      <span class="fb">⚡ Real-time Streaming</span>
-      <span class="fb">🔬 LLM Evaluation</span>
-    </div>
-    <div style="margin-top:1.5rem;font-size:.8rem;color:rgba(255,255,255,.2)">PT Semen Indonesia Group · FastAPI v8.1.0 · GPT-4o-mini · ElevenLabs · Pinecone · Cohere</div>
-  </section>
+<!-- ══════════════════════════════════════════════════
+     SLIDE 10 — OUTRO
+══════════════════════════════════════════════════ -->
+<section class="slide" id="s10">
+  <div class="big-logo">
+    <i data-lucide="bot" style="width:54px;height:54px;color:white;stroke-width:1.7"></i>
+  </div>
+  <div class="badge" style="margin-top:.8rem"><span class="pulse-dot"></span>Enterprise AI</div>
+  <h1 class="gradient-text">DENAI</h1>
+  <p class="tagline">Enterprise AI untuk Karyawan yang Lebih Produktif</p>
+  <div class="url">
+    <i data-lucide="globe" style="width:16px;height:16px"></i>
+    denai.online
+  </div>
+  <div class="feat-badges">
+    <span class="fb"><i data-lucide="message-square" style="width:12px;height:12px"></i> Chat Mode</span>
+    <span class="fb"><i data-lucide="phone" style="width:12px;height:12px"></i> Call Mode</span>
+    <span class="fb"><i data-lucide="file-text" style="width:12px;height:12px"></i> SOP Q&A</span>
+    <span class="fb"><i data-lucide="bar-chart-2" style="width:12px;height:12px"></i> HR Analytics</span>
+    <span class="fb"><i data-lucide="mic" style="width:12px;height:12px"></i> Voice AI</span>
+    <span class="fb"><i data-lucide="radio" style="width:12px;height:12px"></i> Real-time Streaming</span>
+    <span class="fb"><i data-lucide="activity" style="width:12px;height:12px"></i> LLM Evaluation</span>
+  </div>
+  <p class="credit">PT Semen Indonesia Group · FastAPI v8.1.0 · GPT-4o-mini · ElevenLabs · Pinecone · Cohere</p>
+</section>
 
 </div><!-- /deck -->
 
 <!-- Navigation -->
 <div class="nav">
-  <button id="prevBtn" onclick="navigate(-1)">←</button>
+  <button onclick="navigate(-1)"><i data-lucide="chevron-left" style="width:16px;height:16px"></i></button>
   <div class="dots" id="dots"></div>
   <span class="counter" id="counter">1 / 10</span>
-  <button id="nextBtn" onclick="navigate(1)">→</button>
+  <button onclick="navigate(1)"><i data-lucide="chevron-right" style="width:16px;height:16px"></i></button>
 </div>
 
 <script>
+  lucide.createIcons();
+
   const slides = document.querySelectorAll('.slide');
-  const dots = document.getElementById('dots');
+  const dotsEl = document.getElementById('dots');
   const counter = document.getElementById('counter');
   const progressBar = document.getElementById('progressBar');
   let current = 0;
   const total = slides.length;
 
-  // build dots
   for (let i = 0; i < total; i++) {
     const d = document.createElement('div');
     d.className = 'dot' + (i === 0 ? ' active' : '');
     d.onclick = () => goTo(i);
-    dots.appendChild(d);
+    dotsEl.appendChild(d);
   }
 
   function updateUI() {
@@ -747,7 +888,7 @@
     const prev = current;
     current = n;
     slides[current].classList.add('active');
-    setTimeout(() => slides[prev].classList.remove('exit'), 500);
+    setTimeout(() => slides[prev].classList.remove('exit'), 450);
     updateUI();
   }
 

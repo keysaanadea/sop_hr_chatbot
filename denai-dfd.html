@@ -1,0 +1,934 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>DFD DENAI — Alur Karyawan</title>
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  font-family: 'Plus Jakarta Sans', sans-serif;
+  background: #ffffff;
+  color: #1e293b;
+  min-height: 100vh;
+}
+
+/* ── HEADER ─────────────────────────────────────────────── */
+header {
+  background: #ffffff;
+  border-bottom: 1px solid #e2e8f0;
+  padding: 1.4rem 2.5rem;
+  display: flex;
+  align-items: center;
+  gap: 1.2rem;
+}
+.header-logo {
+  width: 44px; height: 44px; border-radius: 12px;
+  background: linear-gradient(135deg, #8c0e13, #d9272e);
+  display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0;
+}
+.header-logo svg { color: white; }
+.header-title h1 { font-size: 1.3rem; font-weight: 800; color: #0f172a; }
+.header-title p { font-size: .82rem; color: #64748b; margin-top: .1rem; }
+
+.header-badge {
+  margin-left: auto;
+  display: flex; align-items: center; gap: .5rem;
+  background: #fff1f2; border: 1px solid #fecdd3; border-radius: 6px;
+  padding: .35rem .8rem; font-size: .75rem; font-weight: 700; color: #be123c;
+}
+
+/* ── TAB NAV ─────────────────────────────────────────────── */
+.tab-nav {
+  background: #f8fafc;
+  border-bottom: 1px solid #e2e8f0;
+  padding: 0 2.5rem;
+  display: flex; gap: 0;
+  overflow-x: auto;
+}
+.tab-btn {
+  background: none; border: none; cursor: pointer;
+  padding: .9rem 1.4rem;
+  font-family: inherit; font-size: .82rem; font-weight: 600;
+  color: #64748b;
+  border-bottom: 2px solid transparent;
+  transition: color .2s, border-color .2s;
+  white-space: nowrap;
+  display: flex; align-items: center; gap: .5rem;
+}
+.tab-btn:hover { color: #1e293b; }
+.tab-btn.active { color: #b7131a; border-bottom-color: #b7131a; }
+.tab-level {
+  background: #e2e8f0; color: #64748b;
+  font-size: .65rem; font-weight: 800; letter-spacing: .06em;
+  padding: .15rem .4rem; border-radius: 4px; text-transform: uppercase;
+}
+.tab-btn.active .tab-level { background: #fecdd3; color: #b7131a; }
+
+/* ── MAIN CONTENT ────────────────────────────────────────── */
+main { padding: 1.5rem 2.5rem 3rem; }
+
+.tab-panel { display: none; }
+.tab-panel.active { display: block; }
+
+.diagram-header {
+  display: flex; align-items: flex-start; justify-content: space-between;
+  margin-bottom: 1.2rem;
+}
+.diagram-title h2 { font-size: 1.1rem; font-weight: 800; color: #0f172a; }
+.diagram-title p { font-size: .82rem; color: #64748b; margin-top: .2rem; line-height: 1.5; }
+
+/* ── LEGEND ──────────────────────────────────────────────── */
+.legend {
+  display: flex; gap: 1.2rem; flex-wrap: wrap;
+  background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 10px;
+  padding: .7rem 1.2rem; margin-bottom: 1.5rem;
+}
+.legend-item { display: flex; align-items: center; gap: .5rem; font-size: .75rem; color: #475569; }
+.leg-box {
+  width: 28px; height: 16px; border-radius: 3px; flex-shrink: 0;
+}
+.leg-entity { background: #f1f5f9; border: 1.5px solid #475569; }
+.leg-process { background: #eff6ff; border: 1.5px solid #2563eb; }
+.leg-main  { background: #fff1f2; border: 1.5px solid #b7131a; }
+.leg-store { background: #f0fdf4; border-top: 2px solid #16a34a; border-bottom: 2px solid #16a34a; border-left: 2px solid #16a34a; border-right: none; }
+.leg-arrow { display: flex; align-items: center; }
+.leg-arrow-line { width: 24px; height: 0; border-top: 1.5px solid #475569; position: relative; }
+.leg-arrow-line::after { content: ''; position: absolute; right: -1px; top: -4px; border-left: 6px solid #475569; border-top: 4px solid transparent; border-bottom: 4px solid transparent; }
+
+/* ── SVG WRAPPER ─────────────────────────────────────────── */
+.svg-wrap {
+  background: #ffffff;
+  border: 1px solid #e2e8f0; border-radius: 12px;
+  overflow-x: auto;
+  padding: 1rem;
+}
+.svg-wrap svg {
+  display: block;
+  font-family: 'Plus Jakarta Sans', sans-serif;
+}
+
+/* SVG text classes */
+svg .t-entity { font-size: 11px; font-weight: 600; fill: #334155; }
+svg .t-entity-sub { font-size: 9px; fill: #64748b; }
+svg .t-proc-num { font-size: 10px; font-weight: 800; fill: #1d4ed8; }
+svg .t-proc-name { font-size: 10.5px; font-weight: 700; fill: #1e3a8a; }
+svg .t-proc-sub { font-size: 8.5px; fill: #3b82f6; }
+svg .t-main-num { font-size: 11px; font-weight: 800; fill: #9f1239; }
+svg .t-main-name { font-size: 13px; font-weight: 800; fill: #7f1d1d; }
+svg .t-main-sub { font-size: 9.5px; fill: #b91c1c; }
+svg .t-store-id { font-size: 10px; font-weight: 800; fill: #15803d; }
+svg .t-store-name { font-size: 9.5px; fill: #166534; }
+svg .t-flow { font-size: 9px; fill: #374151; font-weight: 600; }
+</style>
+</head>
+<body>
+
+<!-- ── HEADER ──────────────────────────────────────────────── -->
+<header>
+  <div class="header-logo">
+    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none"
+         stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M12 8V4H8"/><rect width="16" height="12" x="4" y="8" rx="2"/>
+      <path d="M2 14h2"/><path d="M20 14h2"/><path d="M15 13v2"/><path d="M9 13v2"/>
+    </svg>
+  </div>
+  <div class="header-title">
+    <h1>Data Flow Diagram — DENAI</h1>
+    <p>Alur Sistem untuk Karyawan (Employee) · PT Semen Indonesia Group</p>
+  </div>
+  <div class="header-badge">
+    <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none"
+         stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+      <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>
+    </svg>
+    Metodologi: Gane-Sarson
+  </div>
+</header>
+
+<!-- ── TAB NAVIGATION ──────────────────────────────────────── -->
+<nav class="tab-nav">
+  <button class="tab-btn active" onclick="switchTab('l0')">
+    <span class="tab-level">Level 0</span> Context Diagram
+  </button>
+  <button class="tab-btn" onclick="switchTab('l1')">
+    <span class="tab-level">Level 1</span> Alur Utama Karyawan
+  </button>
+  <button class="tab-btn" onclick="switchTab('l2a')">
+    <span class="tab-level">Level 2a</span> Detail: SOP &amp; RAG Engine
+  </button>
+  <button class="tab-btn" onclick="switchTab('l2b')">
+    <span class="tab-level">Level 2b</span> Detail: Voice Processing
+  </button>
+</nav>
+
+<main>
+
+<!-- ══════════════════════════════════════════════════════════
+     LEVEL 0 — CONTEXT DIAGRAM
+══════════════════════════════════════════════════════════ -->
+<div class="tab-panel active" id="l0">
+  <div class="diagram-header">
+    <div class="diagram-title">
+      <h2>Level 0 — Context Diagram</h2>
+      <p>Gambaran keseluruhan sistem DENAI sebagai satu proses tunggal dengan seluruh entitas eksternal yang berinteraksi dengannya.</p>
+    </div>
+  </div>
+
+  <div class="legend">
+    <div class="legend-item"><div class="leg-box leg-main"></div> Sistem Utama (DENAI)</div>
+    <div class="legend-item"><div class="leg-box leg-entity"></div> Entitas Eksternal</div>
+    <div class="legend-item">
+      <div class="leg-arrow"><div class="leg-arrow-line"></div></div>
+      Aliran Data
+    </div>
+  </div>
+
+  <div class="svg-wrap">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1080 530" style="width:100%;min-width:800px">
+<defs>
+  <marker id="ah0" markerWidth="8" markerHeight="7" refX="7" refY="3.5" orient="auto">
+    <polygon points="0,0 0,7 8,3.5" fill="#475569"/>
+  </marker>
+  <marker id="ahs0" markerWidth="8" markerHeight="7" refX="1" refY="3.5" orient="auto-start-reverse">
+    <polygon points="0,0 0,7 8,3.5" fill="#475569"/>
+  </marker>
+</defs>
+
+<!-- Background grid (subtle) -->
+<defs>
+  <pattern id="grid0" width="40" height="40" patternUnits="userSpaceOnUse">
+    <path d="M 40 0 L 0 0 0 40" fill="none" stroke="#f1f5f9" stroke-width="0.8"/>
+  </pattern>
+</defs>
+<rect width="1080" height="530" fill="url(#grid0)" rx="8"/>
+
+<!-- ── DENAI Main Process (center) ── -->
+<rect x="390" y="200" width="220" height="90" rx="12"
+      fill="#fff1f2" stroke="#b7131a" stroke-width="2.5"/>
+<text x="500" y="222" text-anchor="middle" class="t-main-num">0.0</text>
+<text x="500" y="244" text-anchor="middle" class="t-main-name">DENAI</text>
+<text x="500" y="263" text-anchor="middle" class="t-main-sub">Enterprise AI Chatbot</text>
+<text x="500" y="277" text-anchor="middle" class="t-main-sub">PT Semen Indonesia Group</text>
+
+<!-- ── LEFT ENTITIES ── -->
+<!-- Karyawan -->
+<rect x="18" y="90" width="155" height="44" rx="4" fill="#f8fafc" stroke="#475569" stroke-width="1.5"/>
+<text x="95" y="107" text-anchor="middle" class="t-entity">Karyawan</text>
+<text x="95" y="123" text-anchor="middle" class="t-entity-sub">Employee</text>
+
+<!-- ElevenLabs -->
+<rect x="18" y="320" width="155" height="44" rx="4" fill="#f8fafc" stroke="#475569" stroke-width="1.5"/>
+<text x="95" y="337" text-anchor="middle" class="t-entity">ElevenLabs</text>
+<text x="95" y="353" text-anchor="middle" class="t-entity-sub">Text-to-Speech API</text>
+
+<!-- ── BOTTOM ENTITIES ── -->
+<!-- Supabase -->
+<rect x="205" y="445" width="155" height="44" rx="4" fill="#f8fafc" stroke="#475569" stroke-width="1.5"/>
+<text x="282" y="462" text-anchor="middle" class="t-entity">Supabase</text>
+<text x="282" y="478" text-anchor="middle" class="t-entity-sub">PostgreSQL Database</text>
+
+<!-- Redis -->
+<rect x="435" y="445" width="155" height="44" rx="4" fill="#f8fafc" stroke="#475569" stroke-width="1.5"/>
+<text x="512" y="462" text-anchor="middle" class="t-entity">Upstash Redis</text>
+<text x="512" y="478" text-anchor="middle" class="t-entity-sub">Session Cache</text>
+
+<!-- Google Maps -->
+<rect x="660" y="445" width="155" height="44" rx="4" fill="#f8fafc" stroke="#475569" stroke-width="1.5"/>
+<text x="737" y="462" text-anchor="middle" class="t-entity">Google Maps API</text>
+<text x="737" y="478" text-anchor="middle" class="t-entity-sub">Distance &amp; Routes</text>
+
+<!-- ── RIGHT ENTITIES ── -->
+<!-- OpenAI -->
+<rect x="895" y="75" width="160" height="44" rx="4" fill="#f8fafc" stroke="#475569" stroke-width="1.5"/>
+<text x="975" y="92" text-anchor="middle" class="t-entity">OpenAI API</text>
+<text x="975" y="108" text-anchor="middle" class="t-entity-sub">LLM · Whisper · Embeddings</text>
+
+<!-- Pinecone -->
+<rect x="895" y="185" width="160" height="44" rx="4" fill="#f8fafc" stroke="#475569" stroke-width="1.5"/>
+<text x="975" y="202" text-anchor="middle" class="t-entity">Pinecone</text>
+<text x="975" y="218" text-anchor="middle" class="t-entity-sub">Vector Database</text>
+
+<!-- Cohere -->
+<rect x="895" y="300" width="160" height="44" rx="4" fill="#f8fafc" stroke="#475569" stroke-width="1.5"/>
+<text x="975" y="317" text-anchor="middle" class="t-entity">Cohere API</text>
+<text x="975" y="333" text-anchor="middle" class="t-entity-sub">Reranking Multilingual</text>
+
+<!-- ── ARROWS ── -->
+<!-- Karyawan ↔ DENAI -->
+<path d="M173,110 L380,228" stroke="#475569" stroke-width="1.4" fill="none"
+      marker-end="url(#ah0)" marker-start="url(#ahs0)"/>
+<rect x="232" y="157" width="100" height="26" rx="3" fill="white" stroke="#e2e8f0" stroke-width="1"/>
+<text x="282" y="167" text-anchor="middle" class="t-flow">Pertanyaan</text>
+<text x="282" y="179" text-anchor="middle" class="t-flow">Jawaban / Respons</text>
+
+<!-- ElevenLabs ↔ DENAI -->
+<path d="M173,342 L390,265" stroke="#475569" stroke-width="1.4" fill="none"
+      marker-end="url(#ah0)" marker-start="url(#ahs0)"/>
+<rect x="218" y="292" width="96" height="26" rx="3" fill="white" stroke="#e2e8f0" stroke-width="1"/>
+<text x="266" y="302" text-anchor="middle" class="t-flow">Teks Respons</text>
+<text x="266" y="314" text-anchor="middle" class="t-flow">Audio MP3</text>
+
+<!-- Supabase ↔ DENAI -->
+<path d="M330,445 L468,290" stroke="#475569" stroke-width="1.4" fill="none"
+      marker-end="url(#ah0)" marker-start="url(#ahs0)"/>
+<rect x="358" y="355" width="88" height="26" rx="3" fill="white" stroke="#e2e8f0" stroke-width="1"/>
+<text x="402" y="365" text-anchor="middle" class="t-flow">Riwayat Chat</text>
+<text x="402" y="377" text-anchor="middle" class="t-flow">Sesi Lama</text>
+
+<!-- Redis ↔ DENAI -->
+<path d="M512,445 L500,290" stroke="#475569" stroke-width="1.4" fill="none"
+      marker-end="url(#ah0)" marker-start="url(#ahs0)"/>
+<rect x="463" y="358" width="78" height="26" rx="3" fill="white" stroke="#e2e8f0" stroke-width="1"/>
+<text x="502" y="368" text-anchor="middle" class="t-flow">Cache Sesi</text>
+<text x="502" y="380" text-anchor="middle" class="t-flow">24 Jam TTL</text>
+
+<!-- Google Maps ↔ DENAI -->
+<path d="M697,445 L568,290" stroke="#475569" stroke-width="1.4" fill="none"
+      marker-end="url(#ah0)" marker-start="url(#ahs0)"/>
+<rect x="590" y="355" width="88" height="26" rx="3" fill="white" stroke="#e2e8f0" stroke-width="1"/>
+<text x="634" y="365" text-anchor="middle" class="t-flow">Asal + Tujuan</text>
+<text x="634" y="377" text-anchor="middle" class="t-flow">Jarak &amp; Rute</text>
+
+<!-- OpenAI ↔ DENAI -->
+<path d="M895,97 L610,220" stroke="#475569" stroke-width="1.4" fill="none"
+      marker-end="url(#ah0)" marker-start="url(#ahs0)"/>
+<rect x="710" y="136" width="106" height="26" rx="3" fill="white" stroke="#e2e8f0" stroke-width="1"/>
+<text x="763" y="146" text-anchor="middle" class="t-flow">Prompt &amp; Konteks</text>
+<text x="763" y="158" text-anchor="middle" class="t-flow">Respons LLM / Audio</text>
+
+<!-- Pinecone ↔ DENAI -->
+<path d="M895,207 L610,240" stroke="#475569" stroke-width="1.4" fill="none"
+      marker-end="url(#ah0)" marker-start="url(#ahs0)"/>
+<rect x="710" y="213" width="100" height="26" rx="3" fill="white" stroke="#e2e8f0" stroke-width="1"/>
+<text x="760" y="223" text-anchor="middle" class="t-flow">Query Vektor</text>
+<text x="760" y="235" text-anchor="middle" class="t-flow">Chunks Dokumen</text>
+
+<!-- Cohere ↔ DENAI -->
+<path d="M895,322 L610,260" stroke="#475569" stroke-width="1.4" fill="none"
+      marker-end="url(#ah0)" marker-start="url(#ahs0)"/>
+<rect x="710" y="280" width="100" height="26" rx="3" fill="white" stroke="#e2e8f0" stroke-width="1"/>
+<text x="760" y="290" text-anchor="middle" class="t-flow">Kandidat Dokumen</text>
+<text x="760" y="302" text-anchor="middle" class="t-flow">Hasil Reranking</text>
+
+<!-- Title note -->
+<text x="540" y="522" text-anchor="middle" font-size="10" fill="#94a3b8" font-style="italic">
+  Level 0: DENAI sebagai satu proses tunggal — semua interaksi dengan dunia luar
+</text>
+</svg>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════
+     LEVEL 1 — ALUR UTAMA
+══════════════════════════════════════════════════════════ -->
+<div class="tab-panel" id="l1">
+  <div class="diagram-header">
+    <div class="diagram-title">
+      <h2>Level 1 — Alur Utama Karyawan</h2>
+      <p>Dekomposisi proses DENAI menjadi 5 proses utama: penanganan input, klasifikasi intent, RAG engine, kalkulasi perjalanan, dan manajemen sesi.</p>
+    </div>
+  </div>
+
+  <div class="legend">
+    <div class="legend-item"><div class="leg-box leg-entity"></div> Entitas Eksternal</div>
+    <div class="legend-item"><div class="leg-box leg-process"></div> Proses</div>
+    <div class="legend-item"><div class="leg-box leg-store"></div> Data Store</div>
+    <div class="legend-item">
+      <div class="leg-arrow"><div class="leg-arrow-line"></div></div>
+      Aliran Data (→ satu arah &nbsp;|&nbsp; ↔ dua arah)
+    </div>
+  </div>
+
+  <div class="svg-wrap">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1140 670" style="width:100%;min-width:900px">
+<defs>
+  <marker id="ah1" markerWidth="8" markerHeight="7" refX="7" refY="3.5" orient="auto">
+    <polygon points="0,0 0,7 8,3.5" fill="#475569"/>
+  </marker>
+  <marker id="ahs1" markerWidth="8" markerHeight="7" refX="1" refY="3.5" orient="auto-start-reverse">
+    <polygon points="0,0 0,7 8,3.5" fill="#475569"/>
+  </marker>
+  <pattern id="grid1" width="40" height="40" patternUnits="userSpaceOnUse">
+    <path d="M 40 0 L 0 0 0 40" fill="none" stroke="#f8fafc" stroke-width="1"/>
+  </pattern>
+</defs>
+<rect width="1140" height="670" fill="url(#grid1)" rx="8"/>
+
+<!-- ═══════════ EXTERNAL ENTITIES ═══════════ -->
+
+<!-- Karyawan (top center) -->
+<rect x="475" y="20" width="160" height="44" rx="4" fill="#f8fafc" stroke="#475569" stroke-width="1.5"/>
+<text x="555" y="37" text-anchor="middle" class="t-entity">Karyawan</text>
+<text x="555" y="53" text-anchor="middle" class="t-entity-sub">Employee — Pengguna Akhir</text>
+
+<!-- ElevenLabs (left of P1.0) -->
+<rect x="28" y="135" width="155" height="44" rx="4" fill="#f8fafc" stroke="#475569" stroke-width="1.5"/>
+<text x="105" y="152" text-anchor="middle" class="t-entity">ElevenLabs</text>
+<text x="105" y="168" text-anchor="middle" class="t-entity-sub">Text-to-Speech</text>
+
+<!-- OpenAI (right, mid level) -->
+<rect x="958" y="248" width="155" height="44" rx="4" fill="#f8fafc" stroke="#475569" stroke-width="1.5"/>
+<text x="1035" y="265" text-anchor="middle" class="t-entity">OpenAI API</text>
+<text x="1035" y="281" text-anchor="middle" class="t-entity-sub">GPT-4o · Whisper · Embed</text>
+
+<!-- Cohere (left of P3.0) -->
+<rect x="28" y="405" width="155" height="44" rx="4" fill="#f8fafc" stroke="#475569" stroke-width="1.5"/>
+<text x="105" y="422" text-anchor="middle" class="t-entity">Cohere API</text>
+<text x="105" y="438" text-anchor="middle" class="t-entity-sub">Reranking Multilingual</text>
+
+<!-- Google Maps (right of P4.0) -->
+<rect x="958" y="405" width="155" height="44" rx="4" fill="#f8fafc" stroke="#475569" stroke-width="1.5"/>
+<text x="1035" y="422" text-anchor="middle" class="t-entity">Google Maps API</text>
+<text x="1035" y="438" text-anchor="middle" class="t-entity-sub">Jarak &amp; Kalkulasi Rute</text>
+
+<!-- ═══════════ PROCESSES ═══════════ -->
+
+<!-- P1.0: Penanganan Input (center top) -->
+<rect x="472" y="123" width="165" height="54" rx="7" fill="#eff6ff" stroke="#2563eb" stroke-width="1.8"/>
+<text x="554" y="140" text-anchor="middle" class="t-proc-num">1.0</text>
+<text x="554" y="155" text-anchor="middle" class="t-proc-name">Penanganan Input</text>
+<text x="554" y="168" text-anchor="middle" class="t-proc-sub">Dispatcher Teks &amp; Suara</text>
+
+<!-- P2.0: Klasifikasi Intent (center mid) -->
+<rect x="472" y="255" width="165" height="54" rx="7" fill="#eff6ff" stroke="#2563eb" stroke-width="1.8"/>
+<text x="554" y="272" text-anchor="middle" class="t-proc-num">2.0</text>
+<text x="554" y="287" text-anchor="middle" class="t-proc-name">Klasifikasi Intent</text>
+<text x="554" y="300" text-anchor="middle" class="t-proc-sub">GPT-4o-mini · 4 Kelas</text>
+
+<!-- P3.0: SOP & RAG Engine (left branch) -->
+<rect x="272" y="385" width="165" height="54" rx="7" fill="#eff6ff" stroke="#2563eb" stroke-width="1.8"/>
+<text x="354" y="402" text-anchor="middle" class="t-proc-num">3.0</text>
+<text x="354" y="417" text-anchor="middle" class="t-proc-name">SOP &amp; RAG Engine</text>
+<text x="354" y="430" text-anchor="middle" class="t-proc-sub">Pinecone · Cohere · LangChain</text>
+
+<!-- P4.0: Kalkulasi Perjalanan (right branch) -->
+<rect x="700" y="385" width="165" height="54" rx="7" fill="#eff6ff" stroke="#2563eb" stroke-width="1.8"/>
+<text x="782" y="402" text-anchor="middle" class="t-proc-num">4.0</text>
+<text x="782" y="417" text-anchor="middle" class="t-proc-name">Kalkulasi Perjalanan</text>
+<text x="782" y="430" text-anchor="middle" class="t-proc-sub">Google Maps · Policy Rules</text>
+
+<!-- P5.0: Manajemen Sesi (bottom center) -->
+<rect x="472" y="520" width="165" height="54" rx="7" fill="#eff6ff" stroke="#2563eb" stroke-width="1.8"/>
+<text x="554" y="537" text-anchor="middle" class="t-proc-num">5.0</text>
+<text x="554" y="552" text-anchor="middle" class="t-proc-name">Manajemen Sesi</text>
+<text x="554" y="565" text-anchor="middle" class="t-proc-sub">Riwayat &amp; Cache</text>
+
+<!-- ═══════════ DATA STORES ═══════════ -->
+
+<!-- D1: Pinecone Vector DB (left of P3.0) -->
+<!-- Open rectangle: left vertical + top line + bottom line -->
+<line x1="32" y1="490" x2="225" y2="490" stroke="#16a34a" stroke-width="1.8"/>
+<line x1="32" y1="525" x2="225" y2="525" stroke="#16a34a" stroke-width="1.8"/>
+<line x1="32" y1="490" x2="32" y2="525" stroke="#16a34a" stroke-width="1.8"/>
+<line x1="70" y1="490" x2="70" y2="525" stroke="#16a34a" stroke-width="1.5"/>
+<rect x="33" y="491" width="36" height="33" fill="#f0fdf4"/>
+<rect x="71" y="491" width="153" height="33" fill="#fafafa"/>
+<text x="51" y="511" text-anchor="middle" class="t-store-id">D1</text>
+<text x="147" y="507" text-anchor="middle" class="t-store-name">Pinecone</text>
+<text x="147" y="519" text-anchor="middle" class="t-store-name">Vector Database</text>
+
+<!-- D2: Supabase Chat History (bottom left) -->
+<line x1="305" y1="610" x2="520" y2="610" stroke="#16a34a" stroke-width="1.8"/>
+<line x1="305" y1="645" x2="520" y2="645" stroke="#16a34a" stroke-width="1.8"/>
+<line x1="305" y1="610" x2="305" y2="645" stroke="#16a34a" stroke-width="1.8"/>
+<line x1="343" y1="610" x2="343" y2="645" stroke="#16a34a" stroke-width="1.5"/>
+<rect x="306" y="611" width="36" height="33" fill="#f0fdf4"/>
+<rect x="344" y="611" width="175" height="33" fill="#fafafa"/>
+<text x="324" y="631" text-anchor="middle" class="t-store-id">D2</text>
+<text x="432" y="627" text-anchor="middle" class="t-store-name">Supabase — Riwayat Chat</text>
+<text x="432" y="639" text-anchor="middle" class="t-store-name">Persistent Storage</text>
+
+<!-- D3: Redis Cache (bottom right) -->
+<line x1="600" y1="610" x2="815" y2="610" stroke="#16a34a" stroke-width="1.8"/>
+<line x1="600" y1="645" x2="815" y2="645" stroke="#16a34a" stroke-width="1.8"/>
+<line x1="600" y1="610" x2="600" y2="645" stroke="#16a34a" stroke-width="1.8"/>
+<line x1="638" y1="610" x2="638" y2="645" stroke="#16a34a" stroke-width="1.5"/>
+<rect x="601" y="611" width="36" height="33" fill="#f0fdf4"/>
+<rect x="639" y="611" width="175" height="33" fill="#fafafa"/>
+<text x="619" y="631" text-anchor="middle" class="t-store-id">D3</text>
+<text x="727" y="627" text-anchor="middle" class="t-store-name">Upstash Redis</text>
+<text x="727" y="639" text-anchor="middle" class="t-store-name">Session Cache · TTL 24h</text>
+
+<!-- ═══════════ ARROWS ═══════════ -->
+
+<!-- Karyawan → P1.0 (pertanyaan input) -->
+<line x1="546" y1="64" x2="546" y2="123" stroke="#475569" stroke-width="1.4" marker-end="url(#ah1)"/>
+<rect x="478" y="80" width="90" height="15" fill="white"/>
+<text x="523" y="91" text-anchor="middle" class="t-flow">Pertanyaan Teks</text>
+
+<!-- P1.0 → Karyawan (jawaban streaming) -->
+<line x1="563" y1="123" x2="563" y2="64" stroke="#475569" stroke-width="1.4" marker-end="url(#ah1)"/>
+<rect x="566" y="80" width="90" height="15" fill="white"/>
+<text x="611" y="91" text-anchor="middle" class="t-flow">Jawaban Streaming</text>
+
+<!-- ElevenLabs ↔ P1.0 (TTS voice) -->
+<line x1="183" y1="155" x2="472" y2="150" stroke="#475569" stroke-width="1.4"
+      marker-end="url(#ah1)" marker-start="url(#ahs1)"/>
+<rect x="270" y="140" width="90" height="24" rx="2" fill="white" stroke="#e2e8f0" stroke-width="1"/>
+<text x="315" y="150" text-anchor="middle" class="t-flow">Teks Respons</text>
+<text x="315" y="160" text-anchor="middle" class="t-flow">Audio MP3</text>
+
+<!-- P1.0 → P2.0 (teks pertanyaan) -->
+<line x1="554" y1="177" x2="554" y2="255" stroke="#475569" stroke-width="1.4" marker-end="url(#ah1)"/>
+<rect x="480" y="206" width="100" height="14" fill="white"/>
+<text x="530" y="216" text-anchor="middle" class="t-flow">Teks Pertanyaan</text>
+
+<!-- P2.0 → P3.0 (branch left: intent SOP) -->
+<path d="M504,309 L354,309 L354,385" stroke="#475569" stroke-width="1.4" fill="none" marker-end="url(#ah1)"/>
+<rect x="376" y="300" width="100" height="14" fill="white"/>
+<text x="426" y="311" text-anchor="middle" class="t-flow">Intent: SOP</text>
+
+<!-- P2.0 → P4.0 (branch right: intent travel) -->
+<path d="M604,309 L782,309 L782,385" stroke="#475569" stroke-width="1.4" fill="none" marker-end="url(#ah1)"/>
+<rect x="648" y="300" width="106" height="14" fill="white"/>
+<text x="701" y="311" text-anchor="middle" class="t-flow">Intent: Perjalanan</text>
+
+<!-- P2.0 ↔ OpenAI (klasifikasi) -->
+<path d="M637,270 L830,270 L830,262 L958,262" stroke="#475569" stroke-width="1.4" fill="none"
+      marker-end="url(#ah1)" marker-start="url(#ahs1)"/>
+<rect x="748" y="259" width="90" height="24" rx="2" fill="white" stroke="#e2e8f0" stroke-width="1"/>
+<text x="793" y="269" text-anchor="middle" class="t-flow">Prompt Intent</text>
+<text x="793" y="280" text-anchor="middle" class="t-flow">Respons Kelas</text>
+
+<!-- P3.0 ↔ OpenAI (embedding + LLM generation) -->
+<path d="M437,395 L700,395 L700,278 L958,278" stroke="#475569" stroke-width="1.4" fill="none"
+      marker-end="url(#ah1)" marker-start="url(#ahs1)"/>
+<rect x="747" y="381" width="106" height="24" rx="2" fill="white" stroke="#e2e8f0" stroke-width="1"/>
+<text x="800" y="391" text-anchor="middle" class="t-flow">Query Embedding</text>
+<text x="800" y="403" text-anchor="middle" class="t-flow">Respons LLM Stream</text>
+
+<!-- P3.0 ↔ Cohere (reranking) -->
+<line x1="183" y1="427" x2="272" y2="420" stroke="#475569" stroke-width="1.4"
+      marker-end="url(#ah1)" marker-start="url(#ahs1)"/>
+<rect x="168" y="415" width="96" height="24" rx="2" fill="white" stroke="#e2e8f0" stroke-width="1"/>
+<text x="216" y="425" text-anchor="middle" class="t-flow">Kandidat Chunk</text>
+<text x="216" y="437" text-anchor="middle" class="t-flow">Reranked Docs</text>
+
+<!-- P3.0 ↔ D1 Pinecone (vector search) -->
+<path d="M340,439 L340,490" stroke="#475569" stroke-width="1.4" fill="none"
+      marker-end="url(#ah1)" marker-start="url(#ahs1)"/>
+<rect x="257" y="459" width="100" height="14" fill="white"/>
+<text x="307" y="470" text-anchor="middle" class="t-flow">Query Vektor / Chunks</text>
+
+<!-- P4.0 ↔ Google Maps (jarak & rute) -->
+<line x1="865" y1="412" x2="958" y2="420" stroke="#475569" stroke-width="1.4"
+      marker-end="url(#ah1)" marker-start="url(#ahs1)"/>
+<rect x="875" y="408" width="80" height="24" rx="2" fill="white" stroke="#e2e8f0" stroke-width="1"/>
+<text x="915" y="418" text-anchor="middle" class="t-flow">Asal, Tujuan</text>
+<text x="915" y="430" text-anchor="middle" class="t-flow">Jarak &amp; Rute</text>
+
+<!-- P3.0 → P5.0 (jawaban SOP) -->
+<path d="M354,439 L354,547 L472,547" stroke="#475569" stroke-width="1.4" fill="none" marker-end="url(#ah1)"/>
+<rect x="272" y="488" width="86" height="14" fill="white"/>
+<text x="315" y="499" text-anchor="middle" class="t-flow">Jawaban SOP</text>
+
+<!-- P4.0 → P5.0 (data perjalanan) -->
+<path d="M782,439 L782,547 L637,547" stroke="#475569" stroke-width="1.4" fill="none" marker-end="url(#ah1)"/>
+<rect x="720" y="488" width="100" height="14" fill="white"/>
+<text x="770" y="499" text-anchor="middle" class="t-flow">Data Biaya Perjalanan</text>
+
+<!-- P5.0 ↔ D2 Supabase -->
+<path d="M520,574 L413,574 L413,610" stroke="#475569" stroke-width="1.4" fill="none"
+      marker-end="url(#ah1)" marker-start="url(#ahs1)"/>
+<rect x="402" y="585" width="74" height="14" fill="white"/>
+<text x="439" y="596" text-anchor="middle" class="t-flow">Simpan Riwayat</text>
+
+<!-- P5.0 ↔ D3 Redis -->
+<path d="M588,574 L708,574 L708,610" stroke="#475569" stroke-width="1.4" fill="none"
+      marker-end="url(#ah1)" marker-start="url(#ahs1)"/>
+<rect x="612" y="585" width="80" height="14" fill="white"/>
+<text x="652" y="596" text-anchor="middle" class="t-flow">Cache Sesi</text>
+
+<!-- Caption -->
+<text x="570" y="662" text-anchor="middle" font-size="10" fill="#94a3b8" font-style="italic">
+  Level 1: Dekomposisi 5 proses utama untuk alur karyawan — teks dan suara digabung di P1.0
+</text>
+</svg>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════
+     LEVEL 2a — SOP & RAG ENGINE DETAIL
+══════════════════════════════════════════════════════════ -->
+<div class="tab-panel" id="l2a">
+  <div class="diagram-header">
+    <div class="diagram-title">
+      <h2>Level 2a — Detail: SOP &amp; RAG Engine (Proses 3.0)</h2>
+      <p>Dekomposisi internal proses 3.0 — dari pertanyaan masuk hingga jawaban SOP dihasilkan melalui pipeline RAG Hybrid v7.2.0.</p>
+    </div>
+  </div>
+
+  <div class="legend">
+    <div class="legend-item"><div class="leg-box leg-entity"></div> Entitas / Referensi Proses Lain</div>
+    <div class="legend-item"><div class="leg-box leg-process"></div> Sub-Proses</div>
+    <div class="legend-item"><div class="leg-box leg-store"></div> Data Store</div>
+    <div class="legend-item">
+      <div class="leg-arrow"><div class="leg-arrow-line"></div></div>
+      Aliran Data
+    </div>
+  </div>
+
+  <div class="svg-wrap">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 620" style="width:100%;min-width:760px">
+<defs>
+  <marker id="ah2a" markerWidth="8" markerHeight="7" refX="7" refY="3.5" orient="auto">
+    <polygon points="0,0 0,7 8,3.5" fill="#475569"/>
+  </marker>
+  <marker id="ahs2a" markerWidth="8" markerHeight="7" refX="1" refY="3.5" orient="auto-start-reverse">
+    <polygon points="0,0 0,7 8,3.5" fill="#475569"/>
+  </marker>
+  <pattern id="grid2a" width="40" height="40" patternUnits="userSpaceOnUse">
+    <path d="M 40 0 L 0 0 0 40" fill="none" stroke="#f8fafc" stroke-width="1"/>
+  </pattern>
+</defs>
+<rect width="1000" height="620" fill="url(#grid2a)" rx="8"/>
+
+<!-- Sub-process boundary box -->
+<rect x="15" y="15" width="970" height="590" rx="10" fill="none" stroke="#dbeafe" stroke-width="1.5" stroke-dasharray="8,4"/>
+<text x="30" y="32" font-size="10" font-weight="700" fill="#93c5fd">BATAS PROSES 3.0 — SOP &amp; RAG Engine</text>
+
+<!-- ═══════════ INPUT / OUTPUT ENTITIES ═══════════ -->
+
+<!-- Input: Pertanyaan (dari P2.0) -->
+<rect x="25" y="272" width="155" height="44" rx="4" fill="#fef9c3" stroke="#a16207" stroke-width="1.5"/>
+<text x="102" y="289" text-anchor="middle" font-size="10.5" font-weight="700" fill="#713f12">Input: Pertanyaan</text>
+<text x="102" y="305" text-anchor="middle" font-size="9" fill="#92400e">dari Proses 2.0</text>
+
+<!-- Output: Jawaban (ke P1.0) -->
+<rect x="820" y="272" width="155" height="44" rx="4" fill="#fef9c3" stroke="#a16207" stroke-width="1.5"/>
+<text x="897" y="289" text-anchor="middle" font-size="10.5" font-weight="700" fill="#713f12">Output: Jawaban</text>
+<text x="897" y="305" text-anchor="middle" font-size="9" fill="#92400e">ke Proses 1.0 (stream)</text>
+
+<!-- ═══════════ SUB-PROCESSES (vertical center, x=460) ═══════════ -->
+
+<!-- 3.1 Embed Query -->
+<rect x="365" y="60" width="175" height="54" rx="7" fill="#eff6ff" stroke="#2563eb" stroke-width="1.8"/>
+<text x="452" y="77" text-anchor="middle" class="t-proc-num">3.1</text>
+<text x="452" y="92" text-anchor="middle" class="t-proc-name">Embed Query</text>
+<text x="452" y="105" text-anchor="middle" class="t-proc-sub">text-embedding-3-small</text>
+
+<!-- 3.2 Vector Search -->
+<rect x="365" y="178" width="175" height="54" rx="7" fill="#eff6ff" stroke="#2563eb" stroke-width="1.8"/>
+<text x="452" y="195" text-anchor="middle" class="t-proc-num">3.2</text>
+<text x="452" y="210" text-anchor="middle" class="t-proc-name">Vector Search</text>
+<text x="452" y="223" text-anchor="middle" class="t-proc-sub">Top-15 chunks · Pinecone</text>
+
+<!-- 3.3 Reranking -->
+<rect x="365" y="295" width="175" height="54" rx="7" fill="#eff6ff" stroke="#2563eb" stroke-width="1.8"/>
+<text x="452" y="312" text-anchor="middle" class="t-proc-num">3.3</text>
+<text x="452" y="327" text-anchor="middle" class="t-proc-name">Reranking Dokumen</text>
+<text x="452" y="340" text-anchor="middle" class="t-proc-sub">Cohere rerank-multilingual-v3</text>
+
+<!-- 3.4 Bangun Konteks -->
+<rect x="365" y="413" width="175" height="54" rx="7" fill="#eff6ff" stroke="#2563eb" stroke-width="1.8"/>
+<text x="452" y="430" text-anchor="middle" class="t-proc-num">3.4</text>
+<text x="452" y="445" text-anchor="middle" class="t-proc-name">Bangun Konteks RAG</text>
+<text x="452" y="458" text-anchor="middle" class="t-proc-sub">Injeksi Kebijakan + Schema</text>
+
+<!-- 3.5 Generate Jawaban -->
+<rect x="365" y="528" width="175" height="54" rx="7" fill="#eff6ff" stroke="#2563eb" stroke-width="1.8"/>
+<text x="452" y="545" text-anchor="middle" class="t-proc-num">3.5</text>
+<text x="452" y="560" text-anchor="middle" class="t-proc-name">Generate Jawaban</text>
+<text x="452" y="573" text-anchor="middle" class="t-proc-sub">LangChain RAG Chain · GPT-4o</text>
+
+<!-- ═══════════ RIGHT SIDE SERVICES ═══════════ -->
+
+<!-- OpenAI Embeddings (right of 3.1) -->
+<rect x="720" y="63" width="155" height="44" rx="4" fill="#f8fafc" stroke="#475569" stroke-width="1.5"/>
+<text x="797" y="80" text-anchor="middle" class="t-entity">OpenAI Embeddings</text>
+<text x="797" y="96" text-anchor="middle" class="t-entity-sub">text-embedding-3-small</text>
+
+<!-- Cohere (right of 3.3) -->
+<rect x="720" y="298" width="155" height="44" rx="4" fill="#f8fafc" stroke="#475569" stroke-width="1.5"/>
+<text x="797" y="315" text-anchor="middle" class="t-entity">Cohere API</text>
+<text x="797" y="331" text-anchor="middle" class="t-entity-sub">rerank-multilingual-v3.0</text>
+
+<!-- OpenAI LLM (right of 3.5) -->
+<rect x="720" y="531" width="155" height="44" rx="4" fill="#f8fafc" stroke="#475569" stroke-width="1.5"/>
+<text x="797" y="548" text-anchor="middle" class="t-entity">OpenAI GPT-4o-mini</text>
+<text x="797" y="564" text-anchor="middle" class="t-entity-sub">LLM Generation + Streaming</text>
+
+<!-- ═══════════ LEFT SIDE DATA STORES ═══════════ -->
+
+<!-- D1: Pinecone Vector DB (left of 3.2) -->
+<line x1="30" y1="193" x2="200" y2="193" stroke="#16a34a" stroke-width="1.8"/>
+<line x1="30" y1="228" x2="200" y2="228" stroke="#16a34a" stroke-width="1.8"/>
+<line x1="30" y1="193" x2="30" y2="228" stroke="#16a34a" stroke-width="1.8"/>
+<line x1="68" y1="193" x2="68" y2="228" stroke="#16a34a" stroke-width="1.5"/>
+<rect x="31" y="194" width="36" height="33" fill="#f0fdf4"/>
+<rect x="69" y="194" width="130" height="33" fill="#fafafa"/>
+<text x="49" y="214" text-anchor="middle" class="t-store-id">D1</text>
+<text x="133" y="210" text-anchor="middle" class="t-store-name">Pinecone</text>
+<text x="133" y="222" text-anchor="middle" class="t-store-name">Vector Database</text>
+
+<!-- D4: Kebijakan (left of 3.4) -->
+<line x1="30" y1="428" x2="215" y2="428" stroke="#16a34a" stroke-width="1.8"/>
+<line x1="30" y1="463" x2="215" y2="463" stroke="#16a34a" stroke-width="1.8"/>
+<line x1="30" y1="428" x2="30" y2="463" stroke="#16a34a" stroke-width="1.8"/>
+<line x1="68" y1="428" x2="68" y2="463" stroke="#16a34a" stroke-width="1.5"/>
+<rect x="31" y="429" width="36" height="33" fill="#f0fdf4"/>
+<rect x="69" y="429" width="145" height="33" fill="#fafafa"/>
+<text x="49" y="449" text-anchor="middle" class="t-store-id">D4</text>
+<text x="141" y="445" text-anchor="middle" class="t-store-name">Dokumen Kebijakan</text>
+<text x="141" y="457" text-anchor="middle" class="t-store-name">SOP + Policy Injector</text>
+
+<!-- ═══════════ ARROWS ═══════════ -->
+
+<!-- Input → 3.1 -->
+<path d="M180,294 L310,294 L310,87 L365,87" stroke="#475569" stroke-width="1.4" fill="none" marker-end="url(#ah2a)"/>
+<rect x="286" y="144" width="70" height="14" fill="white"/>
+<text x="321" y="155" text-anchor="middle" class="t-flow">Teks Query</text>
+
+<!-- 3.1 ↔ OpenAI Embeddings -->
+<line x1="540" y1="87" x2="720" y2="85" stroke="#475569" stroke-width="1.4"
+      marker-end="url(#ah2a)" marker-start="url(#ahs2a)"/>
+<rect x="590" y="75" width="78" height="24" rx="2" fill="white" stroke="#e2e8f0" stroke-width="1"/>
+<text x="629" y="85" text-anchor="middle" class="t-flow">Teks Query</text>
+<text x="629" y="96" text-anchor="middle" class="t-flow">Vektor 1536-dim</text>
+
+<!-- 3.1 → 3.2 -->
+<line x1="452" y1="114" x2="452" y2="178" stroke="#475569" stroke-width="1.4" marker-end="url(#ah2a)"/>
+<rect x="392" y="140" width="80" height="14" fill="white"/>
+<text x="432" y="151" text-anchor="middle" class="t-flow">Query Vector</text>
+
+<!-- 3.2 ↔ D1 Pinecone -->
+<line x1="365" y1="210" x2="200" y2="210" stroke="#475569" stroke-width="1.4"
+      marker-end="url(#ah2a)" marker-start="url(#ahs2a)"/>
+<rect x="240" y="199" width="78" height="24" rx="2" fill="white" stroke="#e2e8f0" stroke-width="1"/>
+<text x="279" y="209" text-anchor="middle" class="t-flow">Query Vektor</text>
+<text x="279" y="220" text-anchor="middle" class="t-flow">Top-15 Chunks</text>
+
+<!-- 3.2 → 3.3 -->
+<line x1="452" y1="232" x2="452" y2="295" stroke="#475569" stroke-width="1.4" marker-end="url(#ah2a)"/>
+<rect x="370" y="257" width="108" height="14" fill="white"/>
+<text x="424" y="268" text-anchor="middle" class="t-flow">Kandidat Dokumen (15)</text>
+
+<!-- 3.3 ↔ Cohere -->
+<line x1="540" y1="322" x2="720" y2="320" stroke="#475569" stroke-width="1.4"
+      marker-end="url(#ah2a)" marker-start="url(#ahs2a)"/>
+<rect x="585" y="310" width="90" height="24" rx="2" fill="white" stroke="#e2e8f0" stroke-width="1"/>
+<text x="630" y="320" text-anchor="middle" class="t-flow">Chunks + Query</text>
+<text x="630" y="331" text-anchor="middle" class="t-flow">Skor Relevansi</text>
+
+<!-- 3.3 → 3.4 -->
+<line x1="452" y1="349" x2="452" y2="413" stroke="#475569" stroke-width="1.4" marker-end="url(#ah2a)"/>
+<rect x="366" y="374" width="110" height="14" fill="white"/>
+<text x="421" y="385" text-anchor="middle" class="t-flow">Top Chunks (Reranked)</text>
+
+<!-- 3.4 ↔ D4 Kebijakan -->
+<line x1="365" y1="445" x2="215" y2="445" stroke="#475569" stroke-width="1.4"
+      marker-end="url(#ah2a)" marker-start="url(#ahs2a)"/>
+<rect x="250" y="434" width="78" height="24" rx="2" fill="white" stroke="#e2e8f0" stroke-width="1"/>
+<text x="289" y="444" text-anchor="middle" class="t-flow">Query Tipe</text>
+<text x="289" y="455" text-anchor="middle" class="t-flow">Kebijakan Relevan</text>
+
+<!-- 3.4 → 3.5 -->
+<line x1="452" y1="467" x2="452" y2="528" stroke="#475569" stroke-width="1.4" marker-end="url(#ah2a)"/>
+<rect x="338" y="490" width="128" height="14" fill="white"/>
+<text x="402" y="501" text-anchor="middle" class="t-flow">Konteks RAG Lengkap</text>
+
+<!-- 3.5 ↔ OpenAI LLM -->
+<line x1="540" y1="555" x2="720" y2="553" stroke="#475569" stroke-width="1.4"
+      marker-end="url(#ah2a)" marker-start="url(#ahs2a)"/>
+<rect x="578" y="543" width="102" height="24" rx="2" fill="white" stroke="#e2e8f0" stroke-width="1"/>
+<text x="629" y="553" text-anchor="middle" class="t-flow">Prompt + Konteks</text>
+<text x="629" y="564" text-anchor="middle" class="t-flow">Jawaban Stream</text>
+
+<!-- 3.5 → Output -->
+<path d="M540,555 L760,555 L760,294 L820,294" stroke="#475569" stroke-width="1.4" fill="none" marker-end="url(#ah2a)"/>
+<rect x="714" y="407" width="64" height="14" fill="white"/>
+<text x="746" y="418" text-anchor="middle" class="t-flow">Jawaban</text>
+
+<text x="500" y="612" text-anchor="middle" font-size="10" fill="#94a3b8" font-style="italic">
+  Level 2a: Pipeline RAG Hybrid — Vector Search → Reranking → Policy Injection → LLM Generation
+</text>
+</svg>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════
+     LEVEL 2b — VOICE PROCESSING DETAIL
+══════════════════════════════════════════════════════════ -->
+<div class="tab-panel" id="l2b">
+  <div class="diagram-header">
+    <div class="diagram-title">
+      <h2>Level 2b — Detail: Voice Processing (Call Mode)</h2>
+      <p>Dekomposisi alur suara — dari audio input karyawan hingga respons suara diputar kembali, termasuk integrasi dengan pipeline AI utama.</p>
+    </div>
+  </div>
+
+  <div class="legend">
+    <div class="legend-item"><div class="leg-box leg-entity"></div> Entitas / Referensi Proses Lain</div>
+    <div class="legend-item"><div class="leg-box leg-process"></div> Sub-Proses</div>
+    <div class="legend-item">
+      <div class="leg-arrow"><div class="leg-arrow-line"></div></div>
+      Aliran Data
+    </div>
+  </div>
+
+  <div class="svg-wrap">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 580" style="width:100%;min-width:760px">
+<defs>
+  <marker id="ah2b" markerWidth="8" markerHeight="7" refX="7" refY="3.5" orient="auto">
+    <polygon points="0,0 0,7 8,3.5" fill="#475569"/>
+  </marker>
+  <marker id="ahs2b" markerWidth="8" markerHeight="7" refX="1" refY="3.5" orient="auto-start-reverse">
+    <polygon points="0,0 0,7 8,3.5" fill="#475569"/>
+  </marker>
+  <pattern id="grid2b" width="40" height="40" patternUnits="userSpaceOnUse">
+    <path d="M 40 0 L 0 0 0 40" fill="none" stroke="#f8fafc" stroke-width="1"/>
+  </pattern>
+</defs>
+<rect width="1000" height="580" fill="url(#grid2b)" rx="8"/>
+
+<!-- Boundary box -->
+<rect x="15" y="15" width="970" height="550" rx="10" fill="none" stroke="#dbeafe" stroke-width="1.5" stroke-dasharray="8,4"/>
+<text x="30" y="32" font-size="10" font-weight="700" fill="#93c5fd">BATAS ALUR — Voice Call Mode</text>
+
+<!-- ═══════════ KARYAWAN (top and bottom) ═══════════ -->
+<rect x="400" y="45" width="160" height="44" rx="4" fill="#f8fafc" stroke="#475569" stroke-width="1.5"/>
+<text x="480" y="62" text-anchor="middle" class="t-entity">Karyawan</text>
+<text x="480" y="78" text-anchor="middle" class="t-entity-sub">Input: Bicara ke Mikrofon</text>
+
+<rect x="400" y="500" width="160" height="44" rx="4" fill="#f8fafc" stroke="#475569" stroke-width="1.5"/>
+<text x="480" y="517" text-anchor="middle" class="t-entity">Karyawan</text>
+<text x="480" y="533" text-anchor="middle" class="t-entity-sub">Output: Mendengar Jawaban</text>
+
+<!-- ═══════════ RIGHT ENTITIES ═══════════ -->
+<!-- OpenAI Whisper -->
+<rect x="770" y="175" width="175" height="44" rx="4" fill="#f8fafc" stroke="#475569" stroke-width="1.5"/>
+<text x="857" y="192" text-anchor="middle" class="t-entity">OpenAI Whisper</text>
+<text x="857" y="208" text-anchor="middle" class="t-entity-sub">Speech-to-Text API</text>
+
+<!-- AI Pipeline Reference -->
+<rect x="770" y="295" width="175" height="54" rx="4" fill="#fef3c7" stroke="#d97706" stroke-width="1.5"/>
+<text x="857" y="312" text-anchor="middle" font-size="10" font-weight="700" fill="#92400e">Pipeline AI</text>
+<text x="857" y="326" text-anchor="middle" font-size="9" fill="#b45309">Proses 2.0 Klasifikasi</text>
+<text x="857" y="339" text-anchor="middle" font-size="9" fill="#b45309">Proses 3.0 RAG Engine</text>
+
+<!-- ElevenLabs -->
+<rect x="770" y="415" width="175" height="44" rx="4" fill="#f8fafc" stroke="#475569" stroke-width="1.5"/>
+<text x="857" y="432" text-anchor="middle" class="t-entity">ElevenLabs</text>
+<text x="857" y="448" text-anchor="middle" class="t-entity-sub">eleven_flash_v2_5 · TTS</text>
+
+<!-- ═══════════ SUB-PROCESSES (left-center column, x=420) ═══════════ -->
+
+<!-- 5.1: Capture Audio -->
+<rect x="328" y="143" width="175" height="54" rx="7" fill="#eff6ff" stroke="#2563eb" stroke-width="1.8"/>
+<text x="415" y="160" text-anchor="middle" class="t-proc-num">5.1</text>
+<text x="415" y="175" text-anchor="middle" class="t-proc-name">Capture Audio</text>
+<text x="415" y="188" text-anchor="middle" class="t-proc-sub">MediaRecorder API · Browser</text>
+
+<!-- 5.2: Speech-to-Text -->
+<rect x="328" y="253" width="175" height="54" rx="7" fill="#eff6ff" stroke="#2563eb" stroke-width="1.8"/>
+<text x="415" y="270" text-anchor="middle" class="t-proc-num">5.2</text>
+<text x="415" y="285" text-anchor="middle" class="t-proc-name">Speech-to-Text</text>
+<text x="415" y="298" text-anchor="middle" class="t-proc-sub">OpenAI Whisper · Transkrip</text>
+
+<!-- 5.3: Proses via AI Pipeline -->
+<rect x="328" y="363" width="175" height="54" rx="7" fill="#eff6ff" stroke="#2563eb" stroke-width="1.8"/>
+<text x="415" y="380" text-anchor="middle" class="t-proc-num">5.3</text>
+<text x="415" y="395" text-anchor="middle" class="t-proc-name">Proses AI Pipeline</text>
+<text x="415" y="408" text-anchor="middle" class="t-proc-sub">Max 150 Token Output</text>
+
+<!-- 5.4: Text-to-Speech -->
+<rect x="328" y="453" width="175" height="54" rx="7" fill="#eff6ff" stroke="#2563eb" stroke-width="1.8"/>
+<text x="415" y="470" text-anchor="middle" class="t-proc-num">5.4</text>
+<text x="415" y="485" text-anchor="middle" class="t-proc-name">Text-to-Speech</text>
+<text x="415" y="498" text-anchor="middle" class="t-proc-sub">ElevenLabs · Stream Audio</text>
+
+<!-- ═══════════ LEFT SIDE CONSTRAINTS ═══════════ -->
+<!-- Rate limit note -->
+<rect x="30" y="143" width="175" height="54" rx="6" fill="#fef2f2" stroke="#fca5a5" stroke-width="1.2" stroke-dasharray="5,3"/>
+<text x="117" y="160" text-anchor="middle" font-size="9.5" font-weight="700" fill="#b91c1c">Constraint</text>
+<text x="117" y="175" text-anchor="middle" font-size="9" fill="#991b1b">Rate Limit: 5 req/mnt</text>
+<text x="117" y="188" text-anchor="middle" font-size="9" fill="#991b1b">per IP Address</text>
+
+<!-- Loop note -->
+<rect x="30" y="363" width="175" height="54" rx="6" fill="#f0fdf4" stroke="#86efac" stroke-width="1.2" stroke-dasharray="5,3"/>
+<text x="117" y="380" text-anchor="middle" font-size="9.5" font-weight="700" fill="#15803d">Loop Otomatis</text>
+<text x="117" y="395" text-anchor="middle" font-size="9" fill="#166534">Dengar → Proses →</text>
+<text x="117" y="408" text-anchor="middle" font-size="9" fill="#166534">Jawab → Ulangi</text>
+
+<!-- ═══════════ ARROWS ═══════════ -->
+
+<!-- Karyawan (top) → 5.1 -->
+<line x1="480" y1="89" x2="440" y2="143" stroke="#475569" stroke-width="1.4" marker-end="url(#ah2b)"/>
+<rect x="434" y="108" width="78" height="14" fill="white"/>
+<text x="473" y="119" text-anchor="middle" class="t-flow">Audio Stream</text>
+
+<!-- 5.1 → 5.2 -->
+<line x1="415" y1="197" x2="415" y2="253" stroke="#475569" stroke-width="1.4" marker-end="url(#ah2b)"/>
+<rect x="346" y="219" width="108" height="14" fill="white"/>
+<text x="400" y="230" text-anchor="middle" class="t-flow">File Audio (WebM/MP4)</text>
+
+<!-- 5.2 ↔ OpenAI Whisper -->
+<line x1="503" y1="277" x2="770" y2="197" stroke="#475569" stroke-width="1.4"
+      marker-end="url(#ah2b)" marker-start="url(#ahs2b)"/>
+<rect x="600" y="223" width="96" height="24" rx="2" fill="white" stroke="#e2e8f0" stroke-width="1"/>
+<text x="648" y="233" text-anchor="middle" class="t-flow">Audio File Upload</text>
+<text x="648" y="244" text-anchor="middle" class="t-flow">Teks Transkrip</text>
+
+<!-- 5.2 → 5.3 -->
+<line x1="415" y1="307" x2="415" y2="363" stroke="#475569" stroke-width="1.4" marker-end="url(#ah2b)"/>
+<rect x="340" y="328" width="106" height="14" fill="white"/>
+<text x="393" y="339" text-anchor="middle" class="t-flow">Teks Pertanyaan</text>
+
+<!-- 5.3 ↔ AI Pipeline Reference -->
+<line x1="503" y1="390" x2="770" y2="322" stroke="#475569" stroke-width="1.4"
+      marker-end="url(#ah2b)" marker-start="url(#ahs2b)"/>
+<rect x="590" y="345" width="106" height="24" rx="2" fill="white" stroke="#e2e8f0" stroke-width="1"/>
+<text x="643" y="355" text-anchor="middle" class="t-flow">Pertanyaan Teks</text>
+<text x="643" y="366" text-anchor="middle" class="t-flow">Jawaban (≤150 token)</text>
+
+<!-- 5.3 → 5.4 -->
+<line x1="415" y1="417" x2="415" y2="453" stroke="#475569" stroke-width="1.4" marker-end="url(#ah2b)"/>
+<rect x="340" y="428" width="106" height="14" fill="white"/>
+<text x="393" y="439" text-anchor="middle" class="t-flow">Teks Jawaban Ringkas</text>
+
+<!-- 5.4 ↔ ElevenLabs -->
+<line x1="503" y1="477" x2="770" y2="437" stroke="#475569" stroke-width="1.4"
+      marker-end="url(#ah2b)" marker-start="url(#ahs2b)"/>
+<rect x="595" y="447" width="96" height="24" rx="2" fill="white" stroke="#e2e8f0" stroke-width="1"/>
+<text x="643" y="457" text-anchor="middle" class="t-flow">Teks untuk Sintesis</text>
+<text x="643" y="468" text-anchor="middle" class="t-flow">Stream Audio MP3</text>
+
+<!-- 5.4 → Karyawan (bottom) -->
+<line x1="440" y1="507" x2="480" y2="500" stroke="#475569" stroke-width="1.4" marker-end="url(#ah2b)"/>
+<rect x="412" y="490" width="96" height="14" fill="white"/>
+<text x="460" y="501" text-anchor="middle" class="t-flow">Audio Playback</text>
+
+<!-- Loop arrow (right side) -->
+<path d="M503,477 L640,477 L640,550 L415,550 L415,507" stroke="#15803d" stroke-width="1.3" fill="none" stroke-dasharray="6,3" marker-end="url(#ah2b)"/>
+<rect x="508" y="543" width="100" height="14" fill="white"/>
+<text x="558" y="554" text-anchor="middle" font-size="9" fill="#16a34a" font-weight="600">Loop: Kembali ke 5.1</text>
+
+<!-- Constraint note to 5.1 -->
+<path d="M205,170 L328,170" stroke="#ef4444" stroke-width="1" fill="none" stroke-dasharray="4,3" marker-end="url(#ah2b)"/>
+
+<!-- Loop note to 5.3 -->
+<path d="M205,390 L328,390" stroke="#16a34a" stroke-width="1" fill="none" stroke-dasharray="4,3"/>
+
+<text x="500" y="572" text-anchor="middle" font-size="10" fill="#94a3b8" font-style="italic">
+  Level 2b: Voice loop — STT → AI Pipeline → TTS, max 150 token, 5 req/mnt per IP
+</text>
+</svg>
+  </div>
+</div>
+
+</main>
+
+<script>
+function switchTab(id) {
+  document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+  document.getElementById(id).classList.add('active');
+  event.currentTarget.classList.add('active');
+}
+</script>
+</body>
+</html>

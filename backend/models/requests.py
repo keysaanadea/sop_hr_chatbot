@@ -110,7 +110,7 @@ class SessionInfo(BaseModel):
 class MessageInfo(BaseModel):
     role: str
     message: str
-    timestamp: str
+    timestamp: Optional[str] = None
 
 class UserRoleResponse(BaseModel):
     role: str

@@ -1,0 +1,316 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>DENAI — Test Login (Mock SINTA)</title>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'Plus Jakarta Sans', sans-serif;
+      background: radial-gradient(circle at 50% -10%, #fff1f1 0%, #f2f3f6 100%);
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .card {
+      background: white;
+      border-radius: 24px;
+      box-shadow: 0 20px 60px rgba(0,0,0,0.08);
+      padding: 40px;
+      width: 100%;
+      max-width: 480px;
+    }
+
+    .logo {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 32px;
+    }
+    .logo-box {
+      width: 40px; height: 40px;
+      background: #b7131a;
+      border-radius: 10px;
+      display: flex; align-items: center; justify-content: center;
+      color: white; font-weight: 800; font-size: 16px;
+    }
+    .logo-text { font-size: 20px; font-weight: 800; color: #1a1a1a; }
+    .logo-sub { font-size: 11px; color: #94a3b8; font-weight: 500; letter-spacing: 0.05em; margin-top: 1px; }
+
+    h1 { font-size: 22px; font-weight: 700; color: #1a1a1a; margin-bottom: 4px; }
+    .subtitle { font-size: 13px; color: #94a3b8; margin-bottom: 28px; }
+
+    .badge-testing {
+      display: inline-flex; align-items: center; gap: 5px;
+      background: #fef3c7; color: #92400e;
+      font-size: 11px; font-weight: 600;
+      padding: 3px 10px; border-radius: 999px;
+      margin-bottom: 24px;
+    }
+
+    label { font-size: 12px; font-weight: 600; color: #64748b; display: block; margin-bottom: 8px; }
+
+    .user-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+      margin-bottom: 24px;
+    }
+
+    .user-card {
+      border: 2px solid #e2e8f0;
+      border-radius: 14px;
+      padding: 14px;
+      cursor: pointer;
+      transition: all 0.15s ease;
+      text-align: left;
+    }
+    .user-card:hover { border-color: #b7131a; background: #fff5f5; }
+    .user-card.selected { border-color: #b7131a; background: #fff5f5; }
+
+    .user-card .avatar {
+      width: 36px; height: 36px; border-radius: 50%;
+      margin-bottom: 8px; display: block;
+    }
+    .user-card .user-name { font-size: 13px; font-weight: 700; color: #1a1a1a; }
+    .user-card .user-meta { font-size: 11px; color: #94a3b8; margin-top: 2px; }
+    .user-card .role-tag {
+      display: inline-block; margin-top: 6px;
+      font-size: 10px; font-weight: 700; padding: 2px 8px; border-radius: 999px;
+    }
+    .role-tag.hc { background: #dcfce7; color: #16a34a; }
+    .role-tag.karyawan { background: #dbeafe; color: #2563eb; }
+
+    .divider { height: 1px; background: #f1f5f9; margin: 20px 0; }
+
+    .custom-label { font-size: 12px; font-weight: 600; color: #64748b; margin-bottom: 10px; display: block; }
+    textarea {
+      width: 100%; height: 120px;
+      border: 1.5px solid #e2e8f0; border-radius: 12px;
+      padding: 12px; font-family: 'Plus Jakarta Sans', sans-serif;
+      font-size: 12px; color: #374151; resize: vertical;
+      transition: border-color 0.15s;
+      outline: none;
+    }
+    textarea:focus { border-color: #b7131a; }
+
+    .btn {
+      width: 100%; padding: 14px;
+      background: #b7131a; color: white;
+      font-size: 14px; font-weight: 700;
+      border: none; border-radius: 14px;
+      cursor: pointer; margin-top: 20px;
+      transition: background 0.15s, transform 0.1s;
+    }
+    .btn:hover { background: #9b1016; }
+    .btn:active { transform: scale(0.98); }
+    .btn:disabled { background: #94a3b8; cursor: not-allowed; }
+
+    .status {
+      margin-top: 14px; padding: 12px;
+      border-radius: 10px; font-size: 13px; font-weight: 500;
+      display: none;
+    }
+    .status.loading { background: #f1f5f9; color: #64748b; display: block; }
+    .status.success { background: #dcfce7; color: #16a34a; display: block; }
+    .status.error { background: #fee2e2; color: #b91c1c; display: block; }
+  </style>
+</head>
+<body>
+
+<div class="card">
+  <div class="logo">
+    <div class="logo-box">D</div>
+    <div>
+      <div class="logo-text">DENAI</div>
+      <div class="logo-sub">HC HUB · PT. Semen Indonesia</div>
+    </div>
+  </div>
+
+  <span class="badge-testing">⚠ Testing Only — Mock SINTA Login</span>
+
+  <h1>Pilih User untuk Testing</h1>
+  <p class="subtitle">Simulasi data yang dikirim SINTA ke Denai</p>
+
+  <label>Preset Users</label>
+  <div class="user-grid" id="userGrid">
+    <!-- diisi oleh JS -->
+  </div>
+
+  <div class="divider"></div>
+
+  <span class="custom-label">Atau paste JSON dari SINTA langsung:</span>
+  <textarea id="jsonInput" placeholder='{"status":"Success","data":{"NIK":"...","Nama":"...","Posisi":{...}}}'></textarea>
+
+  <button class="btn" onclick="doLogin()" id="loginBtn">Masuk ke DENAI</button>
+
+  <div class="status" id="status"></div>
+</div>
+
+<script>
+  const API_URL = 'http://localhost:8000';
+  const DENAI_URL = 'index.html';
+
+  const PRESET_USERS = [
+    {
+      label: "Rahmad Ridho",
+      meta: "HC · Band 3",
+      role: "hc",
+      data: {
+        status: "Success",
+        message: "Data Authentikasi Ditemukan",
+        data: {
+          NIK: "00007940", Nama: "RAHMAD RIDHO",
+          FirstName: "RAHMAD", MiddleName: "", LastName: "RIDHO",
+          Email: "RAHMAD.RIDHO@SIG.ID", Gender: "Male", Roles: "User",
+          LokasiKaryawan: "Jakarta",
+          Posisi: {
+            IdJabatan: "50061855", Jabatan: "HCIS Officer",
+            IdUnit: "50068829", UnitKerja: "Department of HC Strategy & People Anl.",
+            Perusahaan: "PT. Semen Indonesia", Band: "Band 3 Fungsional", BandAngka: "3"
+          }
+        }
+      }
+    },
+    {
+      label: "Sari Dewi",
+      meta: "HC · Band 2",
+      role: "hc",
+      data: {
+        status: "Success", data: {
+          NIK: "00005500", Nama: "SARI DEWI",
+          FirstName: "SARI", MiddleName: "", LastName: "DEWI",
+          Email: "SARI.DEWI@SIG.ID", Gender: "Female", Roles: "User",
+          LokasiKaryawan: "Gresik",
+          Posisi: {
+            Jabatan: "HC Business Partner", IdUnit: "50068820",
+            UnitKerja: "Department of Human Capital", Perusahaan: "PT. Semen Indonesia",
+            Band: "Band 2 Fungsional", BandAngka: "2"
+          }
+        }
+      }
+    },
+    {
+      label: "Budi Santoso",
+      meta: "Karyawan · Band 5",
+      role: "karyawan",
+      data: {
+        status: "Success", data: {
+          NIK: "00099999", Nama: "BUDI SANTOSO",
+          FirstName: "BUDI", MiddleName: "", LastName: "SANTOSO",
+          Email: "BUDI.SANTOSO@SIG.ID", Gender: "Male", Roles: "User",
+          LokasiKaryawan: "Tuban",
+          Posisi: {
+            Jabatan: "Staff Operasional", IdUnit: "50012345",
+            UnitKerja: "Department of Plant Operations",
+            Perusahaan: "PT. Semen Indonesia", Band: "Band 5 Fungsional", BandAngka: "5"
+          }
+        }
+      }
+    },
+    {
+      label: "Dewi Ratna",
+      meta: "Karyawan · Band 4",
+      role: "karyawan",
+      data: {
+        status: "Success", data: {
+          NIK: "00088888", Nama: "DEWI RATNA",
+          FirstName: "DEWI", MiddleName: "", LastName: "RATNA",
+          Email: "DEWI.RATNA@SIG.ID", Gender: "Female", Roles: "User",
+          LokasiKaryawan: "Padang",
+          Posisi: {
+            Jabatan: "Analyst Keuangan", IdUnit: "50022222",
+            UnitKerja: "Department of Finance",
+            Perusahaan: "PT. Semen Indonesia", Band: "Band 4 Fungsional", BandAngka: "4"
+          }
+        }
+      }
+    }
+  ];
+
+  let selectedUser = null;
+
+  function renderGrid() {
+    const grid = document.getElementById('userGrid');
+    grid.innerHTML = PRESET_USERS.map((u, i) => {
+      const initials = u.data.data.FirstName[0] + (u.data.data.LastName ? u.data.data.LastName[0] : '');
+      const bg = u.role === 'hc' ? '16a34a' : '2563eb';
+      return `
+        <div class="user-card" id="card-${i}" onclick="selectUser(${i})">
+          <img class="avatar"
+            src="https://ui-avatars.com/api/?name=${encodeURIComponent(initials)}&background=${bg}&color=fff&size=40"
+            alt="${u.label}">
+          <div class="user-name">${u.label}</div>
+          <div class="user-meta">${u.meta} · ${u.data.data.LokasiKaryawan}</div>
+          <span class="role-tag ${u.role}">${u.role === 'hc' ? 'HC Mode' : 'Karyawan'}</span>
+        </div>`;
+    }).join('');
+  }
+
+  function selectUser(i) {
+    selectedUser = PRESET_USERS[i];
+    document.querySelectorAll('.user-card').forEach(c => c.classList.remove('selected'));
+    document.getElementById(`card-${i}`).classList.add('selected');
+    document.getElementById('jsonInput').value = JSON.stringify(selectedUser.data, null, 2);
+  }
+
+  async function doLogin() {
+    const btn = document.getElementById('loginBtn');
+    const status = document.getElementById('status');
+    const raw = document.getElementById('jsonInput').value.trim();
+
+    if (!raw) {
+      showStatus('Pilih user atau paste JSON dulu.', 'error');
+      return;
+    }
+
+    let payload;
+    try {
+      payload = JSON.parse(raw);
+    } catch (e) {
+      showStatus('JSON tidak valid: ' + e.message, 'error');
+      return;
+    }
+
+    btn.disabled = true;
+    showStatus('Menghubungi Denai...', 'loading');
+
+    try {
+      const res = await fetch(`${API_URL}/auth/sinta`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+
+      if (!res.ok) throw new Error(`Server error: ${res.status}`);
+      const data = await res.json();
+
+      showStatus(`✅ Login berhasil! Membuka Denai sebagai ${data.nama} (${data.role.toUpperCase()}, Band ${data.band_angka})...`, 'success');
+
+      // Redirect ke Denai dengan session_id sebagai URL param
+      // Frontend Denai akan baca sinta_session param dan set activeChatId
+      setTimeout(() => {
+        window.location.href = `${DENAI_URL}?sinta_session=${data.session_id}&sinta_role=${data.role}&sinta_nama=${encodeURIComponent(data.first_name)}&sinta_band=${data.band_angka}&sinta_lokasi=${encodeURIComponent(data.lokasi)}&sinta_nik=${encodeURIComponent(data.nik)}`;
+      }, 800);
+
+    } catch (e) {
+      showStatus('Gagal: ' + e.message, 'error');
+      btn.disabled = false;
+    }
+  }
+
+  function showStatus(msg, type) {
+    const el = document.getElementById('status');
+    el.textContent = msg;
+    el.className = `status ${type}`;
+  }
+
+  renderGrid();
+</script>
+</body>
+</html>

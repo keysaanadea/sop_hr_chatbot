@@ -84,30 +84,32 @@ def save_session(session_id: str, title: str):
 def get_sessions(limit: int = 30):
     if not supabase: return []
     try:
-        # Pisahkan pinned dan non-pinned agar urutan tetap: pinned dulu (terbaru),
-        # lalu non-pinned (terbaru), masing-masing diurutkan DB-side oleh last_message_at DESC.
-        pinned_res = (
+        # Ambil session_ids yang benar-benar punya pesan (anti-ghost)
+        msgs_res = (
+            supabase
+            .table("chat_memory")
+            .select("session_id")
+            .limit(500)
+            .execute()
+        )
+        ids_with_msgs = {m["session_id"] for m in (msgs_res.data or [])}
+        if not ids_with_msgs:
+            return []
+
+        # Ambil sessions dan filter ghost di sini
+        res = (
             supabase
             .table("chat_sessions")
             .select("session_id,title,pinned,created_at,last_message_at")
-            .eq("pinned", True)
+            .order("pinned", desc=True)
             .order("last_message_at", desc=True)
             .order("created_at", desc=True)
-            .limit(limit)
+            .limit(limit * 3)
             .execute()
         )
-        unpinned_res = (
-            supabase
-            .table("chat_sessions")
-            .select("session_id,title,pinned,created_at,last_message_at")
-            .eq("pinned", False)
-            .order("last_message_at", desc=True)
-            .order("created_at", desc=True)
-            .limit(limit)
-            .execute()
-        )
-        data = (pinned_res.data or []) + (unpinned_res.data or [])
-        return data[:limit]
+        sessions = res.data or []
+        filtered = [s for s in sessions if s["session_id"] in ids_with_msgs]
+        return filtered[:limit]
     except Exception as e:
         logger.error(f"❌ Failed to get sessions: {e}")
         return []

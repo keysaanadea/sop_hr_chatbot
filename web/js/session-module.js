@@ -7,6 +7,10 @@
 // Persistent flag — tetap true setelah pengguna klik "Lihat lainnya"
 let _recentsExpanded = false;
 
+// Deduplicate: kalau loadSessions sedang berjalan, jangan spawn concurrent request
+let _loadSessionsInFlight = false;
+let _loadSessionsPending = false;
+
 async function togglePinSession(sessionId, event) {
   event.stopPropagation();
   try {
@@ -86,23 +90,28 @@ function addOptimisticSession(sessionId, firstMessage) {
 }
 
 async function loadSessions() {
+  // Deduplicate: kalau request sedang berjalan, tandai pending dan skip
+  if (_loadSessionsInFlight) {
+    _loadSessionsPending = true;
+    return;
+  }
+  _loadSessionsInFlight = true;
+  _loadSessionsPending = false;
+
   try {
     const res = await fetch(`${window.API_URL}/sessions/`, { headers: { "Accept": "application/json" } });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const sessions = await res.json();
     const list = document.getElementById("sessionList");
     if (!list) return;
-    
+
     list.innerHTML = "";
-    let filteredSessions = sessions;
-    
-    if (window.CoreApp && !window.CoreApp.isHR) {
-      filteredSessions = sessions.filter(s => {
-        const title = (s.title || '').toLowerCase();
-        const hrKeywords = ['karyawan', 'band', 'employee', 'gaji', 'kontrak', 'salary', 'upah', 'pegawai', 'staff', 'sdm', 'personalia', 'jumlah'];
-        return !hrKeywords.some(keyword => title.includes(keyword));
-      });
-    }
+
+    // Filter: hanya tampilkan session milik user yang sedang login
+    const mySessionIds = window.CoreApp?.getMySessionIds?.();
+    let filteredSessions = mySessionIds
+      ? sessions.filter(s => mySessionIds.includes(s.session_id))
+      : sessions;   // null = mode dev/standalone, tampilkan semua
     
     const pinnedSessions = filteredSessions.filter(s => s.pinned);
     const recentSessions = filteredSessions.filter(s => !s.pinned);
@@ -153,7 +162,12 @@ async function loadSessions() {
       }, 50);
     }
 
-  } catch (err) { console.error("Failed to load sessions:", err); }
+  } catch (err) {
+    console.error("Failed to load sessions:", err);
+  } finally {
+    _loadSessionsInFlight = false;
+    if (_loadSessionsPending) loadSessions(); // jalankan ulang kalau ada yang ngantri
+  }
 }
 
 function createSessionItem(s) {
@@ -184,19 +198,24 @@ async function loadSession(sessionId) {
     const history = await res.json();
 
     if (window.CoreApp) {
-      history.forEach(m => {
-        // 🔥 FIX: Handle stopped messages smoothly
-        if (m.role === "stopped" || (m.message && m.message.includes("__STOPPED_RESPONSE__"))) {
-          showStoppedResponseFromHistory(m);
-        } else {
-          window.CoreApp.addMessage(m.role, m.message, false, m);
-          const textForHistory = m.role === "user" ? m.message : window.CoreApp.stripHtml(m.message);
-          window.CoreApp.conversationHistory.push({
-            role: m.role, message: textForHistory, timestamp: m.timestamp || new Date().toISOString(),
-            sql_query: m.sql_query, sql_explanation: m.sql_explanation, query: m.query
-          });
-        }
-      });
+      if (history.length === 0) {
+        // Session kosong — tetap di chat view, tapi tampilkan info
+        window.CoreApp.addMessage("bot", "Riwayat percakapan ini tidak ditemukan atau sudah kedaluwarsa.", false);
+      } else {
+        history.forEach(m => {
+          // 🔥 FIX: Handle stopped messages smoothly
+          if (m.role === "stopped" || (m.message && m.message.includes("__STOPPED_RESPONSE__"))) {
+            showStoppedResponseFromHistory(m);
+          } else {
+            window.CoreApp.addMessage(m.role, m.message, false, m);
+            const textForHistory = m.role === "user" ? m.message : window.CoreApp.stripHtml(m.message);
+            window.CoreApp.conversationHistory.push({
+              role: m.role, message: textForHistory, timestamp: m.timestamp || new Date().toISOString(),
+              sql_query: m.sql_query, sql_explanation: m.sql_explanation, query: m.query
+            });
+          }
+        });
+      }
     }
 
     await loadSessions();

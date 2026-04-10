@@ -14,14 +14,13 @@ import re
 logger = logging.getLogger(__name__)
 
 def _strip_html_payload(content: str) -> str:
-    """Buang hidden payload span dan HTML tags sebelum disimpan ke Redis cache.
-    Tujuan: mengecilkan ukuran entry Redis agar tidak bengkak dengan full HTML response."""
+    """Buang HANYA hidden payload span sebelum disimpan ke Redis.
+    HTML formatting (h3, p, strong, dll) DIPERTAHANKAN agar tampilan history
+    sama persis dengan saat pertama kali di-render."""
     if not content:
         return content
-    # Buang <span class="denai-hidden-payload" ...> yang berisi encoded JSON besar
+    # Hanya buang <span class="denai-hidden-payload"> yang berisi encoded JSON besar
     content = re.sub(r'<span[^>]*denai-hidden-payload[^>]*>.*?</span>', '', content, flags=re.DOTALL)
-    # Buang semua HTML tags lainnya, sisakan teks bersih
-    content = re.sub(r'<[^>]+>', '', content)
     return content.strip()
 
 # ---------------------------------------------------------
@@ -75,6 +74,12 @@ async def setup_hybrid_session(session_id: str, initial_message: str):
         if not history:
             # save_session masih sync, kita lempar ke thread agar aman
             await asyncio.to_thread(save_session, session_id, initial_message[:50] + "...")
+            # Invalidate sessions list cache agar sidebar langsung tampil session baru
+            try:
+                from backend.api.sessions import _invalidate_sessions_cache
+                _invalidate_sessions_cache()
+            except Exception:
+                pass
 
 async def get_hybrid_history(session_id: str, limit: int = 4) -> List[Dict[str, Any]]:
     """Mengambil history dengan prioritas: 1. Redis (RAM), 2. Supabase (Disk)"""

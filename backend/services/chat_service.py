@@ -385,9 +385,10 @@ Balas HANYA dengan JSON valid:
     async def _execute_intent_flow(
         self, intent: str, question: str, user_role: str, session_id: str,
         history: List[Dict[str, Any]], mode: str, cancellation_check: Optional[Callable],
+        user_ctx: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
 
-        if intent == "B" and user_role.lower() not in ['hr', 'admin', 'manager']:
+        if intent == "B" and user_role.lower() not in ['hr', 'admin', 'manager', 'hc']:
             logger.warning(f"🔒 HR DATA ACCESS DENIED: role={user_role}")
             return {
                 "answer": f"🔒 <strong>Akses Dibatasi</strong>\n\nRole Anda (<strong>{user_role}</strong>) tidak memiliki otorisasi untuk mengakses database spesifik karyawan.",
@@ -396,7 +397,7 @@ Balas HANYA dengan JSON valid:
             }
 
         tools = get_current_tools_schema(user_role, intent) if self.tools_available else []
-        messages = self._prepare_messages(question, history, mode)
+        messages = self._prepare_messages(question, history, mode, user_ctx=user_ctx)
 
         completion = await self._run_completion(messages, tools, mode)
 
@@ -463,12 +464,22 @@ Balas HANYA dengan JSON valid:
         cancellation_check: Optional[Callable] = None,
     ) -> Dict[str, Any]:
         try:
-            is_hr_user = user_role.lower() in ['hr', 'admin', 'manager']
+            # Load user context dari SINTA (jika ada)
+            try:
+                from backend.services.user_context import get_user_context
+                user_ctx = get_user_context(session_id)
+                # Jika ada context dari SINTA, pakai role dari sana
+                if user_ctx and not user_role or user_role.lower() == "employee":
+                    user_role = user_ctx.get("role", user_role)
+            except Exception:
+                user_ctx = None
+
+            is_hr_user = user_role.lower() in ['hr', 'admin', 'manager', 'hc']
             gatekeeper_redirected = False
 
             if not is_hr_user:
-                # ⚡ FAST PATH: Employee — skip ALL classification, direct to Route A
-                logger.info(f"⚡ [FAST PATH] role='{user_role}' → Route A only (no classifier, no router)")
+                # ⚡ FAST PATH: Karyawan — skip ALL classification, direct to Route A
+                logger.info(f"⚡ [FAST PATH] role='{user_role}' → Route A only (SOP, no DB access)")
                 standalone_question = question
                 run_a, run_b = True, False
                 query_for_a = question
@@ -538,7 +549,7 @@ Balas HANYA dengan JSON valid:
                     return await self._execute_intent_flow(
                         intent="A", question=query_for_a, user_role=user_role,
                         session_id=session_id, history=history, mode=mode,
-                        cancellation_check=cancellation_check,
+                        cancellation_check=cancellation_check, user_ctx=user_ctx,
                     )
 
             async def _run_route_b():
@@ -546,7 +557,7 @@ Balas HANYA dengan JSON valid:
                     return await self._execute_intent_flow(
                         intent="B", question=query_for_b, user_role=user_role,
                         session_id=session_id, history=history, mode=mode,
-                        cancellation_check=cancellation_check,
+                        cancellation_check=cancellation_check, user_ctx=user_ctx,
                     )
 
             active_tasks: Dict[str, asyncio.Task] = {}
@@ -669,12 +680,32 @@ Balas HANYA dengan JSON valid:
         _run_completion LLM call inside _execute_intent_flow (which was a no-op:
         tool_choice was always forced and the generated args were always overridden).
         """
-        is_hr_user = user_role.lower() in ['hr', 'admin', 'manager']
+        is_hr_user = user_role.lower() in ['hr', 'admin', 'manager', 'hc']
+
+        # Load user context (band, lokasi) untuk inject ke query
+        try:
+            from backend.services.user_context import get_user_context as _get_uctx
+            _user_ctx = _get_uctx(session_id)
+        except Exception:
+            _user_ctx = None
 
         with langfuse_observation("query_contextualization", input={"question": question}) as _sp:
             standalone_question = await self._smart_contextualize(question, history)
             if _sp:
                 _sp.update(output={"standalone": standalone_question})
+
+        # Inject band + lokasi ke standalone_question agar RAG/DB query lebih akurat
+        if _user_ctx:
+            _band = _user_ctx.get("band_angka", "")
+            _lokasi = _user_ctx.get("lokasi", "")
+            _nama = _user_ctx.get("first_name") or _user_ctx.get("nama", "")
+            _ctx_parts = []
+            if _nama: _ctx_parts.append(f"Nama: {_nama}")
+            if _band: _ctx_parts.append(f"Band: {_band}")
+            if _lokasi: _ctx_parts.append(f"Lokasi saat ini: {_lokasi}")
+            if _ctx_parts:
+                standalone_question = f"[{', '.join(_ctx_parts)}] {standalone_question}"
+                logger.info(f"📍 Injected user context into query: {', '.join(_ctx_parts)}")
 
         if not is_hr_user:
             # Non-HR: run A only — if A fails, caller will show "Akses Terbatas"
@@ -1045,12 +1076,47 @@ Balas HANYA dengan JSON valid:
                 return line
         return "Berikut hasil analisis data Anda."
     
-    def _prepare_messages(self, current_question: str, history: List[Dict[str, Any]] = None, mode: str = "chat") -> List[Dict[str, str]]:
-        system_prompt = "DENAI, asisten AI perusahaan. Jawab dalam bahasa Indonesia."
-        
+    def _prepare_messages(
+        self,
+        current_question: str,
+        history: List[Dict[str, Any]] = None,
+        mode: str = "chat",
+        user_ctx: Optional[Dict[str, Any]] = None,
+    ) -> List[Dict[str, str]]:
+        # Build user context block if data from SINTA available
+        user_ctx_block = ""
+        if user_ctx:
+            nama = user_ctx.get("nama", "")
+            first_name = user_ctx.get("first_name", nama.split()[0] if nama else "")
+            band_angka = user_ctx.get("band_angka", "")
+            jabatan = user_ctx.get("jabatan", "")
+            unit = user_ctx.get("unit", "")
+            lokasi = user_ctx.get("lokasi", "")
+            if nama or band_angka:
+                lokasi_line = f"Lokasi saat ini: {lokasi}\n" if lokasi else ""
+                user_ctx_block = (
+                    f"\n\n=== IDENTITAS USER ===\n"
+                    f"Nama: {nama} (panggil dengan '{first_name}')\n"
+                    f"Jabatan: {jabatan}\n"
+                    f"Unit: {unit}\n"
+                    f"Band: {band_angka}\n"
+                    f"{lokasi_line}"
+                    f"=== INSTRUKSI ===\n"
+                    f"Jika user bertanya tentang hak-haknya (UPD, tunjangan, lembur, cuti, dll), "
+                    f"GUNAKAN Band {band_angka} sebagai acuan tanpa perlu user menyebutkan bandnya lagi.\n"
+                    f"Jika user bertanya tentang perjalanan dinas tanpa menyebut kota asal, "
+                    f"ASUMSIKAN kota asal adalah '{lokasi}' (lokasi kerja user saat ini)."
+                    if lokasi else
+                    f"Jika user bertanya tentang hak-haknya (UPD, tunjangan, lembur, cuti, dll), "
+                    f"GUNAKAN Band {band_angka} sebagai acuan tanpa perlu user menyebutkan bandnya lagi."
+                )
+
+        base_prompt = "DENAI, asisten AI perusahaan. Jawab dalam bahasa Indonesia."
         if mode == "call":
-            system_prompt = "DENAI, asisten AI. Mode panggilan: Jawab dengan ramah, natural, dan JABARKAN SEMUA POIN PENTING secara lengkap tanpa ada yang tertinggal."
-        
+            base_prompt = "DENAI, asisten AI. Mode panggilan: Jawab dengan ramah, natural, dan JABARKAN SEMUA POIN PENTING secara lengkap tanpa ada yang tertinggal."
+
+        system_prompt = base_prompt + user_ctx_block
+
         messages = [{"role": "system", "content": system_prompt}]
         if history:
             limit = 2 if mode == "call" else 3
@@ -1059,6 +1125,6 @@ Balas HANYA dengan JSON valid:
                 if content and str(content).strip():
                     role = h["role"] if h["role"] in ["user", "assistant"] else "user"
                     messages.append({"role": role, "content": str(content)[:500 if mode == "call" else 300]})
-        
+
         messages.append({"role": "user", "content": current_question})
         return messages

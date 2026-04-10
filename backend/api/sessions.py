@@ -5,6 +5,7 @@ Session and conversation history management
 
 import logging
 import asyncio
+import time
 from fastapi import APIRouter, HTTPException
 from typing import List
 
@@ -31,18 +32,30 @@ except ImportError:
 
 router = APIRouter()
 
+# Cache for list_sessions: hindari hit Supabase setiap kali sidebar render
+_sessions_cache: dict = {"data": None, "ts": 0.0}
+_SESSIONS_CACHE_TTL = 10  # detik
+
+def _invalidate_sessions_cache():
+    _sessions_cache["ts"] = 0.0
+
 @router.get("/", response_model=List[SessionInfo])
 async def list_sessions():
     """Get list of all conversation sessions"""
     try:
         if not MEMORY_AVAILABLE:
             raise HTTPException(status_code=503, detail="Session management system not available")
-        
-        # ✅ FIX: Bungkus ke thread karena fungsi DB Supabase bersifat blocking
+
+        now = time.monotonic()
+        if _sessions_cache["data"] is not None and (now - _sessions_cache["ts"]) < _SESSIONS_CACHE_TTL:
+            return _sessions_cache["data"]
+
         sessions = await asyncio.to_thread(get_sessions)
+        _sessions_cache["data"] = sessions
+        _sessions_cache["ts"] = now
         logger.info(f"📋 Retrieved {len(sessions)} sessions")
         return sessions
-        
+
     except HTTPException: raise
     except Exception as e:
         logger.error(f"❌ List sessions error: {e}")
@@ -51,18 +64,16 @@ async def list_sessions():
 
 @router.get("/{session_id}/history", response_model=List[MessageInfo])
 async def get_session_history(session_id: str, limit: int = 50):
-    """Get conversation history for a specific session"""
+    """Get conversation history for a specific session — Redis first, then Supabase"""
     try:
-        if not MEMORY_AVAILABLE:
-            raise HTTPException(status_code=503, detail="Session management system not available")
-        
-        limit = min(limit, 200) # Prevent excessive memory usage
-        # ✅ FIX: Bungkus ke thread
-        history = await asyncio.to_thread(get_recent_history, session_id, limit)
+        limit = min(limit, 200)
+        # Gunakan hybrid (Redis dulu, fallback Supabase) agar history yang baru
+        # tersimpan di Redis tetap bisa ditampilkan saat load session dari sidebar
+        from memory.memory_hybrid import get_hybrid_history
+        history = await get_hybrid_history(session_id, limit=limit)
         logger.info(f"📖 Retrieved {len(history)} messages for session {session_id[:8]}...")
         return history
-        
-    except HTTPException: raise
+
     except Exception as e:
         logger.error(f"❌ Get session history error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -77,6 +88,7 @@ async def toggle_session_pin(session_id: str):
         
         # ✅ FIX: Bungkus ke thread
         pinned = await asyncio.to_thread(toggle_pin_session, session_id)
+        _invalidate_sessions_cache()
         logger.info(f"📌 Session {session_id[:8]}... pinned={pinned}")
         return SessionResponse(
             success=True,
@@ -100,6 +112,7 @@ async def delete_session(session_id: str):
         
         # ✅ FIX: Bungkus ke thread
         await asyncio.to_thread(delete_session_and_messages, session_id)
+        _invalidate_sessions_cache()
         logger.info(f"🗑️ Session deleted: {session_id[:8]}...")
         return SessionResponse(
             success=True,

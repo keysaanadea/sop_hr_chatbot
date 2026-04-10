@@ -37,10 +37,11 @@ from app.config import (
 
 # Absolute Imports untuk semua router
 from backend.api.chat import router as chat_router
-from backend.api.speech import router as speech_router  
+from backend.api.speech import router as speech_router
 from backend.api.sessions import router as sessions_router
 from backend.api.info import router as info_router
 from backend.api.schema import router as schema_router  # ✅ NEW: Schema Explorer
+from backend.api.auth import router as auth_router      # ✅ NEW: SINTA Integration
 
 # ✅ FIX KUNCI: Import Recommender untuk melayani Endpoint Katalog Chart!
 from engines.hr.visualization.viz_recommender import UniversalVizRecommender
@@ -85,7 +86,8 @@ app.include_router(chat_router, prefix="", tags=["Chat"])
 app.include_router(speech_router, prefix="/speech", tags=["Speech"])
 app.include_router(sessions_router, prefix="/sessions", tags=["Sessions"])
 app.include_router(info_router, prefix="", tags=["Info"])
-app.include_router(schema_router)  # ✅ NEW: Schema Explorer routes (/api/schema/)
+app.include_router(schema_router)                        # Schema Explorer routes (/api/schema/)
+app.include_router(auth_router, prefix="", tags=["Auth"])  # SINTA Integration (/auth/sinta)
 
 # ==============================================================================
 # 🎯 ENDPOINT VISUALISASI KEMBALI DIBUKA (Hanya untuk Katalog)
@@ -137,9 +139,9 @@ async def shutdown_event():
 # ✅ FIX: Mengembalikan endpoint alias untuk Frontend lama
 @app.get("/history/{session_id}")
 async def get_history_alias(session_id: str, limit: int = 50):
-    """Alias endpoint for older frontend compatibility"""
-    from backend.api.sessions import get_session_history
-    return await get_session_history(session_id, limit)
+    """Alias endpoint — Redis first, then Supabase"""
+    from memory.memory_hybrid import get_hybrid_history
+    return await get_hybrid_history(session_id, limit=min(limit, 200))
 
 
 # Root endpoint (untuk ngecek apakah server nyala)

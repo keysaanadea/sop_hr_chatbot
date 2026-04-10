@@ -340,6 +340,13 @@ async def ask_question_stream(
             history = await get_hybrid_history(req.session_id, limit=4)
             await setup_hybrid_session(req.session_id, req.question)
 
+            # Load user context dari SINTA (jika ada), override role jika perlu
+            from backend.services.user_context import get_user_context as _get_user_ctx
+            _user_ctx = _get_user_ctx(req.session_id)
+            _effective_role = user_role  # variable baru agar tidak trigger UnboundLocalError
+            if _user_ctx and _effective_role.lower() in ['employee', 'karyawan']:
+                _effective_role = _user_ctx.get("role", _effective_role)
+
             # Intent classification — only for greeting/casual_chat detection
             from backend.services.chat_service import (
                 classify_intent_unified,
@@ -348,7 +355,7 @@ async def ask_question_stream(
             )
             intent = await classify_intent_unified(req.question, history)
 
-            is_hr_user = user_role.lower() in ['hr', 'admin', 'manager']
+            is_hr_user = _effective_role.lower() in ['hr', 'admin', 'manager', 'hc']
 
             # Handle greeting / casual_chat — return template directly, skip RAG entirely
             if intent in ("greeting", "casual_chat"):
@@ -375,7 +382,7 @@ async def ask_question_stream(
                 try:
                     routing = await chat_service.run_ab_parallel_for_stream(
                         question=req.question,
-                        user_role=user_role,
+                        user_role=_effective_role,
                         session_id=req.session_id,
                         history=history,
                         mode="chat",
@@ -491,6 +498,18 @@ async def ask_question_stream(
 
             # Contextualize question with history before streaming to RAG
             sop_question = await chat_service._smart_contextualize(req.question, history)
+
+            # Inject band + lokasi untuk karyawan agar jawaban UPD/tunjangan akurat
+            if _user_ctx:
+                _ctx_parts = []
+                _fn = _user_ctx.get("first_name") or _user_ctx.get("nama", "")
+                _bd = _user_ctx.get("band_angka", "")
+                _lk = _user_ctx.get("lokasi", "")
+                if _fn: _ctx_parts.append(f"Nama: {_fn}")
+                if _bd: _ctx_parts.append(f"Band: {_bd}")
+                if _lk: _ctx_parts.append(f"Lokasi saat ini: {_lk}")
+                if _ctx_parts:
+                    sop_question = f"[{', '.join(_ctx_parts)}] {sop_question}"
 
             full_response = ""
             rag_out = {}   # will be populated with {"context": context_str} by rag_stream

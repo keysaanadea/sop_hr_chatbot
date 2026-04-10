@@ -13,6 +13,27 @@ let isWaitingForResponse = false;
 let conversationHistory = [];
 let userRole = null;
 let isHR = false;
+let currentUserNik = null;   // NIK user yang sedang login (dari SINTA)
+
+/* ================= SESSION REGISTRY (per-user, localStorage) ================= */
+// Tiap NIK punya daftar session_id-nya sendiri di localStorage
+// Key: denai_sessions_{nik} → JSON array of session_ids
+
+function _registerSession(sessionId) {
+  if (!currentUserNik || !sessionId) return;
+  const key = `denai_sessions_${currentUserNik}`;
+  const existing = JSON.parse(localStorage.getItem(key) || '[]');
+  if (!existing.includes(sessionId)) {
+    existing.push(sessionId);
+    localStorage.setItem(key, JSON.stringify(existing));
+  }
+}
+
+function getMySessionIds() {
+  if (!currentUserNik) return null; // null = tampilkan semua (mode standalone/dev)
+  const key = `denai_sessions_${currentUserNik}`;
+  return JSON.parse(localStorage.getItem(key) || '[]');
+}
 
 // Input mode detection
 let isTextOnlyMode = false;
@@ -43,33 +64,114 @@ const userBadge = document.getElementById("userBadge");
 const userRoleText = document.getElementById("userRole");
 
 /* ================= USER ROLE & SESSION MANAGEMENT ================= */
-async function getUserRole() {
+
+// Data user dari SINTA (diisi oleh authenticateWithSinta)
+let sintaUserData = null;
+
+/**
+ * Dipanggil oleh SINTA setelah user login.
+ * SINTA kirim JSON user ke Denai via POST /auth/sinta, lalu
+ * frontend menerima response (session_id + role) dan setup Denai.
+ *
+ * Cara SINTA memanggil ini:
+ *   window.DenaiApp.authenticateWithSinta(sintaJsonData)
+ *
+ * Atau bisa juga via URL param: ?sinta_data=<base64 encoded JSON>
+ */
+async function authenticateWithSinta(sintaJson) {
   try {
     const baseUrl = window.API_URL || 'http://127.0.0.1:8000';
-    
-    const response = await fetch(`${baseUrl}/user/role`, {
-      headers: { "Accept": "application/json" }
-    });
-    
-    if (!response.ok) {
-      throw new Error(`HTTP ${response.status}`);
-    }
-    
-    const data = await response.json();
-    
-    userRole = data.is_hr ? 'hr' : 'employee';
-    isHR = data.is_hr || false;
 
+    const response = await fetch(`${baseUrl}/auth/sinta`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+      body: JSON.stringify(sintaJson)
+    });
+
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+
+    const data = await response.json();
+
+    // Simpan session_id dari backend
+    activeChatId = data.session_id;
+
+    // Set role otomatis
+    userRole = data.role;          // 'hc' atau 'karyawan'
+    isHR = (data.role === 'hc');
+
+    // Set NIK & register session ini ke registry user
+    currentUserNik = data.nik || null;
+    _registerSession(data.session_id);
+
+    // Simpan data user untuk UI
+    sintaUserData = data;
+
+    _applyUserInfoCard(data);
+    _applyRoleUI(data.role);
+    _applyPersonalizedGreeting(data);
     updateUserInterface();
-    _applyRoleSwitcherUI(userRole);
+
+    console.log(`✅ SINTA Auth OK | nama=${data.nama} | role=${data.role} | band=${data.band_angka} | session=${data.session_id}`);
+    return data;
 
   } catch (error) {
-    console.error('Failed to get user role:', error);
-    userRole = 'employee';
+    console.error('SINTA Auth failed, fallback to karyawan:', error);
+    userRole = 'karyawan';
     isHR = false;
+    _applyRoleUI('karyawan');
     updateUserInterface();
-    _applyRoleSwitcherUI('employee');
   }
+}
+
+/**
+ * Cek apakah ada data SINTA di URL param saat page load.
+ * SINTA bisa redirect ke Denai dengan: ?sinta=<base64(JSON)>
+ */
+async function getUserRole() {
+  const params = new URLSearchParams(window.location.search);
+
+  // Mode 1: Login page redirect — session_id sudah ada, tinggal restore
+  const sintaSession = params.get('sinta_session');
+  if (sintaSession) {
+    const role      = params.get('sinta_role') || 'karyawan';
+    const firstName = decodeURIComponent(params.get('sinta_nama') || '');
+    const band      = params.get('sinta_band') || '0';
+    const lokasi    = decodeURIComponent(params.get('sinta_lokasi') || '');
+    const nik       = params.get('sinta_nik') || null;
+
+    activeChatId     = sintaSession;
+    userRole         = role;
+    isHR             = (role === 'hc');
+    currentUserNik   = nik;
+    sintaUserData    = { session_id: sintaSession, role, first_name: firstName, band_angka: band, lokasi, nik };
+    _registerSession(sintaSession);
+
+    _applyUserInfoCard(sintaUserData);
+    _applyRoleUI(role);
+    _applyPersonalizedGreeting(sintaUserData);
+    updateUserInterface();
+    window.history.replaceState({}, '', window.location.pathname);
+    return;
+  }
+
+  // Mode 2: SINTA langsung kirim JSON via base64 param
+  const sintaParam = params.get('sinta');
+  if (sintaParam) {
+    try {
+      const sintaJson = JSON.parse(atob(sintaParam));
+      await authenticateWithSinta(sintaJson);
+      window.history.replaceState({}, '', window.location.pathname);
+      return;
+    } catch (e) {
+      console.warn('Invalid sinta param, fallback:', e);
+    }
+  }
+
+  // Fallback: tidak ada SINTA session — default karyawan
+  userRole = 'karyawan';
+  isHR = false;
+  _applyRoleUI('karyawan');
+  updateUserInterface();
 }
 
 function updateUserInterface() {
@@ -78,7 +180,7 @@ function updateUserInterface() {
     else userBadge.classList.remove("hr");
   }
   if (userRoleText) {
-    userRoleText.textContent = isHR ? "HR Access" : "Employee";
+    userRoleText.textContent = isHR ? "HC Access" : "Karyawan";
   }
 
   if (window.SessionModule && window.SessionModule.loadSessions) {
@@ -86,66 +188,44 @@ function updateUserInterface() {
   }
 }
 
+// Fungsi lama (dipertahankan agar tidak break kode lain)
 function switchRole(role) {
-  isHR = (role === 'hr');
-  userRole = role;
-  _applyRoleSwitcherUI(role);
-
-  // Close menu after switching
-  const menu = document.getElementById('roleMenu');
-  if (menu) menu.classList.remove('open');
-
-  // Reset chat and reload sessions filtered for the new role
+  isHR = (role === 'hc' || role === 'hr');
+  userRole = isHR ? 'hc' : 'karyawan';
+  _applyRoleUI(userRole);
   newChat(true);
   window.SessionModule?.loadSessions();
-
-  console.log(`🔑 Account switched: role=${userRole}, isHR=${isHR}`);
 }
-
-function toggleHRAccess() {
-  switchRole(isHR ? 'employee' : 'hr');
-}
-
+function toggleHRAccess() { switchRole(isHR ? 'karyawan' : 'hc'); }
 function toggleRoleMenu() {
   const menu = document.getElementById('roleMenu');
   if (menu) menu.classList.toggle('open');
 }
 
-function _applyRoleSwitcherUI(role) {
-  const isHRMode = (role === 'hr');
+/** Personalized greeting di landing page */
+function _applyPersonalizedGreeting(data) {
+  const el = document.getElementById('landingGreeting');
+  if (!el || !data.first_name) return;
+  const name = data.first_name;
+  const isHC = data.role === 'hc';
+  el.innerHTML = `Hai, <span class="text-primary italic">${name}!</span><br>Ada yang bisa DENAI bantu${isHC ? ' hari ini?' : '?'}`;
+}
 
-  const avatar = document.getElementById('roleSwitcherAvatar');
-  const name = document.getElementById('roleSwitcherName');
-  const badge = document.getElementById('roleSwitcherBadge');
+/** User info card dihapus — tidak dipakai lagi */
+function _applyUserInfoCard(_data) { /* no-op */ }
 
-  if (isHRMode) {
-    if (avatar) avatar.src = 'https://ui-avatars.com/api/?name=Keysa&background=16a34a&color=fff&size=40';
-    if (name) name.textContent = 'Keysa';
-    if (badge) { badge.textContent = 'HR'; badge.className = 'role-switcher-badge hr-badge'; }
-  } else {
-    if (avatar) avatar.src = 'https://ui-avatars.com/api/?name=Staff&background=6b7280&color=fff&size=40';
-    if (name) name.textContent = 'Staff';
-    if (badge) { badge.textContent = 'Karyawan'; badge.className = 'role-switcher-badge employee-badge'; }
-  }
+/** Apply role ke UI elements (schema btn, pills, dll) */
+function _applyRoleUI(role) {
+  const isHCMode = (role === 'hc' || role === 'hr');
 
-  const checkEmployee = document.getElementById('checkEmployee');
-  const checkHR = document.getElementById('checkHR');
-  if (checkEmployee) checkEmployee.style.display = isHRMode ? 'none' : 'block';
-  if (checkHR) checkHR.style.display = isHRMode ? 'block' : 'none';
-
-  const optEmployee = document.getElementById('optEmployee');
-  const optHR = document.getElementById('optHR');
-  if (optEmployee) optEmployee.classList.toggle('active', !isHRMode);
-  if (optHR) optHR.classList.toggle('active', isHRMode);
-
-  // Schema button: only HR can see it
+  // Schema button: hanya HC
   const schemaBtnEl = document.getElementById('schemaBtn');
-  if (schemaBtnEl) schemaBtnEl.style.display = isHRMode ? '' : 'none';
+  if (schemaBtnEl) schemaBtnEl.style.display = isHCMode ? '' : 'none';
 
-  // Suggestion pill 1: HR gets a data query, employee gets an SOP question
+  // Suggestion pill 1
   const pill1 = document.getElementById('suggestionPill1');
   if (pill1) {
-    if (isHRMode) {
+    if (isHCMode) {
       pill1.textContent = 'Berapa jumlah karyawan di SIG?';
       pill1.onclick = () => { document.getElementById('landingInput').value = 'Berapa jumlah karyawan di SIG?'; startFromLanding(); };
     } else {
@@ -154,6 +234,9 @@ function _applyRoleSwitcherUI(role) {
     }
   }
 }
+
+// Alias lama untuk backward compat
+function _applyRoleSwitcherUI(role) { _applyRoleUI(role); }
 
 /* ================= 🔥 NEW: HIDE OLD REGENERATE BUTTONS ================= */
 
@@ -402,6 +485,7 @@ function removeThinkingAnimation() {
 /* ================= ENHANCED CHAT FUNCTIONS ================= */
 function newChat(goToLanding = false) {
   activeChatId = crypto.randomUUID();
+  _registerSession(activeChatId);   // daftarkan ke registry user ini
   conversationHistory = [];
   messages.innerHTML = "";
 
@@ -1043,7 +1127,12 @@ function detectVisualizationQuery(text) {
 /* ================= INITIALIZATION ================= */
 async function initializeApp() {
   console.log("🚀 Initializing DEN·AI Application...");
-  
+
+  // Reset ke landing page setiap kali app di-init (reload/navigasi baru)
+  // Cegah bfcache atau state lama yang menampilkan chat view
+  if (landing) landing.style.display = "flex";
+  if (chat) chat.style.display = "none";
+
   try {
     await getUserRole();
     
@@ -1177,6 +1266,7 @@ window.CoreApp = {
   get isVoiceToTextMode() { return isVoiceToTextMode; },
   set isVoiceToTextMode(value) { isVoiceToTextMode = value; },
   
+  getMySessionIds,
   addMessage,
   _renderBotBubbleContent,
   submitFeedback,
@@ -1216,7 +1306,28 @@ window.CoreApp = {
   _lastUserQuery: null
 };
 
+// Expose ke SINTA agar bisa dipanggil: window.DenaiApp.authenticateWithSinta(data)
+window.DenaiApp = {
+  authenticateWithSinta,
+  get userRole() { return userRole; },
+  get isHC() { return isHR; },
+  get sintaUserData() { return sintaUserData; },
+};
+
 document.addEventListener("DOMContentLoaded", async () => {
   setupEventListeners();
   await initializeApp();
+});
+
+// Prevent bfcache: empty unload handler forces browser to always do fresh reload
+window.addEventListener("unload", () => {});
+
+// Handle bfcache restore fallback
+window.addEventListener("pageshow", (event) => {
+  if (event.persisted) {
+    if (landing) landing.style.display = "flex";
+    if (chat) { chat.style.display = "none"; if (messages) messages.innerHTML = ""; }
+    conversationHistory = [];
+    activeChatId = null;
+  }
 });

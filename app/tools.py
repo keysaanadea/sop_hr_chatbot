@@ -75,7 +75,7 @@ def get_current_tools_schema(user_role: str, intent: str) -> List[Dict[str, Any]
         logger.info(f"✅ Intent A (SOP) → Exposing SOP tools for {user_role}")
         return _get_sop_tools()
     elif intent == "B":
-        if user_role in ["hr", "admin", "manager"]:
+        if user_role in ["hr", "admin", "manager", "hc"]:
             logger.info(f"✅ Intent B (HR_DATA) → Exposing HR tools for {user_role}")
             return _get_hr_tools()
         else:

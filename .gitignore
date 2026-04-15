@@ -10,7 +10,6 @@
 # ======================
 csv/
 db/
-documents/
 documents_global/
 documents_fix/
 chunks/

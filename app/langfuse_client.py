@@ -75,13 +75,21 @@ try:
         if not LANGFUSE_ENABLED:
             yield None
             return
+
+        # Init Langfuse client di luar yield — kalau gagal, fallback ke no-op
+        # tanpa menelan exception yang berasal dari kode user di dalam blok with.
         try:
             from langfuse import get_client
-            with get_client().start_as_current_observation(name=name, **kwargs) as span:
-                yield span
+            lf_client = get_client()
         except Exception as _e:
-            logger.debug(f"langfuse_observation '{name}' skipped: {_e}")
+            logger.debug(f"langfuse_observation '{name}' skipped (init): {_e}")
             yield None
+            return
+
+        # Biarkan exception dari dalam blok 'with' (misal LLM timeout) propagate normal.
+        # Jangan yield lagi setelah exception — itu menyebabkan "generator didn't stop after throw()".
+        with lf_client.start_as_current_observation(name=name, **kwargs) as span:
+            yield span
 
 except Exception:
     # Fallback no-op jika contextlib tidak tersedia (harusnya tidak terjadi)

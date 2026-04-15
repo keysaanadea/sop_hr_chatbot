@@ -71,17 +71,24 @@ def get_recent_history(session_id: str, limit: int = 6):
 # =====================
 # CHAT SESSIONS & CLEANUP
 # =====================
-def save_session(session_id: str, title: str):
+def save_session(session_id: str, title: str, nik: str = ""):
     if not supabase: return
     try:
         supabase.table("chat_sessions").upsert({
             "session_id": session_id,
-            "title": title
+            "title": title,
+            "nik": nik,
         }).execute()
     except Exception as e:
         logger.error(f"❌ Failed to save session: {e}")
 
-def get_sessions(limit: int = 30):
+def get_sessions(nik: str = None, limit: int = 30):
+    """
+    Kembalikan sesi milik user yang didentifikasi oleh NIK.
+    nik=None → tampilkan semua (mode dev/standalone).
+    nik=""   → hanya sesi tanpa NIK (fallback backwards-compat).
+    nik="xxx"→ filter ketat per user.
+    """
     if not supabase: return []
     try:
         # Ambil session_ids yang benar-benar punya pesan (anti-ghost)
@@ -96,23 +103,38 @@ def get_sessions(limit: int = 30):
         if not ids_with_msgs:
             return []
 
-        # Ambil sessions dan filter ghost di sini
-        res = (
+        # Ambil sessions dengan filter NIK
+        query = (
             supabase
             .table("chat_sessions")
-            .select("session_id,title,pinned,created_at,last_message_at")
+            .select("session_id,title,pinned,created_at,last_message_at,nik")
             .order("pinned", desc=True)
             .order("last_message_at", desc=True)
             .order("created_at", desc=True)
             .limit(limit * 3)
-            .execute()
         )
+        if nik is not None and nik != "":
+            # Filter: milik user ini ATAU sesi lama yang belum punya NIK (backwards compat)
+            query = query.or_(f"nik.eq.{nik},nik.is.null,nik.eq.")
+
+        res = query.execute()
         sessions = res.data or []
         filtered = [s for s in sessions if s["session_id"] in ids_with_msgs]
         return filtered[:limit]
     except Exception as e:
         logger.error(f"❌ Failed to get sessions: {e}")
         return []
+
+def get_session_owner(session_id: str) -> str:
+    """Ambil NIK pemilik session. Return '' jika tidak ada / sesi lama."""
+    if not supabase: return ""
+    try:
+        res = supabase.table("chat_sessions").select("nik").eq("session_id", session_id).execute()
+        if res.data:
+            return res.data[0].get("nik") or ""
+    except Exception:
+        pass
+    return ""
 
 def toggle_pin_session(session_id: str) -> bool:
     if not supabase: return False

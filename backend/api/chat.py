@@ -294,6 +294,23 @@ async def process_question_with_cancellation(
                 pass
 
 
+def _quick_topic_classify(text: str) -> str:
+    """Keyword-based topic classifier untuk HC tracking (tanpa LLM call)."""
+    t = text.lower()
+    if any(w in t for w in ["lembur", "overtime", "jam kerja"]): return "lembur"
+    if any(w in t for w in ["perjalanan dinas", "upd", "uang harian", "biaya dinas"]): return "perjalanan_dinas"
+    if any(w in t for w in ["cuti", "dispensasi", "izin tidak masuk"]): return "cuti"
+    if any(w in t for w in ["kesehatan", "bpjs", "asuransi", "well-being", "wellbeing"]): return "kesehatan"
+    if any(w in t for w in ["rumah dinas", "penghunian", "hunian"]): return "rumah_dinas"
+    if any(w in t for w in ["disiplin", "pelanggaran", "surat peringatan", "whistleblowing", "rwp", "respectful"]): return "disiplin"
+    if any(w in t for w in ["karir", "promosi", "rotasi", "mutasi", "kompetensi", "kinerja", "talenta", "evaluasi jabatan", "suksesi"]): return "karir"
+    if any(w in t for w in ["phk", "pensiun", "pesangon", "terminasi", "dana pensiun", "mpp"]): return "phk"
+    if any(w in t for w in ["tunjangan", "fasilitas", "remunerasi", "thr", "sumbangan"]): return "tunjangan"
+    if any(w in t for w in ["pelatihan", "training", "sertifikasi", "beasiswa", "learning"]): return "pembelajaran"
+    if any(w in t for w in ["relokasi", "penempatan", "pindah", "eod"]): return "relokasi"
+    return ""
+
+
 @router.post("/ask/stream")
 @limiter.limit("15/minute")
 async def ask_question_stream(
@@ -338,11 +355,31 @@ async def ask_question_stream(
 
         try:
             history = await get_hybrid_history(req.session_id, limit=4)
-            await setup_hybrid_session(req.session_id, req.question)
-
+            # Buang seluruh exchange greeting (user message + [GREETING_CARD])
+            # agar LLM kontekstualisasi tidak salah tebak dari pesan "halo"
+            _clean_history = []
+            for _h in history:
+                if _h.get("message") == "[GREETING_CARD]":
+                    # Buang juga pesan user yang tepat sebelumnya (pasangan greeting)
+                    if _clean_history and _clean_history[-1].get("role") in ("user", "human"):
+                        _clean_history.pop()
+                    continue
+                _clean_history.append(_h)
+            history = _clean_history
             # Load user context dari SINTA (jika ada), override role jika perlu
-            from backend.services.user_context import get_user_context as _get_user_ctx
+            from backend.services.user_context import get_user_context as _get_user_ctx, set_user_context as _set_user_ctx
             _user_ctx = _get_user_ctx(req.session_id)
+
+            # Kalau session store kosong (sesi lama / akses langsung) tapi frontend kirim context, pakai itu
+            if _user_ctx is None and req.user_context:
+                _user_ctx = req.user_context
+                _set_user_ctx(req.session_id, req.user_context)  # cache untuk query berikutnya
+                logger.info(f"♻️ User context di-restore dari payload | session={req.session_id[:8]}...")
+
+            # Setup session — sertakan NIK agar sesi tercatat milik user ini di Supabase
+            _nik = (_user_ctx or {}).get("nik") or (req.user_context or {}).get("nik", "") if isinstance(req.user_context, dict) else ""
+            await setup_hybrid_session(req.session_id, req.question, nik=_nik)
+
             _effective_role = user_role  # variable baru agar tidak trigger UnboundLocalError
             if _user_ctx and _effective_role.lower() in ['employee', 'karyawan']:
                 _effective_role = _user_ctx.get("role", _effective_role)
@@ -366,14 +403,16 @@ async def ask_question_stream(
                     except Exception:
                         pass
                 await save_hybrid_message(req.session_id, "user", req.question)
-                await save_hybrid_message(req.session_id, "assistant", answer)
+                # Simpan marker khusus agar history loading bisa re-render greeting card
+                _db_answer = "[GREETING_CARD]" if intent == "greeting" else answer
+                await save_hybrid_message(req.session_id, "assistant", _db_answer)
                 trace_id = None
                 if _lf_span:
                     try:
                         trace_id = _lf_span.trace_id
                     except Exception:
                         pass
-                yield f"data: {json.dumps({'type': 'done', 'answer': answer, 'session_id': req.session_id, 'authorized': True, 'trace_id': trace_id})}\n\n"
+                yield f"data: {json.dumps({'type': 'done', 'answer': answer, 'message_type': intent, 'session_id': req.session_id, 'authorized': True, 'trace_id': trace_id})}\n\n"
                 return
 
             # ── HR user: always A+B parallel ────────────────────────────────
@@ -433,6 +472,14 @@ async def ask_question_stream(
                         background_tasks.add_task(evaluate_interaction_background, trace_id=trace_id, question=req.question, context=routing["eval_ctx"], answer=full_response)
                     result_base = routing["result_base"]
                     result_base["answer"] = full_response
+                    # HC topic tracking (ab = SOP + analytics — classify dari standalone_question)
+                    _hc_topic = _quick_topic_classify(routing.get("standalone_question", req.question))
+                    if _hc_topic:
+                        try:
+                            from memory.memory_hybrid import redis_client, REDIS_AVAILABLE
+                            if REDIS_AVAILABLE and redis_client:
+                                await redis_client.zincrby("denai:topic_freq:hc", 1, _hc_topic)
+                        except Exception: pass
                     yield f"data: {json.dumps({'type': 'done', 'session_id': req.session_id, 'authorized': True, 'trace_id': trace_id, 'message_type': result_base.get('message_type'), 'data': result_base.get('data'), 'turn_id': result_base.get('turn_id'), 'conversation_id': result_base.get('conversation_id'), 'visualization_available': result_base.get('visualization_available', False), 'chart_hints': result_base.get('chart_hints'), 'sql_query': result_base.get('sql_query'), 'sql_explanation': result_base.get('sql_explanation')})}\n\n"
                     return
 
@@ -450,7 +497,20 @@ async def ask_question_stream(
                     if _lf_span:
                         try: trace_id = _lf_span.trace_id
                         except Exception: pass
-                    yield f"data: {json.dumps({'type': 'done', 'answer': answer, 'session_id': req.session_id, 'authorized': True, 'trace_id': trace_id})}\n\n"
+                    # HC topic tracking (a_only = SOP only)
+                    _hc_topic = _quick_topic_classify(routing.get("standalone_question", req.question))
+                    if _hc_topic:
+                        try:
+                            from memory.memory_hybrid import redis_client, REDIS_AVAILABLE
+                            if REDIS_AVAILABLE and redis_client:
+                                await redis_client.zincrby("denai:topic_freq:hc", 1, _hc_topic)
+                        except Exception: pass
+                    # Stream answer in chunks agar ada efek typing (RAG sudah selesai duluan)
+                    import asyncio as _asyncio
+                    for i in range(0, len(answer), 12):
+                        yield f"data: {json.dumps({'type': 'token', 'content': answer[i:i+12]})}\n\n"
+                        await _asyncio.sleep(0.008)
+                    yield f"data: {json.dumps({'type': 'done', 'session_id': req.session_id, 'authorized': True, 'trace_id': trace_id})}\n\n"
                     return
 
                 elif routing and routing.get("mode") == "b_only":
@@ -475,7 +535,20 @@ async def ask_question_stream(
                     b_trace_id = result.get("trace_id")
                     if b_trace_id:
                         background_tasks.add_task(evaluate_interaction_background, trace_id=b_trace_id, question=req.question, context=answer, answer=answer)
-                    yield f"data: {json.dumps({'type': 'done', 'answer': answer, 'session_id': req.session_id, 'authorized': True, 'message_type': result.get('message_type'), 'data': result.get('data'), 'trace_id': result.get('trace_id'), 'turn_id': result.get('turn_id'), 'conversation_id': result.get('conversation_id'), 'visualization_available': result.get('visualization_available', False), 'chart_hints': result.get('chart_hints'), 'sql_query': result.get('sql_query'), 'sql_explanation': result.get('sql_explanation')})}\n\n"
+                    # HC topic tracking (b_only = analytics — classify dari pertanyaan)
+                    _hc_topic = _quick_topic_classify(routing.get("query_for_b", req.question))
+                    if _hc_topic:
+                        try:
+                            from memory.memory_hybrid import redis_client, REDIS_AVAILABLE
+                            if REDIS_AVAILABLE and redis_client:
+                                await redis_client.zincrby("denai:topic_freq:hc", 1, _hc_topic)
+                        except Exception: pass
+                    # Stream teks jawaban dulu, baru kirim done dengan data analytics
+                    import asyncio as _asyncio
+                    for i in range(0, len(answer), 12):
+                        yield f"data: {json.dumps({'type': 'token', 'content': answer[i:i+12]})}\n\n"
+                        await _asyncio.sleep(0.008)
+                    yield f"data: {json.dumps({'type': 'done', 'session_id': req.session_id, 'authorized': True, 'message_type': result.get('message_type'), 'data': result.get('data'), 'trace_id': result.get('trace_id'), 'turn_id': result.get('turn_id'), 'conversation_id': result.get('conversation_id'), 'visualization_available': result.get('visualization_available', False), 'chart_hints': result.get('chart_hints'), 'sql_query': result.get('sql_query'), 'sql_explanation': result.get('sql_explanation')})}\n\n"
                     return
 
                 else:
@@ -506,7 +579,9 @@ async def ask_question_stream(
                 _bd = _user_ctx.get("band_angka", "")
                 _lk = _user_ctx.get("lokasi", "")
                 if _fn: _ctx_parts.append(f"Nama: {_fn}")
-                if _bd: _ctx_parts.append(f"Band: {_bd}")
+                # Hanya inject band jika valid angka positif — "0"/"-"/kosong → skip
+                if _bd and str(_bd).strip().isdigit() and int(_bd) > 0:
+                    _ctx_parts.append(f"Band: {_bd}")
                 if _lk: _ctx_parts.append(f"Lokasi saat ini: {_lk}")
                 if _ctx_parts:
                     sop_question = f"[{', '.join(_ctx_parts)}] {sop_question}"
@@ -556,16 +631,54 @@ async def ask_question_stream(
                     answer=full_response,
                 )
 
+            # Parse RAG chunks dan sertakan di done payload
+            source_chunks = []
+            _ctx_str = rag_out.get("context", "")
+            if _ctx_str:
+                import re as _re
+                for _m in _re.finditer(
+                    r'<dokumen id="(\d+)" file="([^"]*)" bab="([^"]*)">\n?(.*?)\n?</dokumen>',
+                    _ctx_str, _re.DOTALL
+                ):
+                    source_chunks.append({
+                        "id":   int(_m.group(1)),
+                        "file": _m.group(2).strip(),
+                        "bab":  _m.group(3).strip(),
+                        "text": _m.group(4).strip(),
+                    })
+
             done_payload: dict = {'type': 'done', 'session_id': req.session_id, 'authorized': True, 'trace_id': trace_id}
             if _sentinel_detected:
                 done_payload['answer'] = _FRIENDLY_MSG
+            if source_chunks:
+                done_payload['source_chunks'] = source_chunks
+
+            # Simpan frekuensi topic ke Redis (untuk greeting suggestions — bucket employee)
+            _sop_topic = rag_out.get("sop_topic", "")
+            if _sop_topic and _sop_topic not in ("general", ""):
+                try:
+                    from memory.memory_hybrid import redis_client, REDIS_AVAILABLE
+                    if REDIS_AVAILABLE and redis_client:
+                        await redis_client.zincrby("denai:topic_freq:employee", 1, _sop_topic)
+                except Exception as _te:
+                    logger.debug(f"Topic freq save skipped: {_te}")
+
             yield f"data: {json.dumps(done_payload)}\n\n"
 
         except asyncio.CancelledError:
             yield f"data: {json.dumps({'type': 'cancelled'})}\n\n"
         except Exception as e:
             logger.error(f"❌ Stream endpoint error: {e}", exc_info=True)
-            yield f"data: {json.dumps({'type': 'error', 'message': str(e)})}\n\n"
+            # Deteksi rate limit OpenAI secara spesifik
+            _is_rate_limit = (
+                "rate_limit" in str(e).lower() or
+                "429" in str(e) or
+                type(e).__name__ == "RateLimitError"
+            )
+            if _is_rate_limit:
+                yield f"data: {json.dumps({'type': 'error', 'error_code': 'rate_limit', 'message': 'rate_limit'})}\n\n"
+            else:
+                yield f"data: {json.dumps({'type': 'error', 'message': str(e)})}\n\n"
         finally:
             # Tutup Langfuse context managers (urutan terbalik)
             if _lf_attr_cm is not None:

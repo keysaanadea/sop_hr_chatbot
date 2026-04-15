@@ -239,28 +239,37 @@ class ChatService:
             for h in history[-4:]
         ])
 
-        prompt = f"""Diberikan riwayat percakapan berikut dan pertanyaan lanjutan dari pengguna.
-Tugasmu: tulis ulang pertanyaan lanjutan menjadi pertanyaan mandiri (standalone) yang lengkap dan jelas tanpa perlu membaca riwayat.
+        prompt = f"""Diberikan riwayat percakapan berikut dan pertanyaan baru dari pengguna.
 
-ATURAN WAJIB:
-- WAJIB inject konteks penting dari history ke dalam pertanyaan, terutama:
-  * Kota asal dan kota tujuan perjalanan dinas (misal: "dari Jakarta ke Gresik")
-  * Jarak perjalanan jika disebutkan (misal: "781 km")
-  * Band/level jabatan karyawan jika disebutkan sebelumnya
-  * Topik yang sedang dibahas (misal: lembur, cuti, UPD)
-- Klarifikasi kata ganti ambigu ("ini", "itu", "nya") menggunakan konteks dari history
-- DILARANG menambahkan nama dokumen/SKD kecuali user memang merujuk ke dokumen tertentu
-- DILARANG mengubah maksud atau scope pertanyaan
-- DILARANG menambahkan informasi yang sama sekali tidak ada di history maupun pertanyaan
+TUGAS: Tentukan apakah pertanyaan baru adalah LANJUTAN dari percakapan sebelumnya, atau topik BARU yang tidak berkaitan.
 
-Contoh:
-- History: "perjalanan dinas ke Gresik dari Jakarta (781 km)" | Follow-up: "totalkan UPD 5 hari Band 2"
-  → Mandiri: "Totalkan UPD perjalanan dinas dari Jakarta ke Gresik (781 km) selama 5 hari untuk Band 2"
+ATURAN:
+1. Jika pertanyaan baru adalah LANJUTAN (ada kata ganti ambigu "ini/itu/nya", atau membutuhkan konteks dari history untuk dimengerti):
+   → Tulis ulang menjadi pertanyaan mandiri yang lengkap dengan menyisipkan konteks relevan dari history.
+   → Konteks yang WAJIB diinjeksikan jika ada: kota asal/tujuan perjalanan dinas, jarak, band/level jabatan.
+
+2. Jika pertanyaan baru adalah topik BERBEDA TOTAL dari history (ganti topik, pertanyaan sudah jelas berdiri sendiri):
+   → Kembalikan pertanyaan apa adanya TANPA mengubah atau menambah konteks dari history.
+
+DILARANG:
+- Menambahkan informasi yang TIDAK ADA di history maupun pertanyaan baru.
+- Mengubah maksud atau scope pertanyaan.
+- Menambahkan nama dokumen/SKD kecuali user memang merujuknya.
+
+Contoh LANJUTAN:
+- History: "perjalanan dinas ke Gresik dari Jakarta (781 km)" | Pertanyaan: "totalkan UPD 5 hari Band 2"
+  → "Totalkan UPD perjalanan dinas dari Jakarta ke Gresik (781 km) selama 5 hari untuk Band 2"
+
+Contoh BERBEDA TOTAL:
+- History: "halo, apa yang bisa dibantu?" | Pertanyaan: "Kerja Lembur"
+  → "Kerja Lembur"
+- History: "berapa UPD ke Surabaya?" | Pertanyaan: "syarat pengajuan cuti tahunan"
+  → "syarat pengajuan cuti tahunan"
 
 Riwayat Percakapan:
 {context_text}
 
-Pertanyaan Lanjutan: {current_question}
+Pertanyaan Baru: {current_question}
 
 Pertanyaan Mandiri:"""
 
@@ -701,7 +710,10 @@ Balas HANYA dengan JSON valid:
             _nama = _user_ctx.get("first_name") or _user_ctx.get("nama", "")
             _ctx_parts = []
             if _nama: _ctx_parts.append(f"Nama: {_nama}")
-            if _band: _ctx_parts.append(f"Band: {_band}")
+            # Hanya inject band jika valid angka positif — kalau "-" atau kosong, skip
+            # agar LLM keluarkan informasi umum semua band (tidak personalized)
+            if _band and str(_band).strip().isdigit() and int(_band) > 0:
+                _ctx_parts.append(f"Band: {_band}")
             if _lokasi: _ctx_parts.append(f"Lokasi saat ini: {_lokasi}")
             if _ctx_parts:
                 standalone_question = f"[{', '.join(_ctx_parts)}] {standalone_question}"
@@ -732,7 +744,14 @@ Balas HANYA dengan JSON valid:
         run_b = decomposed["run_b"]
         query_for_a = decomposed["query_a"] or standalone_question
         query_for_b = decomposed["query_b"] or standalone_question
-        logger.info(f"🧭 [STREAM ORCHESTRATOR] run_a={run_a} | run_b={run_b} | A: {query_for_a[:50]} | B: {query_for_b[:50]}")
+
+        # Re-inject user context prefix into query_for_a after decomposition
+        # _decompose_query() LLM strips the [Nama: X, Band: Y, Lokasi: Z] prefix when reformulating
+        if _user_ctx and _ctx_parts and query_for_a and not query_for_a.startswith("["):
+            query_for_a = f"[{', '.join(_ctx_parts)}] {query_for_a}"
+            logger.info(f"📍 Re-injected user context into query_for_a after decomposition")
+
+        logger.info(f"🧭 [STREAM ORCHESTRATOR] run_a={run_a} | run_b={run_b} | A: {query_for_a[:60]} | B: {query_for_b[:50]}")
 
         from app.tools import search_sop, query_hr_database, StructuredResponse as _SR
 

@@ -20,6 +20,9 @@
   box-shadow: 0 4px 16px rgba(25, 28, 30, 0.07);
   position: relative;
   overflow: hidden;
+  /* clip-path forces WebKit/Safari to clip ::before even on flex children with border-radius */
+  -webkit-clip-path: inset(0 round 14px);
+  clip-path: inset(0 round 14px);
 }
 
 /* Subtle shimmer using brand red, not blue */
@@ -27,17 +30,18 @@
   content: '';
   position: absolute;
   top: 0;
-  left: -100%;
+  left: 0;
   width: 100%;
   height: 100%;
   background: linear-gradient(90deg, transparent, rgba(183, 19, 26, 0.04), transparent);
   animation: shimmer 2.4s infinite;
   pointer-events: none;
+  transform: translateX(-100%);
 }
 
 @keyframes shimmer {
-  0%   { left: -100%; }
-  100% { left: 100%; }
+  0%   { transform: translateX(-100%); }
+  100% { transform: translateX(100%); }
 }
 
 /* ===== Header ===== */

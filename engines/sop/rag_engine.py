@@ -29,6 +29,7 @@ from engines.sop.analyzers.generic_analyzer import GenericAnalyzer
 from engines.sop.templates_engine import SimpleTemplateEngine
 from engines.sop.policy_injector import HRTravelPolicy
 from engines.sop.rag_interceptor import ConstraintInterceptor
+from engines.sop.utils.currency import get_usd_idr_rate
 
 try:
     from app.langfuse_client import LANGFUSE_ENABLED, get_langchain_callback, langfuse_observation
@@ -83,16 +84,22 @@ Pilih TEPAT SATU dari daftar berikut berdasarkan ISI pertanyaan, BUKAN nama kota
 - 'lembur'             : lembur, overtime, upah kerja lembur, jam lembur
 - 'pembelajaran'       : pelatihan, training, sertifikasi, pembelajaran, beasiswa
 - 'relokasi'           : relokasi, penempatan, pindah, mutasi, POH, POA, fasilitas pindah, biaya pindah
-- 'tunjangan'          : tunjangan domisili, bantuan sewa rumah, ongkos pindah, tunjangan jabatan
-- 'karir'              : manajemen karir, promosi, rotasi, pengembangan karir, kompetensi
-- 'phk'                : PHK, pemutusan hubungan kerja, pesangon, pensiun, terminasi
+- 'tunjangan'          : tunjangan domisili, bantuan sewa rumah, ongkos pindah, tunjangan jabatan, THR, remunerasi, fasilitas alat kerja, fasilitas komunikasi, sumbangan perkawinan
+- 'karir'              : manajemen karir, promosi, rotasi, pengembangan karir, kompetensi, kinerja, talenta, evaluasi jabatan, suksesi
+- 'phk'                : PHK, pemutusan hubungan kerja, pesangon, pensiun, terminasi, dana pensiun
+- 'cuti'               : cuti tahunan, cuti sakit, cuti melahirkan, dispensasi, izin tidak masuk
+- 'kesehatan'          : fasilitas kesehatan, BPJS kesehatan, BPJS ketenagakerjaan, asuransi kesejahteraan, employee well-being, manfaat kesehatan
+- 'rumah_dinas'        : rumah dinas, penghunian rumah dinas, fasilitas hunian, listrik rumah dinas
+- 'disiplin'           : disiplin karyawan, surat peringatan, pelanggaran, whistleblowing, RWP, respectful workplace, perilaku kerja
 - 'general'            : topik lain yang tidak masuk kategori di atas
 """)
     search_keywords: str = Field(description="""Kata kunci pencarian Vector DB. WAJIB ikuti aturan ini:
 - Selalu sertakan nama topik SOP (dari sop_topic) sebagai kata kunci pertama.
 - Contoh: sop_topic='relokasi' → keywords dimulai dengan 'relokasi penempatan karyawan ...'
 - Contoh: sop_topic='perjalanan_dinas' → keywords dimulai dengan 'perjalanan dinas UPD ...'
-- Tambahkan detail spesifik dari pertanyaan setelahnya (band, nominal, fasilitas, dll).""")
+- Tambahkan detail spesifik dari pertanyaan setelahnya (band, nominal, fasilitas, dll).
+- JIKA ada prefix '[..., Band: <angka>, ...]' dalam query, WAJIB sertakan 'Band <angka>' dalam keywords (contoh: 'perjalanan dinas Band 3 hotel UPD').""")
+    user_band: str = Field(default="", description="Ekstrak angka band user dari prefix konteks '[..., Band: <angka>, ...]' jika ada. Contoh: '[Band: 3]' → '3'. Kosongkan jika tidak ada prefix band.")
     scope: str = Field(description="Pilih HANYA SALAH SATU: domestic, international, atau general")
     doc_type: str = Field(default="general", description="Selalu isi 'general'. Field ini tidak digunakan sebagai filter — hanya dipertahankan untuk kompatibilitas schema.")
     template_type: str = Field(description="""Pilih HANYA SALAH SATU:
@@ -101,9 +108,9 @@ Pilih TEPAT SATU dari daftar berikut berdasarkan ISI pertanyaan, BUKAN nama kota
 - 'rules': JIKA nanya syarat, kelayakan (Yes/No), atau 'dapat apa aja/fasilitas apa aja'.
 - 'definition': JIKA nanya apa itu/definisi.
 - 'general': Jika tidak masuk kategori di atas.""")
-    kota_asal: str = Field(default="", description="Ekstrak kota_asal JIKA ADA dan sop_topic='perjalanan_dinas'. Kosongkan untuk topik lain.")
+    kota_asal: str = Field(default="", description="Ekstrak kota_asal JIKA ADA dan sop_topic='perjalanan_dinas'. Jika pertanyaan tidak menyebut kota asal secara eksplisit, cek prefix konteks user: jika ada '[...Lokasi saat ini: <kota>...]' maka gunakan <kota> tsb sebagai kota_asal. Kosongkan untuk topik lain.")
     kota_tujuan: str = Field(default="", description="Ekstrak kota_tujuan JIKA ADA dan sop_topic='perjalanan_dinas'. Kosongkan untuk topik lain.")
-    butuh_kalkulasi_jarak: bool = Field(description="TRUE HANYA JIKA sop_topic='perjalanan_dinas' DAN pertanyaan menanyakan biaya/fasilitas perjalanan ke kota tertentu. FALSE untuk semua topik lain termasuk relokasi.")
+    butuh_kalkulasi_jarak: bool = Field(description="TRUE HANYA JIKA sop_topic='perjalanan_dinas' DAN pertanyaan menanyakan biaya/fasilitas perjalanan ke kota tertentu (kota_tujuan terdeteksi). FALSE untuk semua topik lain termasuk relokasi.")
 
 class FastQueryAnalyzer:
     def __init__(self, llm):
@@ -131,7 +138,19 @@ LANGKAH 2 — Buat search_keywords: Mulai dengan nama topik SOP, lalu tambahkan 
   JIKA nanya BIAYA PERJALANAN DINAS: WAJIB tambah "TABEL BIAYA PERJALANAN DINAS UPD-DN HARIAN".
   JANGAN sertakan nama kota sebagai keyword jika sop_topic bukan 'perjalanan_dinas'.
 
-LANGKAH 3 — Isi field lainnya sesuai panduan di setiap field.
+LANGKAH 3 — Ekstrak konteks user dari prefix (jika ada pola "[Nama: X, Band: Y, Lokasi saat ini: Z]"):
+  - user_band: angka band dari prefix, contoh "[Band: 3]" → user_band = "3"
+  - Sertakan "Band <angka>" dalam search_keywords jika sop_topic = 'perjalanan_dinas' atau topik tunjangan/fasilitas
+
+LANGKAH 4 — Isi field kota_asal dan kota_tujuan (hanya untuk sop_topic='perjalanan_dinas'):
+  - kota_tujuan: kota yang disebut setelah "ke", "menuju", "tujuan", "di" dalam konteks dinas.
+  - kota_asal: kota yang disebut setelah "dari", "berangkat dari" ATAU — jika tidak ada dalam teks —
+    ambil dari prefix konteks user jika ada pola "[..., Lokasi saat ini: <kota>, ...]".
+    Contoh: query "[Nama: RAHMAD, Band: 3, Lokasi saat ini: Jakarta] dinas ke Surabaya"
+    → user_band = "3", kota_asal = "Jakarta", kota_tujuan = "Surabaya"
+    → search_keywords = "perjalanan dinas Band 3 hotel fasilitas Jakarta Surabaya UPD"
+
+LANGKAH 5 — Isi field lainnya sesuai panduan di setiap field.
 
 {format_instructions}
 """
@@ -185,7 +204,7 @@ class RAGEngine:
 
         self.llm = ChatOpenAI(
             model=LLM_MODEL, temperature=LLM_TEMPERATURE, openai_api_key=OPENAI_API_KEY,
-            timeout=20, max_retries=3, callbacks=lf_callbacks
+            timeout=30, max_retries=1, callbacks=lf_callbacks
         )
         self.embeddings = OpenAIEmbeddings(
             model=EMBEDDING_MODEL, openai_api_key=OPENAI_API_KEY,
@@ -379,6 +398,20 @@ async def answer_question_async(
         template_type = analysis.get('template_type', 'general')
         _sop_topic_async = analysis.get('sop_topic', 'general')
 
+        # Fallback: kalau LLM tidak inject band ke keywords, ambil dari prefix dan inject manual
+        import re as _re_kw
+        _band_from_prefix = analysis.get('user_band', '').strip()
+        if not _band_from_prefix or _band_from_prefix == "0":
+            _band_match = _re_kw.search(r'\[.*?Band:\s*([1-9]\d*)', question)  # hanya angka > 0
+            if _band_match:
+                _band_from_prefix = _band_match.group(1).strip()
+            else:
+                _band_from_prefix = ""  # reset jika LLM return "0" (tidak valid)
+        # Hanya inject jika band valid (angka > 0) dan belum ada di keywords
+        if _band_from_prefix and _band_from_prefix.isdigit() and int(_band_from_prefix) > 0 and f"Band {_band_from_prefix}" not in keywords:
+            keywords = f"{keywords} Band {_band_from_prefix}"
+            logger.info(f"📍 Band {_band_from_prefix} di-inject ke search keywords")
+
         # scope filter (domestic/international) hanya relevan untuk perjalanan dinas.
         # Untuk topik lain (relokasi, PHK, karir, dll), Pinecone scope filter akan
         # menyingkirkan dokumen yang di-index dengan scope=general.
@@ -395,6 +428,7 @@ async def answer_question_async(
             f"🎯 Scope Terdeteksi : {scope}\n"
             f"📄 Doc Type         : {doc_type}\n"
             f"📝 Template Type    : {template_type}\n"
+            f"👤 User Band        : {_band_from_prefix or '-'}\n"
             f"🏙️ Kota Asal        : {analysis.get('kota_asal', '-')}\n"
             f"🏙️ Kota Tujuan      : {analysis.get('kota_tujuan', '-')}\n"
             f"📏 Kalkulasi Jarak  : {analysis.get('butuh_kalkulasi_jarak', False)}\n"
@@ -426,9 +460,9 @@ async def answer_question_async(
         for i, m in enumerate(matches):
             text = m['metadata'].get('text', '').strip()[:2000]
             source = m['metadata'].get('filename') or m['metadata'].get('source_file') or 'Unknown'
-            _section_path = m['metadata'].get('section_path', '')
-            _section_full = ', '.join(p.strip() for p in _section_path.split('|') if p.strip()) if _section_path else ''
-            parent = m['metadata'].get('parent_section') or m['metadata'].get('heading') or _section_full or 'Tidak spesifik'
+            _sec_title = m['metadata'].get('section_title', '') or m['metadata'].get('section_path', '')
+            _sec_last  = _sec_title.split('|')[-1].strip() if _sec_title else ''
+            parent = m['metadata'].get('heading') or m['metadata'].get('parent_section') or _sec_last or 'Tidak spesifik'
             score = m.get('score', 0.0)
             
             if source != 'Unknown':
@@ -438,13 +472,14 @@ async def answer_question_async(
             debug_msg += f"📁 Sumber : {source} | Bab: {parent}\n"
             debug_msg += f"📄 Teks   : {text[:250]}... [LANJUTAN DIPOTONG UNTUK DEBUG]\n"
             
-            context_parts.append(f"[FILE: {source} | BAB: {parent}]\n{text}")
-            
+            context_parts.append(f'<dokumen id="{i+1}" file="{source}" bab="{parent}">\n{text}\n</dokumen>')
+
         debug_msg += "\n" + "📚" * 25
         logger.info(debug_msg)
 
-        context_str = "\n\n---\n\n".join(context_parts)
+        context_str = "\n\n".join(context_parts)
         primary_source = relevant_filenames[0] if relevant_filenames else None
+        unique_sources = list(dict.fromkeys(relevant_filenames))  # dedup, preserve order
 
         # Tools & Policy Injections
         tool_info = ""
@@ -454,7 +489,16 @@ async def answer_question_async(
         kota_tujuan = analysis.get('kota_tujuan', '')
         kota_asal = str(kota_asal[0]) if isinstance(kota_asal, list) else str(kota_asal).strip()
         kota_tujuan = str(kota_tujuan[0]) if isinstance(kota_tujuan, list) else str(kota_tujuan).strip()
-        
+
+        # Fallback: kalau LLM tidak ekstrak kota_asal, coba ambil dari prefix konteks user
+        # Format prefix: "[..., Lokasi saat ini: <kota>, ...]"
+        if not kota_asal or kota_asal.lower() in ["", "none", "null", "-", "tidak ada"]:
+            import re as _re
+            _lokasi_match = _re.search(r'\[.*?Lokasi saat ini:\s*([^,\]]+)', question)
+            if _lokasi_match:
+                kota_asal = _lokasi_match.group(1).strip()
+                logger.info(f"📍 kota_asal di-fallback dari prefix user: {kota_asal}")
+
         is_valid_destination = bool(kota_tujuan and kota_tujuan.lower() not in ["", "none", "null", "-", "tidak ada"])
 
         # Trigger TravelAnalyzer otomatis jika perjalanan_dinas dengan kota asal+tujuan valid.
@@ -480,10 +524,11 @@ async def answer_question_async(
                 route_str = travel_data.get('route', 'Tidak diketahui')
                 dist_km = travel_data.get('distance_km', 0)
                 dur_hrs = travel_data.get('duration_hours', 0)
-                logger.info(f"🛣️ TravelAnalyzer injected: route={route_str}, dist={dist_km}km")
+                logger.info(f"🛣️ TravelAnalyzer injected: route={route_str}, dist={dist_km}km, dur={dur_hrs}hrs")
 
                 if scope == 'international':
-                    tool_info = HRTravelPolicy.get_international_policy_injection(route_str, dur_hrs)
+                    _idr_rate = await get_usd_idr_rate()
+                    tool_info = HRTravelPolicy.get_international_policy_injection(route_str, dur_hrs, idr_rate=_idr_rate)
                 else:
                     tool_info = HRTravelPolicy.get_domestic_policy_injection(route_str, dist_km, dur_hrs)
         else:
@@ -515,27 +560,35 @@ Anda adalah Asisten Profesional HRD PT Semen Indonesia.
 
 === CRITICAL RULES ===
 1. Jawab HANYA menggunakan informasi dari [KNOWLEDGE BASE].
-2. 🚨 CEK KELAYAKAN (ELIGIBILITY) SEBELUM MENGHITUNG: Anda WAJIB memeriksa apakah user berhak atas fasilitas tersebut berdasarkan aturan di [KNOWLEDGE BASE]. 
-   - Contoh: Upah Kerja Lembur HANYA diberikan untuk karyawan Job Grade 10 ke bawah atau Band 5. 
+2. 🚨 CEK KELAYAKAN (ELIGIBILITY) SEBELUM MENGHITUNG: Anda WAJIB memeriksa apakah user berhak atas fasilitas tersebut berdasarkan aturan di [KNOWLEDGE BASE].
+   - Contoh: Upah Kerja Lembur HANYA diberikan untuk karyawan Job Grade 10 ke bawah atau Band 5.
    - JIKA user menyebutkan ia adalah Band 1, 2, 3, atau 4 dan meminta hitungan lembur, Anda DILARANG KERAS memberikan hitungan/rumus. Anda WAJIB menolak dengan sopan dan menjelaskan bahwa sesuai aturan, Band tersebut tidak mendapatkan upah lembur.
+   - [BARU] JIKA user TIDAK MENYEBUTKAN Band/Grade mereka sama sekali, Anda WAJIB: (1) jelaskan terlebih dahulu syarat kelayakannya dari dokumen, KEMUDIAN (2) tetap berikan penjelasan rumus/aturan/tarif sebagai informasi simulasi agar user tahu cara perhitungannya.
 3. 🚨 KESEIMBANGAN ANTI-HALUSINASI & KELENTURAN (SANGAT KRITIS):
    - CEK TOPIK ALIEN: Coba lihat [KNOWLEDGE BASE] dengan seksama. Apakah topik yang ditanyakan SAMA SEKALI TIDAK ADA referensinya di sana (bukan hanya mirip topiknya, tapi benar-benar tidak ada sama sekali di seluruh teks)? JIKA YA (Topik Alien), Anda WAJIB BERHENTI dan HANYA MENGELUARKAN KODE INI TANPA TAMBAHAN TEKS LAIN:
 [DATA_TIDAK_DITEMUKAN_DI_SOP]
    - CEK TOPIK RELEVAN TAPI KURANG DATA: JIKA topik yang ditanyakan ADA di [KNOWLEDGE BASE] (misal: Lembur, Perjalanan Dinas, Hari Libur, UPD, akomodasi, tunjangan), tetapi data tidak cukup untuk hitungan angka pasti (misal: gaji pokok tidak diketahui), JANGAN GUNAKAN KODE ERROR! Anda WAJIB tetap menjawab dengan ramah berdasarkan aturan/rumus/tarif yang tersedia, dan sampaikan secara profesional bahwa Anda membutuhkan data tambahan untuk menghitung angka pastinya.
    - 🔢 KHUSUS TABEL TARIF (UPD, Lembur, Akomodasi, dll): Jika tabel tarif PER BAND tersedia di [KNOWLEDGE BASE] dan user tidak menyebutkan band-nya, WAJIB tampilkan perhitungan untuk SEMUA band dari tabel. JANGAN gunakan kode error hanya karena band tidak disebutkan — data sudah ada di tabel.
    - CEK TOPIK ADA TAPI DATA TERBATAS: Jika topik ada namun informasinya tidak lengkap, jawab HANYA berdasarkan yang BENAR-BENAR TERTULIS di [KNOWLEDGE BASE]. DILARANG menambahkan informasi dari pengetahuan umum.
-4. 🚫 CEK RELEVANSI DOKUMEN (WAJIB SEBELUM MENJAWAB):
-   Sebelum menggunakan isi sebuah chunk, pastikan dokumen sumber chunk tersebut relevan dengan topik/entitas yang ditanyakan user.
-   - Jika pertanyaan jelas tentang topik X (misal: LHKPN, pensiun, Dana Pensiun Semen Gresik) dan sebuah chunk berasal dari dokumen yang membahas topik Y yang berbeda (misal: mobil dinas Eselon Satu, perjalanan dinas) → ABAIKAN chunk tersebut.
-   - Contoh: user tanya tentang LHKPN → ABAIKAN chunk dari SKD mobil dinas atau perjalanan dinas, meski ada kata "mencabut" atau "surat keputusan" di sana.
-   - Contoh: user tanya tentang "Dewan Pengawas Dana Pensiun" → ABAIKAN chunk tentang "Karyawan Eselon Satu" atau karyawan umum.
-   - 🚨 JIKA setelah membuang chunk yang tidak relevan tidak ada chunk tersisa yang menjawab pertanyaan → WAJIB keluarkan kode ini tanpa teks lain:
+4. 🚫 CEK RELEVANSI BERDASARKAN ISI PASAL, BUKAN NAMA FILE:
+   Sebelum menggunakan isi sebuah chunk, pastikan ISI TEKS di dalamnya relevan dengan topik kompensasi yang ditanyakan user.
+   - 🚨 NAMA FILE BISA MENIPU: Sebuah dokumen dengan nama file "Tunjangan Tugas" BISA SAJA memuat pasal yang secara spesifik mengatur "Kerja Lembur" di dalamnya. Jangan abaikan dokumen hanya karena nama filenya terkesan berbeda — BACA ISI PASALNYA!
+   - BEDA KONTEKS = ABAIKAN: Jika user bertanya tentang "Lembur", gunakan HANYA kalimat/pasal yang secara eksplisit menyebut "Lembur", "Kerja Lembur", atau "Tarif Lembur". Jika teks tersebut membahas nominal "Tunjangan Tugas" atau "Shift" tanpa menyebut lembur, DILARANG memaksakan angkanya untuk menjawab Lembur.
+   - Contoh lain: user tanya LHKPN → abaikan chunk yang teksnya tentang mobil dinas. User tanya "Dewan Pengawas" → abaikan chunk yang teksnya tentang karyawan umum.
+   - 🚨 JIKA setelah menyaring tidak ada chunk yang isinya relevan → WAJIB keluarkan kode ini tanpa teks lain:
 [DATA_TIDAK_DITEMUKAN_DI_SOP]
-   - ✅ Jika ada beberapa chunk relevan dari dokumen berbeda, boleh blend dan WAJIB cantumkan SEMUA file sumber di Rujukan Dokumen.
-5. DILARANG KERAS merangkai atau memaksakan aturan dari topik A untuk menjawab topik B (Topik harus match!).
+   - ✅ [WAJIB BLEND] JIKA ada beberapa chunk relevan (misal: satu chunk mengatur pengali lembur, chunk lain mengatur syarat Band/Grade yang berhak), Anda WAJIB menggabungkan informasinya agar jawaban utuh.
+5. 🚫 DILARANG MERANGKAI ATURAN LINTAS TOPIK: DILARANG KERAS memaksakan angka/aturan dari satu konteks (misal: nominal Tunjangan Tugas) untuk menjawab konteks lain (misal: Upah Lembur), meski berasal dari file yang sama.
 6. Angka tarif, jarak, dan durasi HARUS persis sama dengan dokumen.
 7. 🔥 TUGAS KALKULASI: JIKA ADA angka jarak (km) atau durasi (jam) dari [INFO SISTEM & INSTRUKSI MUTLAK], WAJIB gunakan angka tersebut.
 8. 🚨 KEPATUHAN FORMAT: WAJIB MEMATUHI SEMUA PERINTAH di dalam [INFO SISTEM & INSTRUKSI MUTLAK] TANPA TERKECUALI!
+9. 🚨 ATURAN KUTIPAN SUMBER — WAJIB URUT & RAPI (HINDARI OVER-CITATION):
+   - 🌟 WAJIB RE-INDEX: Nomor sitasi di dalam teks keluaran Anda WAJIB diurutkan dinamis mulai dari [1], lalu [2], dst., TERLEPAS dari atribut id asli tag <dokumen> di [KNOWLEDGE BASE].
+   - 🌟 JANGAN SPAM SITASI: Jika dalam satu paragraf atau satu poin bullet Anda mengambil informasi dari SUMBER YANG SAMA, cukup letakkan nomor sitasi SATU KALI SAJA di akhir paragraf/poin tersebut.
+   - ❌ DILARANG: menaruh sitasi di setiap akhir kalimat jika sumbernya sama. Hindari: "Aturan A [1]. Aturan B [1]. Aturan C [1]."
+   - ✅ BENAR: "Aturan A. Aturan B. Aturan C [1]." — satu sitasi di akhir poin untuk sumber yang sama.
+   - Jika satu paragraf/poin menggabungkan dua dokumen berbeda, baru gabungkan di akhir: [1][2].
+   - Pastikan di bagian Rujukan Dokumen, angka [1], [2], dst. dipasangkan dengan Nama File dan Pasal yang tepat sesuai urutan kemunculannya di teks.
 {detail_enforcer}
 
 {enforcement_instructions}
@@ -544,10 +597,6 @@ Anda adalah Asisten Profesional HRD PT Semen Indonesia.
 
 === INFO SISTEM & INSTRUKSI MUTLAK ===
 {tool_info}
-
-=== SUMBER DOKUMEN UTAMA ===
-File dengan skor kemiripan tertinggi adalah: **{primary_source}**
-Jika jawaban Anda secara spesifik mengambil informasi dari file ini, cantumkan sebagai Rujukan Dokumen. Jika jawaban juga mengambil dari file lain, cantumkan semua. Jika jawaban Anda bersifat umum dan tidak dapat dilacak ke chunk spesifik manapun, HAPUS seluruh bagian Rujukan Dokumen.
 
 === KNOWLEDGE BASE ===
 {context_str}
@@ -571,6 +620,8 @@ Jika jawaban Anda secara spesifik mengambil informasi dari file ini, cantumkan s
                 _sp_gen.update(output={"response_length": len(response.content)})
         
         cleaned_response = re.sub(r'\*\*(.*?)\*\*', r'<strong>\1</strong>', response.content.replace('```html', '').replace('```', '').strip())
+        # Safety net: hapus placeholder yang tidak diganti LLM
+        cleaned_response = cleaned_response.replace('[KOTAK_PERINGATAN_KOREKSI]', '')
     
         metrics.successful_responses += 1
         metrics.avg_response_time = ((metrics.avg_response_time * (metrics.queries - 1)) + (time.time() - start_time)) / metrics.queries
@@ -719,20 +770,22 @@ async def answer_question_stream(
 
         context_parts = []
         relevant_filenames = []
-        for m in matches:
+        for i, m in enumerate(matches):
             text = m['metadata'].get('text', '').strip()[:2000]
             source = m['metadata'].get('filename') or m['metadata'].get('source_file') or 'Unknown'
-            _section_path = m['metadata'].get('section_path', '')
-            _section_full = ', '.join(p.strip() for p in _section_path.split('|') if p.strip()) if _section_path else ''
-            parent = m['metadata'].get('parent_section') or m['metadata'].get('heading') or _section_full or 'Tidak spesifik'
+            _sec_title = m['metadata'].get('section_title', '') or m['metadata'].get('section_path', '')
+            _sec_last  = _sec_title.split('|')[-1].strip() if _sec_title else ''
+            parent = m['metadata'].get('heading') or m['metadata'].get('parent_section') or _sec_last or 'Tidak spesifik'
             if source != 'Unknown':
                 relevant_filenames.append(source)
-            context_parts.append(f"[FILE: {source} | BAB: {parent}]\n{text}")
+            context_parts.append(f'<dokumen id="{i+1}" file="{source}" bab="{parent}">\n{text}\n</dokumen>')
 
-        context_str = "\n\n---\n\n".join(context_parts)
+        context_str = "\n\n".join(context_parts)
         primary_source = relevant_filenames[0] if relevant_filenames else None
+        unique_sources = list(dict.fromkeys(relevant_filenames))  # dedup, preserve order
         if out_context is not None:
             out_context["context"] = context_str
+            out_context["sop_topic"] = _sop_topic
 
         tool_info = ""
         travel_data = {}
@@ -763,9 +816,10 @@ async def answer_question_stream(
                 route_str = travel_data.get('route', 'Tidak diketahui')
                 dist_km = travel_data.get('distance_km', 0)
                 dur_hrs = travel_data.get('duration_hours', 0)
-                logger.info(f"🛣️  TravelAnalyzer injected: route={route_str}, dist={dist_km}km")
+                logger.info(f"🛣️  TravelAnalyzer injected: route={route_str}, dist={dist_km}km, dur={dur_hrs}hrs")
                 if scope == 'international':
-                    tool_info = HRTravelPolicy.get_international_policy_injection(route_str, dur_hrs)
+                    _idr_rate = await get_usd_idr_rate()
+                    tool_info = HRTravelPolicy.get_international_policy_injection(route_str, dur_hrs, idr_rate=_idr_rate)
                 else:
                     tool_info = HRTravelPolicy.get_domestic_policy_injection(route_str, dist_km, dur_hrs)
         else:
@@ -799,18 +853,25 @@ Anda adalah Asisten Profesional HRD PT Semen Indonesia.
    - CEK TOPIK RELEVAN TAPI KURANG DATA: JIKA topik yang ditanyakan ADA di [KNOWLEDGE BASE] (misal: Lembur, Perjalanan Dinas, Hari Libur, UPD, akomodasi, tunjangan), tetapi data tidak cukup untuk hitungan angka pasti (misal: gaji pokok tidak diketahui), JANGAN GUNAKAN KODE ERROR! Anda WAJIB tetap menjawab dengan ramah berdasarkan aturan/rumus/tarif yang tersedia, dan sampaikan secara profesional bahwa Anda membutuhkan data tambahan untuk menghitung angka pastinya.
    - 🔢 KHUSUS TABEL TARIF (UPD, Lembur, Akomodasi, dll): Jika tabel tarif PER BAND tersedia di [KNOWLEDGE BASE] dan user tidak menyebutkan band-nya, WAJIB tampilkan perhitungan untuk SEMUA band dari tabel. JANGAN gunakan kode error hanya karena band tidak disebutkan — data sudah ada di tabel.
    - CEK TOPIK ADA TAPI DATA TERBATAS: Jika topik ada namun informasinya tidak lengkap, jawab HANYA berdasarkan yang BENAR-BENAR TERTULIS di [KNOWLEDGE BASE]. DILARANG menambahkan informasi dari pengetahuan umum.
-4. 🚫 CEK RELEVANSI DOKUMEN (WAJIB SEBELUM MENJAWAB):
-   Sebelum menggunakan isi sebuah chunk, pastikan dokumen sumber chunk tersebut relevan dengan topik/entitas yang ditanyakan user.
-   - Jika pertanyaan jelas tentang topik X (misal: LHKPN, pensiun, Dana Pensiun Semen Gresik) dan sebuah chunk berasal dari dokumen yang membahas topik Y yang berbeda (misal: mobil dinas Eselon Satu, perjalanan dinas) → ABAIKAN chunk tersebut.
-   - Contoh: user tanya tentang LHKPN → ABAIKAN chunk dari SKD mobil dinas atau perjalanan dinas, meski ada kata "mencabut" atau "surat keputusan" di sana.
-   - Contoh: user tanya tentang "Dewan Pengawas Dana Pensiun" → ABAIKAN chunk tentang "Karyawan Eselon Satu" atau karyawan umum.
-   - 🚨 JIKA setelah membuang chunk yang tidak relevan tidak ada chunk tersisa yang menjawab pertanyaan → WAJIB keluarkan kode ini tanpa teks lain:
+4. 🚫 CEK RELEVANSI BERDASARKAN ISI PASAL, BUKAN NAMA FILE:
+   Sebelum menggunakan isi sebuah chunk, pastikan ISI TEKS di dalamnya relevan dengan topik kompensasi yang ditanyakan user.
+   - 🚨 NAMA FILE BISA MENIPU: Sebuah dokumen dengan nama file "Tunjangan Tugas" BISA SAJA memuat pasal yang secara spesifik mengatur "Kerja Lembur" di dalamnya. Jangan abaikan dokumen hanya karena nama filenya terkesan berbeda — BACA ISI PASALNYA!
+   - BEDA KONTEKS = ABAIKAN: Jika user bertanya tentang "Lembur", gunakan HANYA kalimat/pasal yang secara eksplisit menyebut "Lembur", "Kerja Lembur", atau "Tarif Lembur". Jika teks tersebut membahas nominal "Tunjangan Tugas" atau "Shift" tanpa menyebut lembur, DILARANG memaksakan angkanya untuk menjawab Lembur.
+   - Contoh lain: user tanya LHKPN → abaikan chunk yang teksnya tentang mobil dinas. User tanya "Dewan Pengawas" → abaikan chunk yang teksnya tentang karyawan umum.
+   - 🚨 JIKA setelah menyaring tidak ada chunk yang isinya relevan → WAJIB keluarkan kode ini tanpa teks lain:
 [DATA_TIDAK_DITEMUKAN_DI_SOP]
-   - ✅ Jika ada beberapa chunk relevan dari dokumen berbeda, boleh blend dan WAJIB cantumkan SEMUA file sumber di Rujukan Dokumen.
-5. DILARANG KERAS merangkai atau memaksakan aturan dari topik A untuk menjawab topik B (Topik harus match!).
+   - ✅ [WAJIB BLEND] JIKA ada beberapa chunk relevan (misal: satu chunk mengatur pengali lembur, chunk lain mengatur syarat Band/Grade yang berhak), Anda WAJIB menggabungkan informasinya agar jawaban utuh.
+5. 🚫 DILARANG MERANGKAI ATURAN LINTAS TOPIK: DILARANG KERAS memaksakan angka/aturan dari satu konteks (misal: nominal Tunjangan Tugas) untuk menjawab konteks lain (misal: Upah Lembur), meski berasal dari file yang sama.
 6. Angka tarif, jarak, dan durasi HARUS persis sama dengan dokumen.
 7. 🔥 TUGAS KALKULASI: JIKA ADA angka jarak (km) atau durasi (jam) dari [INFO SISTEM & INSTRUKSI MUTLAK], WAJIB gunakan angka tersebut.
 8. 🚨 KEPATUHAN FORMAT: WAJIB MEMATUHI SEMUA PERINTAH di dalam [INFO SISTEM & INSTRUKSI MUTLAK] TANPA TERKECUALI!
+9. 🚨 ATURAN KUTIPAN SUMBER — WAJIB URUT & RAPI (HINDARI OVER-CITATION):
+   - 🌟 WAJIB RE-INDEX: Nomor sitasi di dalam teks keluaran Anda WAJIB diurutkan dinamis mulai dari [1], lalu [2], dst., TERLEPAS dari atribut id asli tag <dokumen> di [KNOWLEDGE BASE].
+   - 🌟 JANGAN SPAM SITASI: Jika dalam satu paragraf atau satu poin bullet Anda mengambil informasi dari SUMBER YANG SAMA, cukup letakkan nomor sitasi SATU KALI SAJA di akhir paragraf/poin tersebut.
+   - ❌ DILARANG: menaruh sitasi di setiap akhir kalimat jika sumbernya sama. Hindari: "Aturan A [1]. Aturan B [1]. Aturan C [1]."
+   - ✅ BENAR: "Aturan A. Aturan B. Aturan C [1]." — satu sitasi di akhir poin untuk sumber yang sama.
+   - Jika satu paragraf/poin menggabungkan dua dokumen berbeda, baru gabungkan di akhir: [1][2].
+   - Pastikan di bagian Rujukan Dokumen, angka [1], [2], dst. dipasangkan dengan Nama File dan Pasal yang tepat sesuai urutan kemunculannya di teks.
 {detail_enforcer}
 
 {enforcement_instructions}
@@ -819,10 +880,6 @@ Anda adalah Asisten Profesional HRD PT Semen Indonesia.
 
 === INFO SISTEM & INSTRUKSI MUTLAK ===
 {tool_info}
-
-=== SUMBER DOKUMEN UTAMA ===
-File dengan skor kemiripan tertinggi adalah: **{primary_source}**
-Jika jawaban Anda secara spesifik mengambil informasi dari file ini, cantumkan sebagai Rujukan Dokumen. Jika jawaban juga mengambil dari file lain, cantumkan semua. Jika jawaban Anda bersifat umum dan tidak dapat dilacak ke chunk spesifik manapun, HAPUS seluruh bagian Rujukan Dokumen.
 
 === KNOWLEDGE BASE ===
 {context_str}
@@ -842,6 +899,10 @@ Jika jawaban Anda secara spesifik mengambil informasi dari file ini, cantumkan s
                     cleaned_chunk = chunk.content.replace('```html', '').replace('```', '')
                     full_response += cleaned_chunk
                     yield cleaned_chunk
+
+            # Safety net log: jika LLM tidak mengganti placeholder (tidak bisa di-fix post-stream)
+            if '[KOTAK_PERINGATAN_KOREKSI]' in full_response:
+                logger.warning("⚠️ [KOTAK_PERINGATAN_KOREKSI] lolos ke stream — prompt fix seharusnya mencegah ini")
 
             if _sp_gen:
                 _sp_gen.update(output={"response_length": len(full_response)})

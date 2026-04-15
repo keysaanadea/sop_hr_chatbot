@@ -6,8 +6,10 @@ Session and conversation history management
 import logging
 import asyncio
 import time
-from fastapi import APIRouter, HTTPException
-from typing import List
+from fastapi import APIRouter, HTTPException, Depends
+from typing import List, Optional
+
+from backend.api.deps import get_auth_nik
 
 logger = logging.getLogger(__name__)
 
@@ -17,43 +19,52 @@ from backend.models.requests import SessionResponse, SessionInfo, MessageInfo
 # Import session management functions
 try:
     from memory.memory_supabase import (
-        get_sessions, get_recent_history, toggle_pin_session, delete_session_and_messages
+        get_sessions, get_recent_history, toggle_pin_session,
+        delete_session_and_messages, get_session_owner
     )
     MEMORY_AVAILABLE = True
 except ImportError:
     MEMORY_AVAILABLE = False
     logger.warning("⚠️ Memory system not available")
-    
+
     # Fallback dummy functions
-    def get_sessions(): return []
+    def get_sessions(nik=None): return []
     def get_recent_history(session_id: str, limit: int = 50): return []
     def toggle_pin_session(session_id: str): return False
     def delete_session_and_messages(session_id: str): pass
+    def get_session_owner(session_id: str): return ""
 
 router = APIRouter()
 
-# Cache for list_sessions: hindari hit Supabase setiap kali sidebar render
-_sessions_cache: dict = {"data": None, "ts": 0.0}
-_SESSIONS_CACHE_TTL = 10  # detik
+# Cache for list_sessions: per-NIK agar user berbeda tidak saling cache
+_sessions_cache: dict = {}          # key: nik (str) → {"data": [...], "ts": float}
+_SESSIONS_CACHE_TTL = 10            # detik
 
-def _invalidate_sessions_cache():
-    _sessions_cache["ts"] = 0.0
+def _invalidate_sessions_cache(nik: str = None):
+    """Invalidate cache untuk NIK tertentu, atau semua kalau nik=None."""
+    if nik and nik in _sessions_cache:
+        _sessions_cache[nik]["ts"] = 0.0
+    else:
+        for v in _sessions_cache.values():
+            v["ts"] = 0.0
+
 
 @router.get("/", response_model=List[SessionInfo])
-async def list_sessions():
-    """Get list of all conversation sessions"""
+async def list_sessions(auth_nik: Optional[str] = Depends(get_auth_nik)):
+    """Get list of conversation sessions — difilter per user (NIK)."""
     try:
         if not MEMORY_AVAILABLE:
             raise HTTPException(status_code=503, detail="Session management system not available")
 
+        cache_key = auth_nik if auth_nik is not None else "__all__"
         now = time.monotonic()
-        if _sessions_cache["data"] is not None and (now - _sessions_cache["ts"]) < _SESSIONS_CACHE_TTL:
-            return _sessions_cache["data"]
+        entry = _sessions_cache.get(cache_key)
+        if entry and entry["data"] is not None and (now - entry["ts"]) < _SESSIONS_CACHE_TTL:
+            return entry["data"]
 
-        sessions = await asyncio.to_thread(get_sessions)
-        _sessions_cache["data"] = sessions
-        _sessions_cache["ts"] = now
-        logger.info(f"📋 Retrieved {len(sessions)} sessions")
+        sessions = await asyncio.to_thread(get_sessions, auth_nik)
+        _sessions_cache[cache_key] = {"data": sessions, "ts": now}
+        logger.info(f"📋 Retrieved {len(sessions)} sessions (nik={auth_nik or 'all'})")
         return sessions
 
     except HTTPException: raise
@@ -63,32 +74,49 @@ async def list_sessions():
 
 
 @router.get("/{session_id}/history", response_model=List[MessageInfo])
-async def get_session_history(session_id: str, limit: int = 50):
-    """Get conversation history for a specific session — Redis first, then Supabase"""
+async def get_session_history(
+    session_id: str,
+    limit: int = 50,
+    auth_nik: Optional[str] = Depends(get_auth_nik)
+):
+    """Get conversation history — validasi kepemilikan sesi jika NIK tersedia."""
     try:
         limit = min(limit, 200)
-        # Gunakan hybrid (Redis dulu, fallback Supabase) agar history yang baru
-        # tersimpan di Redis tetap bisa ditampilkan saat load session dari sidebar
+
+        # Validasi kepemilikan: hanya jika NIK tersedia di kedua sisi
+        if auth_nik:
+            owner = await asyncio.to_thread(get_session_owner, session_id)
+            if owner and owner != auth_nik:
+                raise HTTPException(status_code=403, detail="Access denied: session belongs to another user")
+
         from memory.memory_hybrid import get_hybrid_history
         history = await get_hybrid_history(session_id, limit=limit)
         logger.info(f"📖 Retrieved {len(history)} messages for session {session_id[:8]}...")
         return history
 
+    except HTTPException: raise
     except Exception as e:
         logger.error(f"❌ Get session history error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.post("/{session_id}/pin", response_model=SessionResponse)
-async def toggle_session_pin(session_id: str):
-    """Toggle pin/star status for a session"""
+async def toggle_session_pin(
+    session_id: str,
+    auth_nik: Optional[str] = Depends(get_auth_nik)
+):
+    """Toggle pin/star status for a session."""
     try:
         if not MEMORY_AVAILABLE:
             raise HTTPException(status_code=503, detail="Session management system not available")
-        
-        # ✅ FIX: Bungkus ke thread
+
+        if auth_nik:
+            owner = await asyncio.to_thread(get_session_owner, session_id)
+            if owner and owner != auth_nik:
+                raise HTTPException(status_code=403, detail="Access denied")
+
         pinned = await asyncio.to_thread(toggle_pin_session, session_id)
-        _invalidate_sessions_cache()
+        _invalidate_sessions_cache(auth_nik)
         logger.info(f"📌 Session {session_id[:8]}... pinned={pinned}")
         return SessionResponse(
             success=True,
@@ -96,7 +124,7 @@ async def toggle_session_pin(session_id: str):
             pinned=pinned,
             message=f"Session {'pinned' if pinned else 'unpinned'} successfully"
         )
-        
+
     except HTTPException: raise
     except Exception as e:
         logger.error(f"❌ Pin session error: {e}")
@@ -104,22 +132,26 @@ async def toggle_session_pin(session_id: str):
 
 
 @router.delete("/{session_id}", response_model=SessionResponse)
-async def delete_session(session_id: str):
+async def delete_session(session_id: str, auth_nik: Optional[str] = Depends(get_auth_nik)):
     """Delete session and all its messages"""
     try:
         if not MEMORY_AVAILABLE:
             raise HTTPException(status_code=503, detail="Session management system not available")
-        
-        # ✅ FIX: Bungkus ke thread
+
+        if auth_nik:
+            owner = await asyncio.to_thread(get_session_owner, session_id)
+            if owner and owner != auth_nik:
+                raise HTTPException(status_code=403, detail="Access denied")
+
         await asyncio.to_thread(delete_session_and_messages, session_id)
-        _invalidate_sessions_cache()
+        _invalidate_sessions_cache(auth_nik)
         logger.info(f"🗑️ Session deleted: {session_id[:8]}...")
         return SessionResponse(
             success=True,
             session_id=session_id,
             message="Session deleted successfully"
         )
-        
+
     except HTTPException: raise
     except Exception as e:
         logger.error(f"❌ Delete session error: {e}")

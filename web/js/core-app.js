@@ -127,10 +127,67 @@ async function authenticateWithSinta(sintaJson) {
  * Cek apakah ada data SINTA di URL param saat page load.
  * SINTA bisa redirect ke Denai dengan: ?sinta=<base64(JSON)>
  */
+const _SINTA_STORAGE_KEY  = 'denai_sinta_session';
+const _ACTIVE_CHAT_KEY    = 'denai_active_chat';   // track sesi yang sedang dibuka user
+
+function _saveSintaSession(data) {
+  try { sessionStorage.setItem(_SINTA_STORAGE_KEY, JSON.stringify(data)); } catch (e) {}
+}
+function _loadSintaSession() {
+  try { return JSON.parse(sessionStorage.getItem(_SINTA_STORAGE_KEY) || 'null'); } catch (e) { return null; }
+}
+function _clearSintaSession() {
+  try { sessionStorage.removeItem(_SINTA_STORAGE_KEY); } catch (e) {}
+}
+// Simpan sesi yang terakhir aktif — persist lintas login via localStorage (key per NIK)
+function _saveActiveChat(id) {
+  try {
+    if (!id) return;
+    sessionStorage.setItem(_ACTIVE_CHAT_KEY, id);                   // same-tab refresh
+    if (currentUserNik) {
+      localStorage.setItem(`${_ACTIVE_CHAT_KEY}_${currentUserNik}`, id); // lintas login
+    }
+  } catch (e) {}
+}
+function _loadActiveChat() {
+  try {
+    // Coba sessionStorage dulu (same-tab), lalu localStorage (lintas login)
+    const fromSession = sessionStorage.getItem(_ACTIVE_CHAT_KEY);
+    if (fromSession) return fromSession;
+    if (currentUserNik) {
+      return localStorage.getItem(`${_ACTIVE_CHAT_KEY}_${currentUserNik}`) || null;
+    }
+    return null;
+  } catch (e) { return null; }
+}
+
+function _applySintaData(data) {
+  activeChatId   = data.session_id;
+  userRole       = data.role;
+  isHR           = (data.role === 'hc');
+  currentUserNik = data.nik || null;
+  sintaUserData  = data;
+  _registerSession(data.session_id);
+  _applyUserInfoCard(data);
+  _applyRoleUI(data.role);
+  _applyPersonalizedGreeting(data);
+  updateUserInterface();
+
+  // Restore sesi terakhir yang dibuka user (berlaku di semua mode login, termasuk Mode 1 dari SINTA)
+  // SINTA selalu buat session_id baru → tanpa ini, user selalu mulai dari sesi kosong
+  setTimeout(() => {
+    const lastActive = _loadActiveChat();
+    if (lastActive && lastActive !== activeChatId) {
+      console.log(`♻️ Restoring last active chat: ${lastActive.slice(0, 8)}...`);
+      window.SessionModule?.loadSession?.(lastActive);
+    }
+  }, 250);
+}
+
 async function getUserRole() {
   const params = new URLSearchParams(window.location.search);
 
-  // Mode 1: Login page redirect — session_id sudah ada, tinggal restore
+  // Mode 1: Login page redirect — session_id sudah ada di URL param
   const sintaSession = params.get('sinta_session');
   if (sintaSession) {
     const role      = params.get('sinta_role') || 'karyawan';
@@ -139,17 +196,9 @@ async function getUserRole() {
     const lokasi    = decodeURIComponent(params.get('sinta_lokasi') || '');
     const nik       = params.get('sinta_nik') || null;
 
-    activeChatId     = sintaSession;
-    userRole         = role;
-    isHR             = (role === 'hc');
-    currentUserNik   = nik;
-    sintaUserData    = { session_id: sintaSession, role, first_name: firstName, band_angka: band, lokasi, nik };
-    _registerSession(sintaSession);
-
-    _applyUserInfoCard(sintaUserData);
-    _applyRoleUI(role);
-    _applyPersonalizedGreeting(sintaUserData);
-    updateUserInterface();
+    const data = { session_id: sintaSession, role, first_name: firstName, band_angka: band, lokasi, nik };
+    _saveSintaSession(data);   // simpan ke sessionStorage agar survive refresh
+    _applySintaData(data);
     window.history.replaceState({}, '', window.location.pathname);
     return;
   }
@@ -159,12 +208,21 @@ async function getUserRole() {
   if (sintaParam) {
     try {
       const sintaJson = JSON.parse(atob(sintaParam));
-      await authenticateWithSinta(sintaJson);
+      const authResult = await authenticateWithSinta(sintaJson);
+      if (authResult) _saveSintaSession(authResult);
       window.history.replaceState({}, '', window.location.pathname);
       return;
     } catch (e) {
       console.warn('Invalid sinta param, fallback:', e);
     }
+  }
+
+  // Mode 3: Restore dari sessionStorage (survive page refresh)
+  const saved = _loadSintaSession();
+  if (saved && saved.session_id) {
+    console.log(`♻️ Restored SINTA session from storage | nama=${saved.first_name} | role=${saved.role}`);
+    _applySintaData(saved);   // sudah include restore last active chat
+    return;
   }
 
   // Fallback: tidak ada SINTA session — default karyawan
@@ -486,6 +544,7 @@ function removeThinkingAnimation() {
 function newChat(goToLanding = false) {
   activeChatId = crypto.randomUUID();
   _registerSession(activeChatId);   // daftarkan ke registry user ini
+  _saveActiveChat(activeChatId);    // track sesi terbaru untuk restore setelah refresh
   conversationHistory = [];
   messages.innerHTML = "";
 
@@ -563,6 +622,140 @@ function startFromLanding() {
 
   // Send via the same sendMessage() logic, passing text directly
   sendMessage(text);
+}
+
+/**
+ * Tampilkan welcome card saat greeting — dengan quick action suggestions
+ */
+function _buildGreetingCards(suggestions) {
+  return suggestions.map(s => `
+    <button class="greeting-suggestion-card" onclick="sendMessage('${s.title}')">
+      <div class="greeting-suggestion-icon">
+        <span class="material-symbols-outlined" style="font-variation-settings:'FILL' 1,'wght' 400,'GRAD' 0,'opsz' 24;">${s.icon}</span>
+      </div>
+      <div class="greeting-suggestion-body">
+        <span class="greeting-suggestion-title">${s.title}</span>
+        <span class="greeting-suggestion-sub">${s.sub}</span>
+      </div>
+      <span class="material-symbols-outlined greeting-suggestion-arrow">chevron_right</span>
+    </button>`).join('');
+}
+
+async function _showGreetingCard() {
+  const messages = document.getElementById('messages');
+  if (!messages) return;
+
+  const firstName = window.DenaiApp?.sintaUserData?.first_name
+    || window.DenaiApp?.sintaUserData?.nama
+    || 'Anda';
+
+  // Buat bubble dulu, suggestions menyusul setelah fetch
+  const msgDiv = document.createElement('div');
+  msgDiv.className = 'msg bot';
+
+  const avatar = document.createElement('div');
+  avatar.className = 'avatar';
+  avatar.innerHTML = `<span class="material-symbols-outlined" style="font-variation-settings:'FILL' 1,'wght' 400,'GRAD' 0,'opsz' 24;">auto_awesome</span>`;
+
+  const chatColumn = document.createElement('div');
+  chatColumn.className = 'chat-column';
+
+  const label = document.createElement('div');
+  label.className = 'denai-response-label';
+  label.textContent = 'DENAI RESPONSE';
+
+  const _isHC = window.DenaiApp?.isHR === true;
+  const _greetingSub = _isHC
+    ? 'Apa yang ingin Anda kelola hari ini?'
+    : 'Ada yang bisa DENAI bantu hari ini?';
+  const _role = _isHC ? 'hc' : 'employee';
+
+  const bubble = document.createElement('div');
+  bubble.className = 'bubble greeting-card';
+  bubble.innerHTML = `
+    <div class="greeting-header">
+      <p class="greeting-name">Halo, ${firstName}!</p>
+      <p class="greeting-sub">${_greetingSub}</p>
+    </div>
+    <div class="greeting-suggestions">
+      <div class="greeting-suggestion-loading">Memuat topik populer...</div>
+    </div>`;
+
+  // Simpan referensi langsung — bukan getElementById agar tidak salah ambil card lama
+  const suggestionsEl = bubble.querySelector('.greeting-suggestions');
+
+  chatColumn.appendChild(label);
+  chatColumn.appendChild(bubble);
+  msgDiv.appendChild(avatar);
+  msgDiv.appendChild(chatColumn);
+  messages.appendChild(msgDiv);
+  messages.scrollTop = messages.scrollHeight;
+
+  // Fetch top topics dari backend (role-aware)
+  try {
+    const res = await fetch(`${window.API_URL}/api/topics/popular?limit=4&role=${_role}`);
+    const data = res.ok ? await res.json() : null;
+    const suggestions = data?.topics?.length ? data.topics : null;
+    if (suggestions) {
+      suggestionsEl.innerHTML = _buildGreetingCards(suggestions);
+    } else {
+      suggestionsEl.remove();
+    }
+  } catch (e) {
+    suggestionsEl?.remove();
+  }
+}
+
+/**
+ * Tampilkan error card saat server sibuk / rate limit
+ */
+function _showRateLimitCard() {
+  const messages = document.getElementById('messages');
+  if (!messages) return;
+
+
+  const msgDiv = document.createElement('div');
+  msgDiv.className = 'msg bot';
+
+  const avatar = document.createElement('div');
+  avatar.className = 'avatar';
+  avatar.innerHTML = `<span class="material-symbols-outlined" style="font-variation-settings:'FILL' 1,'wght' 400,'GRAD' 0,'opsz' 24;">auto_awesome</span>`;
+
+  const chatColumn = document.createElement('div');
+  chatColumn.className = 'chat-column';
+
+  const label = document.createElement('div');
+  label.className = 'denai-response-label';
+  label.textContent = 'DENAI RESPONSE';
+
+  const bubble = document.createElement('div');
+  bubble.className = 'bubble rate-limit-card';
+  bubble.innerHTML = `
+    <div class="rl-header">
+      <span class="material-symbols-outlined rl-icon" style="font-variation-settings:'FILL' 1,'wght' 400,'GRAD' 0,'opsz' 24;">cloud_off</span>
+      <h3 class="rl-title">Layanan Tidak Tersedia Sementara</h3>
+    </div>
+    <p class="rl-desc">Server sedang melayani banyak permintaan. Mohon tunggu sebentar dan coba lagi.</p>
+    <div class="rl-steps">
+      <p class="rl-steps-title"><span class="material-symbols-outlined" style="font-size:15px;vertical-align:-3px">info</span> Langkah yang dapat diambil:</p>
+      <ul>
+        <li>Tunggu 1–2 menit sebelum mencoba lagi.</li>
+        <li>Periksa koneksi internet Anda.</li>
+        <li>Hubungi Admin HR jika masalah berlanjut.</li>
+      </ul>
+    </div>
+    <div class="rl-actions">
+      <button class="rl-btn-primary" onclick="window.CoreApp?._retryLastQuestion()">
+        <span class="material-symbols-outlined" style="font-size:16px">refresh</span> Coba Lagi
+      </button>
+    </div>`;
+
+  chatColumn.appendChild(label);
+  chatColumn.appendChild(bubble);
+  msgDiv.appendChild(avatar);
+  msgDiv.appendChild(chatColumn);
+  messages.appendChild(msgDiv);
+  messages.scrollTop = messages.scrollHeight;
 }
 
 /**
@@ -690,6 +883,112 @@ function _buildNotFoundCard() {
 }
 
 /**
+ * Strip inline [1] [2] citations from displayed text.
+ * LLM masih outputnya [N] tapi user tidak perlu melihatnya.
+ */
+function _stripCitations(html) {
+  return html.replace(/\s*\[(\d+)\]/g, '');
+}
+
+/**
+ * Builds Rujukan Dokumen cards — GROUPED by filename.
+ * Satu card per dokumen unik; bagian-bagian digabung.
+ * Menyimpan data ke window._rujukanIndex untuk DocPanel.
+ */
+function _buildRujukanCards(grouped) {
+  if (!grouped.length) return '';
+  const ICONS = ['description', 'account_balance_wallet', 'health_and_safety', 'gavel', 'policy'];
+
+  // Simpan untuk DocPanel.openByIdx()
+  window._rujukanIndex = grouped;
+
+  // Capture session_id saat card dibangun — bisa dipakai setelah refresh
+  const _currentSessionId = window.CoreApp?.activeChatId || '';
+
+  const cards = grouped.map((src, idx) => {
+    const icon = ICONS[idx % ICONS.length];
+    const isLastOdd = (idx === grouped.length - 1) && (grouped.length % 2 !== 0);
+    const bagianDisplay = src.bagians.filter(Boolean).join(', ');
+    return `<div class="rujukan-card${isLastOdd ? ' rujukan-card--full' : ''}" onclick="window.DocPanel?.openByIdx(${idx},'${_currentSessionId}')" title="Lihat dokumen">
+      <div class="rujukan-card-shimmer"></div>
+      <div class="rujukan-card-inner">
+        <div class="rujukan-card-icon">
+          <span class="material-symbols-outlined" style="font-variation-settings:'FILL' 1,'wght' 400,'GRAD' 0,'opsz' 24;">${icon}</span>
+        </div>
+        <div class="rujukan-card-body">
+          <p class="rujukan-card-label">Rujukan Dokumen</p>
+          <p class="rujukan-card-title">${src.fileName}</p>
+          ${bagianDisplay ? `<span class="rujukan-card-bagian">${bagianDisplay}</span>` : ''}
+        </div>
+        <span class="rujukan-card-open material-symbols-outlined">open_in_new</span>
+      </div>
+    </div>`;
+  }).join('');
+
+  return `<div class="rujukan-section">
+    <div class="rujukan-header">
+      <span class="material-symbols-outlined rujukan-header-icon">menu_book</span>
+      <span class="rujukan-header-title">Rujukan Dokumen</span>
+    </div>
+    <div class="rujukan-grid">${cards}</div>
+  </div>`;
+}
+
+/**
+ * Post-processes rendered bot HTML:
+ * 1. Ekstrak Rujukan Dokumen → group by filename → build cards
+ * 2. Strip inline [N] dari teks tampilan
+ */
+function _postProcessBotHTML(html) {
+  if (!html) return html;
+
+  const parser = new DOMParser();
+  const doc = parser.parseFromString(`<div id="__root">${html}</div>`, 'text/html');
+  const root = doc.getElementById('__root');
+  if (!root) return html;
+
+  // Cari h3 "Rujukan Dokumen"
+  let rujukanH3 = null;
+  for (const h3 of root.querySelectorAll('h3')) {
+    if (h3.textContent.trim().toLowerCase().includes('rujukan dokumen')) {
+      rujukanH3 = h3;
+      break;
+    }
+  }
+
+  let rujukanHTML = '';
+  if (rujukanH3) {
+    const ul = rujukanH3.nextElementSibling;
+    if (ul && ul.tagName === 'UL') {
+      const items = Array.from(ul.querySelectorAll('li'));
+
+      // Group by fileName
+      const groupMap = new Map();
+      items.forEach(li => {
+        const liHTML = li.innerHTML;
+        const fileMatch  = liHTML.match(/<\/strong>\s*([^|<]+)\|/);
+        const bagianMatch = liHTML.match(/Bagian:<\/strong>\s*([^<]+)/i);
+        const fileName = fileMatch  ? fileMatch[1].trim()  : 'Dokumen';
+        const bagian   = bagianMatch ? bagianMatch[1].trim() : '';
+        if (!groupMap.has(fileName)) groupMap.set(fileName, []);
+        if (bagian && !groupMap.get(fileName).includes(bagian)) {
+          groupMap.get(fileName).push(bagian);
+        }
+      });
+
+      const grouped = Array.from(groupMap.entries()).map(([fileName, bagians]) => ({ fileName, bagians }));
+      rujukanHTML = _buildRujukanCards(grouped);
+      ul.remove();
+    }
+    rujukanH3.remove();
+  }
+
+  // Strip inline [N] dari teks
+  const bodyHTML = _stripCitations(root.innerHTML);
+  return bodyHTML + rujukanHTML;
+}
+
+/**
  * Renders bot bubble inner HTML — special card for "not found", markdown for everything else.
  */
 function _renderBotBubbleContent(text) {
@@ -730,17 +1029,19 @@ function _renderBotBubbleContent(text) {
     try {
       const rendered = marked.parse(text);
       // Catch any ** that marked failed to render (e.g. from vector DB markdown content)
-      return rendered
+      const withInline = rendered
         .replace(/\*\*([^*<\n]+)\*\*/g, '<strong>$1</strong>')
         .replace(/(?<!\*)\*(?!\*)([^*<\n]+)(?<!\*)\*(?!\*)/g, '<em>$1</em>');
+      return _postProcessBotHTML(withInline);
     } catch (e) {
       // marked threw — fall through to manual conversion
     }
   }
   // Fallback: manual inline markdown conversion
-  return text
+  const fallback = text
     .replace(/\*\*([^*\n]+)\*\*/g, '<strong>$1</strong>')
     .replace(/(?<!\*)\*(?!\*)([^*\n]+)(?<!\*)\*(?!\*)/g, '<em>$1</em>');
+  return _postProcessBotHTML(fallback);
 }
 
 /**
@@ -1252,10 +1553,211 @@ function setupEventListeners() {
   });
 }
 
+/* ================= DOCUMENT PANEL ================= */
+window.DocPanel = (() => {
+  let _openUrl = '';
+
+  const panel   = () => document.getElementById('docSourcePanel');
+  const overlay = () => document.getElementById('docPanelOverlay');
+  const loading = () => document.getElementById('docPanelLoading');
+  const content = () => document.getElementById('docPanelContent');
+  const error   = () => document.getElementById('docPanelError');
+  const openBtn = () => document.getElementById('dpOpenBtn');
+
+  /** Load chunks dari sessionStorage — coba session-specific dulu, fallback ke 'last' */
+  function _loadCachedChunks(sessionId) {
+    try {
+      const sid = sessionId || window.CoreApp?.activeChatId;
+      if (sid) {
+        const raw = sessionStorage.getItem(`dp_chunks_${sid}`);
+        if (raw) return JSON.parse(raw);
+      }
+      // Fallback: ambil dari response terakhir manapun
+      const rawLast = sessionStorage.getItem('dp_chunks_last');
+      return rawLast ? JSON.parse(rawLast) : null;
+    } catch (e) { return null; }
+  }
+
+  /** Buka panel berdasarkan index dari window._rujukanIndex (hasil grouping) */
+  function openByIdx(idx, sessionId) {
+    const src = window._rujukanIndex?.[idx];
+    if (!src) return;
+    const cachedChunks = window._lastSourceChunks || _loadCachedChunks(sessionId);
+    open(src.fileName, src.bagians, cachedChunks);
+  }
+
+  /** Auto-highlight angka legal, nominal rupiah, persentase, durasi waktu */
+  function _highlightText(text) {
+    // Escape HTML dulu
+    const safe = text
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;');
+
+    return safe
+      // Angka tulis Indonesia: "4 (empat)", "18 (delapan belas)"
+      .replace(/\d+(?:[.,]\d+)*\s*\([^)]{2,40}\)/g, m => `<span class="dp-hl">${m}</span>`)
+      // Nominal Rupiah: Rp 1.000.000 / Rp1.500.000,-
+      .replace(/Rp\.?\s*[\d.,]+(?:,-)?/gi, m => `<span class="dp-hl">${m}</span>`)
+      // Persentase: 150%, 50%
+      .replace(/\d+(?:[.,]\d+)?\s*%/g, m => `<span class="dp-hl">${m}</span>`)
+      // Durasi: "4 jam", "14 hari", "18 jam", "1 minggu"
+      .replace(/\b\d+\s*(?:jam|hari|minggu|bulan|tahun)\b/gi, m => `<span class="dp-hl">${m}</span>`)
+      // US Dollar: US$ 100 / USD 500
+      .replace(/(?:US\$|USD)\s*[\d.,]+/gi, m => `<span class="dp-hl">${m}</span>`);
+  }
+
+  function _decodeHTML(str) {
+    const txt = document.createElement('textarea');
+    txt.innerHTML = str;
+    return txt.value;
+  }
+
+  function _normalize(name) {
+    return _decodeHTML(name).toLowerCase().replace(/[\s_\-&,\.()]+/g, ' ').trim();
+  }
+
+  function _findChunks(fileName, bagians, providedChunks) {
+    const chunks = providedChunks || window._lastSourceChunks || _loadCachedChunks();
+    if (!chunks?.length) return [];
+    const q = _normalize(fileName);
+
+    // 1. Semua chunk dari file ini
+    const byFile = chunks.filter(c => {
+      const f = _normalize(c.file);
+      return f === q || f.includes(q) || q.includes(f);
+    });
+    if (!byFile.length) return [];
+
+    // 2. Filter berdasarkan array bagians
+    const bagianList = Array.isArray(bagians) ? bagians : bagians ? [bagians] : [];
+    if (bagianList.length) {
+      const byBab = byFile.filter(c =>
+        bagianList.some(bq => {
+          const b   = _normalize(c.bab || '');
+          const bqn = _normalize(bq);
+          return b === bqn || b.includes(bqn) || bqn.includes(b);
+        })
+      );
+      if (byBab.length) return byBab;
+    }
+
+    // 3. Fallback: semua chunk dari file itu
+    return byFile;
+  }
+
+  function open(fileName, bagian, cachedChunks) {
+    const base = window.API_URL || '';
+    _openUrl     = `${base}/api/docs/open?name=${encodeURIComponent(fileName)}`;
+
+    // Tampilkan panel
+    panel()?.classList.add('open');
+    overlay()?.classList.add('open');
+    document.body.style.overflow = 'hidden';
+
+    // Set state loading sebentar lalu isi konten
+    loading().style.display = 'flex';
+    content().style.display = 'none';
+    error().style.display   = 'none';
+    if (openBtn()) openBtn().disabled = false;
+
+    // Cari chunks yang cocok dari cache last response
+    const matched = _findChunks(fileName, bagian, cachedChunks);
+
+    // Isi nama file
+    const fnEl = document.getElementById('dpFileName');
+    if (fnEl) fnEl.textContent = fileName;
+
+    // Sembunyikan badge halaman (tidak dipakai)
+    const pagesEl = document.getElementById('dpPages');
+    if (pagesEl) pagesEl.style.display = 'none';
+
+    // Bagian — tampilkan semua pasal yang dikutip (joined)
+    const bagianWrap = document.getElementById('dpBagianWrap');
+    const bagianEl   = document.getElementById('dpBagian');
+    const bagianArr  = Array.isArray(bagian) ? bagian : bagian ? [bagian] : [];
+    const babText    = bagianArr.filter(Boolean).join(', ') || matched[0]?.bab || '';
+    if (babText && bagianWrap && bagianEl) {
+      bagianEl.textContent = babText;
+      bagianWrap.style.display = '';
+    } else if (bagianWrap) {
+      bagianWrap.style.display = 'none';
+    }
+
+    // Preview: gabung semua chunk dari file ini
+    const previewWrap = document.getElementById('dpPreviewWrap');
+    const previewEl   = document.getElementById('dpPreviewText');
+    if (matched.length && previewEl) {
+      // Tampilkan chunk per chunk dengan pemisah bab
+      previewEl.innerHTML = matched.map((c, i) => {
+        const numClass = i === 0 ? 'dp-chunk-num--primary' : 'dp-chunk-num--dark';
+        const babLabel = c.bab
+          ? `<div class="dp-chunk-header">
+               <span class="dp-chunk-num ${numClass}">${i + 1}</span>
+               <span class="dp-chunk-bab">${c.bab}</span>
+             </div>`
+          : '';
+        return `<div class="dp-chunk">
+          ${babLabel}
+          <div class="dp-chunk-content">
+            <p class="dp-chunk-text">${_highlightText(c.text)}</p>
+          </div>
+        </div>`;
+      }).join('');
+      if (previewWrap) previewWrap.style.display = '';
+    } else if (previewWrap) {
+      previewWrap.style.display = 'none';
+    }
+
+    // Tampilkan konten
+    loading().style.display = 'none';
+    if (matched.length) {
+      content().style.display = 'flex';
+    } else {
+      // Tidak ada chunk cache → fallback fetch preview
+      content().style.display = 'none';
+      loading().style.display = 'flex';
+      fetch(`${base}/api/docs/preview?name=${encodeURIComponent(fileName)}`)
+        .then(r => r.ok ? r.json() : Promise.reject())
+        .then(data => {
+          if (fnEl) fnEl.textContent = data.filename || fileName;
+          if (previewEl && data.preview_text) {
+            previewEl.innerHTML = `<div class="dp-chunk"><div class="dp-chunk-content"><p class="dp-chunk-text">${_highlightText(data.preview_text)}</p></div></div>`;
+            if (previewWrap) previewWrap.style.display = '';
+          }
+          loading().style.display = 'none';
+          content().style.display = 'flex';
+        })
+        .catch(() => {
+          loading().style.display = 'none';
+          content().style.display = 'flex'; // tetap tampilkan nama + tombol
+        });
+    }
+  }
+
+  function close() {
+    panel()?.classList.remove('open');
+    overlay()?.classList.remove('open');
+    document.body.style.overflow = '';
+  }
+
+  function openPDF() {
+    if (_openUrl) window.open(_openUrl, '_blank');
+    close();
+  }
+
+  // Tutup dengan Escape
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape' && panel()?.classList.contains('open')) close();
+  });
+
+  return { open, close, openPDF, openByIdx };
+})();
+
 /* ================= GLOBAL EXPORTS ================= */
 window.CoreApp = {
   get activeChatId() { return activeChatId; },
-  set activeChatId(value) { activeChatId = value; },
+  set activeChatId(value) { activeChatId = value; _saveActiveChat(value); }, // auto-track saat loadSession set ini
   get userRole() { return userRole; },
   set userRole(value) { userRole = value; },
   get isHR() { return isHR; },
@@ -1274,6 +1776,12 @@ window.CoreApp = {
   _showFeedbackBox,
   _cancelFeedbackBox,
   _submitFeedbackWithComment,
+  _showRateLimitCard,
+  _showGreetingCard,
+  _retryLastQuestion: () => {
+    const lastQ = window._lastUserQuestion;
+    if (lastQ) window.askBackend?.(lastQ);
+  },
   toggleHRAccess,
   switchRole,
   toggleRoleMenu,
@@ -1286,6 +1794,7 @@ window.CoreApp = {
   regenerateLastQuery,
   regenerateQuery, // 🔥 NEW
   stripHtml,
+  _postProcessBotHTML,
   newChat,
   createSystemBubble,
   detectVisualizationQuery,

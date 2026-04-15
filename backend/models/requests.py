@@ -18,6 +18,7 @@ class QuestionRequest(BaseModel):
     session_id: Optional[str] = None
     user_role: Optional[str] = "Employee"
     mode: Optional[str] = "chat"  # Added to support call/chat mode differentiation
+    user_context: Optional[Dict[str, Any]] = None  # Context user dari SINTA (nama, band, lokasi, dll)
 
 class TTSRequest(BaseModel):
     """Text-to-speech request"""

@@ -74,13 +74,19 @@ class TravelAnalyzer:
         try:
             # ✅ FIX: Menggunakan ainvoke (Async Invoke)
             response = await self.llm_client.ainvoke(prompt)
-            hours = float(re.sub(r'[^\d.]', '', response.content))
+            cleaned = re.sub(r'[^\d.]', '', response.content.strip())
+            hours = float(cleaned) if cleaned else 0.0
+            # Guard: if parsed as 0 or implausibly large, use 3-hour fallback
+            if hours <= 0 or hours > 24:
+                logger.warning(f"⚠️ Flight duration parse suspicious ({hours}h) for {origin}→{destination}, using fallback 3.0h")
+                hours = 3.0
+            logger.info(f"✈️ Flight duration estimated: {origin}→{destination} = {hours} hrs")
             data = {'distance_km': 0, 'duration_hours': hours, 'source': 'llm_flight_estimate'}
             _flight_cache[cache_key] = data
             return data
         except Exception as e:
             logger.error(f"❌ Gagal menebak durasi penerbangan: {e}")
-            return {'distance_km': 0, 'duration_hours': 0, 'source': 'error'}
+            return {'distance_km': 0, 'duration_hours': 3.0, 'source': 'error_fallback'}
 
     async def _calculate_distance_async(self, origin: str, destination: str) -> Dict:
         cache_key = f"{origin.lower()}-{destination.lower()}"

@@ -1,4 +1,14 @@
 /* ================= SESSION MANAGEMENT MODULE - ENHANCED ================= */
+
+/** Header auth — sertakan X-Auth-Session di setiap request ke backend */
+function _authHeaders(extra) {
+  const sid = window.DenaiApp?.sintaUserData?.session_id;
+  return {
+    'Accept': 'application/json',
+    ...(sid ? { 'X-Auth-Session': sid } : {}),
+    ...(extra || {})
+  };
+}
 /**
  * 💾 SESSIONS: Chat history, persistence, and session management
  * 🔥 NEW: Restore "stopped response" messages from history WITHOUT action buttons
@@ -14,7 +24,7 @@ let _loadSessionsPending = false;
 async function togglePinSession(sessionId, event) {
   event.stopPropagation();
   try {
-    const response = await fetch(`${window.API_URL}/sessions/${sessionId}/pin`, { method: 'POST', headers: { 'Accept': 'application/json' } });
+    const response = await fetch(`${window.API_URL}/sessions/${sessionId}/pin`, { method: 'POST', headers: _authHeaders() });
     if (response.ok) await loadSessions();
   } catch (error) { console.error('Failed to pin session:', error); }
 }
@@ -23,7 +33,7 @@ const MAX_SESSIONS = 25;
 
 async function handleNewChat() {
   try {
-    const res = await fetch(`${window.API_URL}/sessions/`, { headers: { "Accept": "application/json" } });
+    const res = await fetch(`${window.API_URL}/sessions/`, { headers: _authHeaders() });
     if (res.ok) {
       const sessions = await res.json();
       const unpinned = sessions.filter(s => !s.pinned);
@@ -31,7 +41,7 @@ async function handleNewChat() {
         // Hapus chat paling lama (terakhir di list, karena list diurutkan terbaru dulu)
         const oldest = unpinned[unpinned.length - 1];
         await fetch(`${window.API_URL}/sessions/${oldest.session_id}`, {
-          method: 'DELETE', headers: { 'Accept': 'application/json' }
+          method: 'DELETE', headers: _authHeaders()
         });
       }
     }
@@ -46,12 +56,21 @@ async function deleteSession(sessionId, event) {
   const confirmed = confirm('Are you sure you want to delete this conversation?');
   if (!confirmed) return;
   try {
-    const response = await fetch(`${window.API_URL}/sessions/${sessionId}`, { method: 'DELETE', headers: { 'Accept': 'application/json' } });
+    const response = await fetch(`${window.API_URL}/sessions/${sessionId}`, { method: 'DELETE', headers: _authHeaders() });
     if (response.ok) {
       if (window.CoreApp && sessionId === window.CoreApp.activeChatId) {
         window.CoreApp.activeChatId = null; window.CoreApp.conversationHistory = []; window.CoreApp.messages.innerHTML = "";
         window.CoreApp.landing.style.display = "flex"; window.CoreApp.chat.style.display = "none";
       }
+      // Bersihkan lastActive jika sesi yang dihapus adalah sesi terakhir yang disimpan
+      try {
+        const _key = 'denai_active_chat';
+        if (sessionStorage.getItem(_key) === sessionId) sessionStorage.removeItem(_key);
+        const _nik = window.CoreApp?.sintaUserData?.nik;
+        if (_nik && localStorage.getItem(`${_key}_${_nik}`) === sessionId) {
+          localStorage.removeItem(`${_key}_${_nik}`);
+        }
+      } catch(e) {}
       await loadSessions();
     }
   } catch (error) { console.error('Failed to delete session:', error); }
@@ -99,7 +118,7 @@ async function loadSessions() {
   _loadSessionsPending = false;
 
   try {
-    const res = await fetch(`${window.API_URL}/sessions/`, { headers: { "Accept": "application/json" } });
+    const res = await fetch(`${window.API_URL}/sessions/`, { headers: _authHeaders() });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const sessions = await res.json();
     const list = document.getElementById("sessionList");
@@ -193,7 +212,7 @@ async function loadSession(sessionId) {
       window.CoreApp.landing.style.display = "none"; window.CoreApp.chat.style.display = "flex";
     }
 
-    const res = await fetch(`${window.API_URL}/history/${sessionId}`, { headers: { "Accept": "application/json" } });
+    const res = await fetch(`${window.API_URL}/history/${sessionId}`, { headers: _authHeaders() });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const history = await res.json();
 
@@ -206,6 +225,9 @@ async function loadSession(sessionId) {
           // 🔥 FIX: Handle stopped messages smoothly
           if (m.role === "stopped" || (m.message && m.message.includes("__STOPPED_RESPONSE__"))) {
             showStoppedResponseFromHistory(m);
+          } else if (m.role === "assistant" && m.message === "[GREETING_CARD]") {
+            // Re-render greeting card dari history
+            window.CoreApp?._showGreetingCard();
           } else {
             window.CoreApp.addMessage(m.role, m.message, false, m);
             const textForHistory = m.role === "user" ? m.message : window.CoreApp.stripHtml(m.message);
@@ -365,7 +387,7 @@ async function scanAndRenderHiddenPayloads(sessionId) {
 
 async function exportSessionHistory(sessionId, format = 'json') {
   try {
-    const res = await fetch(`${window.API_URL}/history/${sessionId}`, { headers: { "Accept": "application/json" } });
+    const res = await fetch(`${window.API_URL}/history/${sessionId}`, { headers: _authHeaders() });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const history = await res.json();
     let content = ''; let filename = `conversation_${sessionId}_${Date.now()}`; let mimeType = 'application/json';
@@ -387,7 +409,7 @@ async function clearAllSessions() {
   const confirmed = confirm('Are you sure you want to delete ALL conversations?');
   if (!confirmed) return;
   try {
-    const response = await fetch(`${window.API_URL}/sessions/clear-all`, { method: 'DELETE', headers: { 'Accept': 'application/json' } });
+    const response = await fetch(`${window.API_URL}/sessions/clear-all`, { method: 'DELETE', headers: _authHeaders() });
     if (response.ok) {
       if (window.CoreApp) {
         window.CoreApp.activeChatId = null; window.CoreApp.conversationHistory = []; window.CoreApp.messages.innerHTML = "";

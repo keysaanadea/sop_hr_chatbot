@@ -37,16 +37,23 @@ class HRTravelPolicy:
         return tool_info
         
     @staticmethod
-    def get_international_policy_injection(route_str: str, dur_hrs: float) -> str:
+    def get_international_policy_injection(route_str: str, dur_hrs: float, idr_rate: float = 0.0) -> str:
+        _currency_note = ""
+        if idr_rate and idr_rate > 0:
+            _currency_note = (
+                f"\n   Kurs saat ini: 1 USD = Rp {idr_rate:,.0f} (diperbarui otomatis)."
+                f"\n   Tampilkan setiap nominal dalam format: US $X (≈ Rp Y) agar karyawan mudah memahami."
+            ).replace(",", ".")
         return f"""\n\n=== INFO SISTEM (ESTIMASI PENERBANGAN LUAR NEGERI) ===
 Rute: {route_str}
 Estimasi Durasi Terbang: {dur_hrs} jam
 
-🚨 INSTRUKSI MUTLAK LUAR NEGERI (WAJIB PATUH!):
-1. KELAS PESAWAT: Gunakan angka durasi terbang ({dur_hrs} jam) untuk menentukan hak kelas pesawat (Ekonomi jika < 6 jam, Bisnis jika > 6 jam).
-2. MATA UANG: Ini LUAR NEGERI! WAJIB gunakan mata uang asing (US $). DILARANG KERAS MENGGUNAKAN RUPIAH (Rp)!
-3. 👥 ATURAN BAND & PELATIHAN (SANGAT PENTING):
-   - JIKA user TIDAK menyebutkan Band (jabatan) secara spesifik, Anda WAJIB menjabarkan tarif UPD untuk SEMUA Band (Band 1, Band 2, Band 3-5) secara lengkap!
-   - 🧮 RUMUS PELATIHAN (DISKON 50%): Tarif UPD-LN untuk "Tujuan Pelatihan/Training" adalah TEPAT 50% (setengah) dari tarif UPD-LN Umum. Anda WAJIB menghitung diskon 50% ini dan menampilkannya untuk setiap Band!
+🚨 INSTRUKSI MUTLAK LUAR NEGERI (WAJIB PATUH TANPA TERKECUALI!):
+1. WAJIB AWALI JAWABAN dengan menyebutkan Rute dan Estimasi Durasi Terbang dari INFO SISTEM ini, lalu terapkan aturan kelas pesawat dari [KNOWLEDGE BASE] berdasarkan durasi {dur_hrs} jam tersebut dan sebutkan hasilnya secara eksplisit.
+2. MATA UANG: Ini LUAR NEGERI! Tarif UPD-LN dalam US $.{_currency_note}
+3. 👥 TAMPILAN UPD WAJIB — SELALU TAMPILKAN 2 OPSI BERIKUT untuk SEMUA Band (Band 1, Band 2, Band 3-5):
+   a. UPD Umum (tarif penuh sesuai tabel)
+   b. UPD Pelatihan/Training/Workshop = TEPAT 50% dari tarif UPD Umum (hitung dan tampilkan angkanya per Band)
+   🚨 KEDUA OPSI INI WAJIB SELALU DITAMPILKAN meski user tidak minta — agar karyawan tahu perbedaannya!
 4. ANTI-HALUSINASI NEGARA: Cari tarif sesuai negara di tabel. Jika tidak ada, gunakan tarif "Negara Terdekat".
 """

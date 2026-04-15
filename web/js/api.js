@@ -10,6 +10,9 @@
 async function askBackend(text) {
   if (window.CoreApp?.isWaitingForResponse && !window.isCallModeActive) return;
 
+  // Simpan pertanyaan terakhir untuk tombol "Coba Lagi"
+  window._lastUserQuestion = text;
+
   window.CoreApp?.setInputState(true);
 
   const controller = new AbortController();
@@ -24,10 +27,21 @@ async function askBackend(text) {
     window.SpeechModule?.playProcessingFeedback();
   }
 
+  const _sd = window.DenaiApp?.sintaUserData;
   const payload = {
     question: text,
     session_id: window.CoreApp?.activeChatId || null,
-    user_role: window.CoreApp?.userRole || "Employee"
+    user_role: window.CoreApp?.userRole || "Employee",
+    // Kirim user context dari SINTA agar band/lokasi tetap ter-inject meski buka sesi lama
+    user_context: _sd ? {
+      nama: _sd.nama || "",
+      first_name: _sd.first_name || _sd.nama || "",
+      nik: _sd.nik || "",
+      band: _sd.band || "",
+      band_angka: _sd.band_angka || "0",
+      lokasi: _sd.lokasi || "",
+      role: _sd.role || window.CoreApp?.userRole || "karyawan",
+    } : null
   };
 
   let streamingBubble = null;
@@ -36,9 +50,14 @@ async function askBackend(text) {
   try {
     const timeoutId = setTimeout(() => controller.abort(), 120000);
 
+    const _authSid = window.DenaiApp?.sintaUserData?.session_id || '';
     const res = await fetch(`${window.API_URL}/ask/stream`, {
       method: "POST",
-      headers: { "Content-Type": "application/json", "Accept": "text/event-stream" },
+      headers: {
+        "Content-Type": "application/json",
+        "Accept": "text/event-stream",
+        ...(_authSid ? { "X-Auth-Session": _authSid } : {})
+      },
       body: JSON.stringify(payload),
       signal: controller.signal
     });
@@ -80,14 +99,32 @@ async function askBackend(text) {
           fullAnswer += event.content;
           if (streamingBubble) {
             try {
-              streamingBubble.innerHTML = (typeof marked !== 'undefined')
+              let rendered = (typeof marked !== 'undefined')
                 ? marked.parse(fullAnswer)
                 : fullAnswer;
+
+              const hasRujukan = fullAnswer.includes('Rujukan Dokumen');
+              const postProcess = window.CoreApp?._postProcessBotHTML;
+
+              if (hasRujukan && postProcess) {
+                // Rujukan sudah muncul → proses jadi cards langsung
+                rendered = postProcess(rendered);
+              } else {
+                // Belum ada Rujukan → cukup strip [N] dari teks
+                rendered = rendered.replace(/\s*\[\d+\]/g, '');
+              }
+
+              streamingBubble.innerHTML = rendered;
             } catch (e) {
               streamingBubble.innerHTML = fullAnswer;
             }
+            // Auto-scroll hanya kalau user sudah dekat bawah (≤120px dari bottom)
+            // Kalau user scroll ke atas, biarkan — jangan ganggu
             const msgs = document.getElementById("messages");
-            if (msgs) msgs.scrollTop = msgs.scrollHeight;
+            if (msgs) {
+              const distFromBottom = msgs.scrollHeight - msgs.scrollTop - msgs.clientHeight;
+              if (distFromBottom <= 120) msgs.scrollTop = msgs.scrollHeight;
+            }
           }
 
         } else if (event.type === "stream_clear") {
@@ -96,6 +133,15 @@ async function askBackend(text) {
           if (streamingBubble) streamingBubble.innerHTML = "";
 
         } else if (event.type === "done") {
+          // Simpan source chunks agar DocPanel bisa tampilkan teks kutipan asli
+          window._lastSourceChunks = event.source_chunks?.length ? event.source_chunks : null;
+          // Persist ke sessionStorage — dua key: session-specific + 'last' sebagai fallback
+          if (window._lastSourceChunks) {
+            const _sid = event.session_id || window.CoreApp?.activeChatId;
+            const _json = JSON.stringify(window._lastSourceChunks);
+            try { sessionStorage.setItem('dp_chunks_last', _json); } catch(e) {}
+            if (_sid) try { sessionStorage.setItem(`dp_chunks_${_sid}`, _json); } catch(e) {}
+          }
           window.CoreApp?.removeThinkingAnimation();
 
           // Replace SOP "not found" sentinel with a user-friendly message
@@ -107,8 +153,15 @@ async function askBackend(text) {
           }
 
           if (event.answer) {
-            // Non-streaming path (greeting / HR analytics)
+            // Non-streaming path (greeting / casual_chat / HR analytics)
             if (streamingBubble) { streamingBubble.closest(".msg")?.remove(); streamingBubble = null; }
+
+            // Greeting → render welcome card, skip normal bubble
+            if (event.message_type === "greeting") {
+              window.CoreApp?._showGreetingCard();
+              return;
+            }
+
             handleBackendResponse({
               answer: event.answer,
               session_id: event.session_id,
@@ -159,7 +212,11 @@ async function askBackend(text) {
         } else if (event.type === "error") {
           window.CoreApp?.removeThinkingAnimation();
           if (streamingBubble) { streamingBubble.closest(".msg")?.remove(); streamingBubble = null; }
-          window.CoreApp?.addMessage("bot", `❌ ${event.message}`);
+          if (event.error_code === "rate_limit") {
+            window.CoreApp?._showRateLimitCard();
+          } else {
+            window.CoreApp?.addMessage("bot", `❌ ${event.message}`);
+          }
 
         } else if (event.type === "cancelled") {
           _stopAndKeepPartial(streamingBubble, fullAnswer);

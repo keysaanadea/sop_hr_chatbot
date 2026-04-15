@@ -37,11 +37,15 @@ from app.config import (
 
 # Absolute Imports untuk semua router
 from backend.api.chat import router as chat_router
+from backend.api.deps import get_auth_nik
+from fastapi import Depends
 from backend.api.speech import router as speech_router
 from backend.api.sessions import router as sessions_router
 from backend.api.info import router as info_router
 from backend.api.schema import router as schema_router  # ✅ NEW: Schema Explorer
 from backend.api.auth import router as auth_router      # ✅ NEW: SINTA Integration
+from backend.api.docs import router as docs_router      # PDF serving
+from backend.api.topics import router as topics_router  # Topic frequency
 
 # ✅ FIX KUNCI: Import Recommender untuk melayani Endpoint Katalog Chart!
 from engines.hr.visualization.viz_recommender import UniversalVizRecommender
@@ -78,7 +82,7 @@ app.add_middleware(
     allow_origins=CORS_ORIGINS,
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-    allow_headers=["Content-Type", "Authorization", "Accept", "X-Requested-With"],
+    allow_headers=["Content-Type", "Authorization", "Accept", "X-Requested-With", "X-Auth-Session"],
 )
 
 # ✅ CLEAN ARCHITECTURE ROUTING
@@ -88,6 +92,8 @@ app.include_router(sessions_router, prefix="/sessions", tags=["Sessions"])
 app.include_router(info_router, prefix="", tags=["Info"])
 app.include_router(schema_router)                        # Schema Explorer routes (/api/schema/)
 app.include_router(auth_router, prefix="", tags=["Auth"])  # SINTA Integration (/auth/sinta)
+app.include_router(docs_router, prefix="", tags=["Docs"])   # PDF serving (/api/docs/open)
+app.include_router(topics_router, prefix="", tags=["Topics"])  # Topic frequency (/api/topics/popular)
 
 # ==============================================================================
 # 🎯 ENDPOINT VISUALISASI KEMBALI DIBUKA (Hanya untuk Katalog)
@@ -138,9 +144,20 @@ async def shutdown_event():
 
 # ✅ FIX: Mengembalikan endpoint alias untuk Frontend lama
 @app.get("/history/{session_id}")
-async def get_history_alias(session_id: str, limit: int = 50):
-    """Alias endpoint — Redis first, then Supabase"""
+async def get_history_alias(
+    session_id: str,
+    limit: int = 50,
+    auth_nik = Depends(get_auth_nik),
+):
+    """Alias endpoint — Redis first, then Supabase. Validasi kepemilikan jika NIK tersedia."""
     from memory.memory_hybrid import get_hybrid_history
+    from backend.api.sessions import get_session_owner
+    import asyncio as _asyncio
+    if auth_nik:
+        owner = await _asyncio.to_thread(get_session_owner, session_id)
+        if owner and owner != auth_nik:
+            from fastapi import HTTPException as _HTTPEx
+            raise _HTTPEx(status_code=403, detail="Access denied: session belongs to another user")
     return await get_hybrid_history(session_id, limit=min(limit, 200))
 
 

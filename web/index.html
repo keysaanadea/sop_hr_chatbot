@@ -537,6 +537,75 @@
     </div>
 </div>
 
+<!-- ================================================================
+     DOCUMENT SOURCE PANEL (slide-in dari kanan saat klik rujukan card)
+     ================================================================ -->
+<div id="docPanelOverlay" class="doc-panel-overlay" onclick="window.DocPanel?.close()"></div>
+<aside id="docSourcePanel" class="doc-source-panel" aria-hidden="true">
+    <div class="doc-panel-inner">
+        <!-- Header -->
+        <div class="doc-panel-head">
+            <div>
+                <h3 class="doc-panel-title">Dokumen Sumber</h3>
+                <p class="doc-panel-subtitle">Pratinjau &amp; Informasi Dokumen</p>
+            </div>
+            <button class="doc-panel-close" onclick="window.DocPanel?.close()" title="Tutup">
+                <span class="material-symbols-outlined">close</span>
+            </button>
+        </div>
+
+        <!-- Loading state -->
+        <div id="docPanelLoading" class="doc-panel-loading" style="display:none;">
+            <span class="material-symbols-outlined doc-panel-loading-icon">hourglass_top</span>
+            <span>Memuat dokumen...</span>
+        </div>
+
+        <!-- Content (diisi JS) -->
+        <div id="docPanelContent" class="doc-panel-scroll" style="display:none;">
+
+            <!-- File header card -->
+            <div class="doc-panel-file-card">
+                <div class="doc-panel-file-row">
+                    <span class="material-symbols-outlined doc-panel-file-icon" style="font-variation-settings:'FILL' 1;">description</span>
+                    <span id="dpFileName" class="doc-panel-file-name"></span>
+                </div>
+                <div class="doc-panel-badges">
+                    <span class="doc-badge doc-badge-internal">INTERNAL</span>
+                    <span class="doc-badge doc-badge-type">Policy (PDF)</span>
+                    <span id="dpPages" class="doc-badge doc-badge-pages"></span>
+                </div>
+            </div>
+
+            <!-- Bagian tag -->
+            <div id="dpBagianWrap" class="doc-panel-section" style="display:none;">
+                <p class="doc-panel-section-label">Bagian Dikutip</p>
+                <span id="dpBagian" class="doc-panel-bagian-tag"></span>
+            </div>
+
+            <!-- Content Preview -->
+            <div id="dpPreviewWrap" class="doc-panel-section">
+                <p class="doc-panel-section-label">Pratinjau Isi</p>
+                <div id="dpPreviewText" class="doc-panel-preview-text"></div>
+            </div>
+
+        </div>
+
+        <!-- Error state -->
+        <div id="docPanelError" class="doc-panel-error" style="display:none;">
+            <span class="material-symbols-outlined" style="font-size:32px;color:#b7131a;">error_outline</span>
+            <p>Dokumen tidak ditemukan di server.</p>
+        </div>
+
+        <!-- CTA Button (selalu ada di bawah) -->
+        <div class="doc-panel-footer">
+            <button id="dpOpenBtn" class="doc-panel-open-btn" onclick="window.DocPanel?.openPDF()">
+                <span>Buka Dokumen Lengkap</span>
+                <span class="material-symbols-outlined" style="font-size:16px;">open_in_new</span>
+            </button>
+        </div>
+    </div>
+</aside>
+
 <!-- Scripts -->
 <script src="js/config.js"></script>
 <script src="js/api.js"></script>

@@ -57,7 +57,7 @@ except Exception as e:
 # CORE HYBRID FUNCTIONS (FULLY ASYNC)
 # ---------------------------------------------------------
 
-async def setup_hybrid_session(session_id: str, initial_message: str):
+async def setup_hybrid_session(session_id: str, initial_message: str, nik: str = ""):
     """Membantu inisialisasi session pertama kali di Supabase.
     Cek Redis dulu — kalau sudah ada history, session pasti sudah terbuat, skip Supabase."""
     # Kalau Redis sudah ada history untuk session ini, session sudah terbuat — skip Supabase
@@ -73,7 +73,7 @@ async def setup_hybrid_session(session_id: str, initial_message: str):
         history = await get_recent_history_async(session_id, limit=1)
         if not history:
             # save_session masih sync, kita lempar ke thread agar aman
-            await asyncio.to_thread(save_session, session_id, initial_message[:50] + "...")
+            await asyncio.to_thread(save_session, session_id, initial_message[:50] + "...", nik)
             # Invalidate sessions list cache agar sidebar langsung tampil session baru
             try:
                 from backend.api.sessions import _invalidate_sessions_cache

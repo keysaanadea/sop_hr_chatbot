@@ -12,7 +12,9 @@ import asyncio
 import json
 import time
 import os
+import re
 import sys
+import html
 from typing import Optional, List, Dict, Any, Literal, Union, Callable
 
 try:
@@ -106,6 +108,52 @@ async def classify_intent_unified(
         "B" - HR Database queries
     """
     try:
+        _t0 = time.perf_counter()
+        question_normalized = (question or "").strip().lower()
+        question_compact = re.sub(r"\s+", " ", question_normalized).strip()
+
+        # Fast guard for short internal HR/SOP terms so they never get rejected as casual chat.
+        enterprise_terms = (
+            "pjk", "ppd", "upd", "upd-dn", "upd dn", "skorsing", "phk", "bap",
+            "wbs", "band", "nota peringatan", "sop", "kebijakan", "prosedur",
+            "perjalanan dinas", "lembur", "cuti", "disiplin", "tunjangan",
+            "reimbursement", "absensi", "boarding pass", "uang harian"
+        )
+        definition_cues = ("apa itu", "maksud", "artinya", "definisi", "jelaskan", "apa yang dimaksud")
+        policy_cues = (
+            "bagaimana", "syarat", "cara", "boleh", "apakah", "berapa", "kapan",
+            "kenapa", "hak", "aturan", "ketentuan", "proses", "prosedur"
+        )
+        social_chat_patterns = (
+            r"\bapa kabar\b",
+            r"\bgimana kabar\b",
+            r"\bbagaimana kabar\b",
+            r"\blagi apa\b",
+            r"\bsedang apa\b",
+            r"\bgimana hari( ini)?\b",
+            r"\bbagaimana hari( ini)?\b",
+            r"\bhow are you\b",
+            r"\bwhat'?s up\b",
+        )
+        is_enterprise_question = any(term in question_compact for term in enterprise_terms)
+        is_definition_question = any(cue in question_compact for cue in definition_cues)
+        is_policy_question = any(cue in question_compact for cue in policy_cues) or "?" in question_compact
+        is_social_small_talk = any(re.search(pattern, question_compact) for pattern in social_chat_patterns)
+
+        # Social small-talk is allowed only when it is clearly about the assistant/user mood/day,
+        # and does not ask for a business/HR definition or procedure.
+        if is_social_small_talk and not is_enterprise_question and not is_definition_question:
+            logger.info(f"🛡️ Intent guard: social small talk detected → casual_chat | q='{question[:80]}'")
+            return "casual_chat"
+
+        if is_enterprise_question:
+            if (
+                len(question_compact.split()) <= 10
+                or is_definition_question
+            ):
+                logger.info(f"🛡️ Intent guard: enterprise term detected → A | q='{question[:80]}'")
+                return "A"
+
         context_text = ""
         if history and len(history) > 0:
             last_msgs = [f"{h.get('role')}: {h.get('message', h.get('content', ''))}" 
@@ -121,12 +169,13 @@ Classify the user's query into EXACTLY one: 'greeting', 'casual_chat', 'A', or '
 greeting:
 - Simple greetings, salutations, system tests
 - Very short (1-5 words), clearly greetings
-- Examples: "halo", "hi", "good morning", "test", "apa kabar"
+- Examples: "halo", "hi", "good morning", "test"
 
 casual_chat:
-- Casual talk NOT related to HR/company  
-- World events, weather, recipes, celebrities
-- Examples: "siapa presiden", "cuaca hari ini", "resep nasi goreng"
+- Casual talk NOT related to HR/company
+- Includes light social small talk to the assistant/user such as asking how the assistant is doing, what it is doing, or how the day is going
+- World events, weather, recipes, celebrities also belong here
+- Examples: "apa kabar", "lagi apa", "gimana hari ini", "siapa presiden", "cuaca hari ini", "resep nasi goreng"
 
 A (SOP_DOCUMENTS / RAG POLICY):
 - User asks for rules, policies, guidelines, requirements, or procedures.
@@ -152,28 +201,43 @@ RULES:
 6. If context shows previous HR/SOP topic, treat follow-up questions as HR even if phrased casually → "A"
 7. Questions about company documents, teams, duties, regulations, procedures → always "A" (never casual_chat)
 8. When in doubt → "A" (never refuse a potentially valid HR question as casual_chat)
+9. Short questions asking the meaning/definition of internal HR terms or abbreviations such as PJK, PPD, UPD, PHK, skorsing, band, SOP, or reimbursement → always "A"
+10. "casual_chat" is only for social conversation or clearly unrelated topics. If the user is asking for a meaning, definition, rule, entitlement, procedure, acronym, or business term, it is NOT casual_chat.
 
 Respond ONLY: greeting, casual_chat, A, or B
 
 User: "{question}"
 """
         
-        response = await asyncio.to_thread(
-            client.chat.completions.create,
-            model=INTENT_CLASSIFIER_MODEL,
-            messages=[{"role": "user", "content": prompt}],
-            temperature=0.0,
-            max_tokens=10
+        logger.info(f"🧭 Unified classifier request started | model={INTENT_CLASSIFIER_MODEL} | history_items={len(history or [])}")
+        response = await asyncio.wait_for(
+            asyncio.to_thread(
+                client.chat.completions.create,
+                model=INTENT_CLASSIFIER_MODEL,
+                messages=[{"role": "user", "content": prompt}],
+                temperature=0.0,
+                max_tokens=10,
+            ),
+            timeout=20,
         )
         
         result = response.choices[0].message.content.strip().lower()
         
         if result in ["greeting", "casual_chat", "a", "b"]:
             result_mapped = result.upper() if result in ["a", "b"] else result
-            logger.info(f"🎯 Unified Classifier: '{question[:50]}...' → {result_mapped}")
+            if result_mapped in ["greeting", "casual_chat"]:
+                if is_enterprise_question or is_definition_question or (is_policy_question and not is_social_small_talk):
+                    logger.warning(
+                        f"🛡️ Intent correction: '{result_mapped}' -> A for info-seeking/business query | q='{question[:80]}'"
+                    )
+                    return "A"
+            logger.info(f"🎯 Unified Classifier: '{question[:50]}...' → {result_mapped} ({time.perf_counter() - _t0:.2f}s)")
             return result_mapped
         
         logger.warning(f"⚠️ Invalid result: '{result}', default to A")
+        return "A"
+    except asyncio.TimeoutError:
+        logger.error(f"❌ Unified classifier timeout after 20s for question: '{question[:80]}...' — default to A")
         return "A"
         
     except Exception as e:
@@ -315,6 +379,83 @@ Pertanyaan Mandiri:"""
         
         return any(keyword in answer for keyword in failure_keywords)
 
+    def _looks_like_group_simulation(self, question: str) -> bool:
+        q = (question or "").lower()
+        group_markers = ["seluruh", "semua", "karyawan", "pegawai", "band", "divisi", "departemen"]
+        calc_markers = ["lembur", "bonus", "thr", "biaya", "total uang", "simulasi", "estimasi", "jika", "misal", "kalau"]
+        return any(m in q for m in group_markers) and any(m in q for m in calc_markers)
+
+    def _build_base_data_query_for_b(self, question: str) -> str:
+        q = (question or "").strip()
+        q_lower = q.lower()
+
+        company_map = {
+            "semen padang": "SP",
+            "sp ": "SP",
+            " pt sp ": "SP",
+            "semen gresik": "SG",
+            "semen tonasa": "ST",
+            "semen baturaja": "SMBR",
+            "sig": "SIG",
+            "holding": "SIG",
+            "sbi": "SBI",
+            "solusi bangun indonesia": "SBI",
+            "sba": "SBA",
+            "semen bangun andalas": "SBA",
+        }
+
+        company_name = None
+        company_code = None
+        padded = f" {q_lower} "
+        for name, code in company_map.items():
+            if name in padded:
+                company_name = name.strip()
+                company_code = code
+                break
+
+        band_match = re.search(r"\bband\s+(\d+)\b", q_lower)
+        band_value = band_match.group(1) if band_match else None
+
+        user_supplied_salary = bool(
+            re.search(r"\b(?:rp\s*)?\d[\d\.\,]*\s*(?:jt|juta|rb|ribu|miliar|k)?\b", q_lower)
+            and any(token in q_lower for token in ["gaji", "salary", "upah"])
+        )
+
+        needs_salary_base = (
+            any(token in q_lower for token in ["gaji rata", "rata-rata gaji", "avg gaji", "salary", "gaji"])
+            and not user_supplied_salary
+        )
+
+        if self._looks_like_group_simulation(q):
+            pieces = ["Ambil data dasar karyawan unik untuk simulasi kelompok"]
+            if band_value:
+                pieces.append(f"Band {band_value}")
+            if company_name:
+                pieces.append(f"yang ditempatkan di {company_name} berdasarkan company_host")
+            pieces.append("berupa jumlah karyawan unik")
+            if needs_salary_base:
+                pieces.append("serta rata-rata dan total gaji pokok")
+            pieces.append("tanpa menghitung formula final bisnis")
+            if company_code:
+                pieces.append(f"(gunakan filter company_host = '{company_code}')")
+            return " ".join(pieces) + "."
+
+        headcount_like = any(token in q_lower for token in [
+            "jumlah karyawan", "berapa karyawan", "berapa pegawai", "headcount",
+            "penempatan", "ditempatkan", "bekerja di", "di semen", "di sig"
+        ])
+        if headcount_like:
+            pieces = ["Berapa jumlah karyawan unik"]
+            if band_value:
+                pieces.append(f"Band {band_value}")
+            if company_name:
+                pieces.append(f"yang ditempatkan di {company_name} berdasarkan company_host")
+            if company_code:
+                pieces.append(f"(gunakan filter company_host = '{company_code}')")
+            return " ".join(pieces) + "?"
+
+        return q
+
     async def _decompose_query(self, question: str) -> Dict[str, Any]:
         """
         Master Orchestrator: Memutuskan rute mana yang aktif.
@@ -331,6 +472,7 @@ Tugas Anda: Analisis pertanyaan pengguna dan tentukan mesin mana yang harus dija
 === ATURAN ROUTING ===
 1. PERTANYAAN PERSONAL (Subjek: "Saya", "Gaji saya", "Kalau saya"):
    - Simulasi diri sendiri. SET: run_a=true, run_b=false.
+   - query_a: SALIN pertanyaan asli PERSIS + tambahkan " — SECARA LENGKAP SEMUANYA DIKELUARKAN" di akhir. DILARANG mengubah atau menghapus apapun dari pertanyaan asli.
 
 2. PERTANYAAN FAKTUAL / DATA MURNI (Subjek: "Berapa", "Siapa saja", "Tampilkan", "Penyebaran", "Distribusi", "Daftar", "Ranking"):
    - SET: run_a=false, run_b=true.
@@ -339,7 +481,7 @@ Tugas Anda: Analisis pertanyaan pengguna dan tentukan mesin mana yang harus dija
 3. KALKULASI / SIMULASI KELOMPOK (misal: "hitung total biaya lembur Band 5 yang pensiun", "simulasi THR seluruh divisi"):
    - Butuh aturan dari SOP (A) DAN jumlah/data orang dari database (B).
    - SET: run_a=true, run_b=true.
-   - query_a: pertanyaan fokus ke ATURAN/KEBIJAKAN saja (mis: "Apa tarif lembur hari libur nasional?").
+   - query_a: SALIN pertanyaan asli PERSIS + tambahkan " — SECARA LENGKAP SEMUANYA DIKELUARKAN" di akhir. Mesin A butuh semua konteks utuh.
    - query_b: pertanyaan MURNI DATA ke database (mis: "Berapa jumlah karyawan Band 5 yang pensiun tahun 2026?").
      ⚠️ query_b HARUS berupa pertanyaan database sederhana — JANGAN sertakan kata "simulasi", "hitung", "asumsikan", atau angka asumsi. Hanya minta DATA faktual yang dibutuhkan untuk kalkulasi.
 
@@ -349,8 +491,8 @@ Balas HANYA dengan JSON valid:
 {{
   "run_a": true/false,
   "run_b": true/false,
-  "query_a": "<pertanyaan fokus aturan/kebijakan untuk Mesin SOP>",
-  "query_b": "<pertanyaan data murni untuk database, tanpa kata simulasi/asumsi>"
+  "query_a": "<SALIN pertanyaan asli PERSIS lalu tambahkan suffix ' — SECARA LENGKAP SEMUANYA DIKELUARKAN' di akhir. JANGAN ubah, sederhanakan, atau hapus informasi apapun (nama kota, rute, angka, entitas). Kosongkan hanya jika run_a=false>",
+  "query_b": "<pertanyaan data murni untuk database, tanpa kata simulasi/asumsi. Kosongkan jika run_b=false>"
 }}"""
 
         try:
@@ -379,6 +521,9 @@ Balas HANYA dengan JSON valid:
             query_a = parsed.get("query_a") or (question if run_a else "")
             # Fallback: jika query_b kosong atau LLM mengubah terlalu jauh, gunakan pertanyaan original
             query_b = (parsed.get("query_b") or question) if run_b else ""
+
+            if run_b:
+                query_b = self._build_base_data_query_for_b(query_b or question)
 
             if not run_a and not run_b:
                 run_a = True
@@ -478,7 +623,7 @@ Balas HANYA dengan JSON valid:
                 from backend.services.user_context import get_user_context
                 user_ctx = get_user_context(session_id)
                 # Jika ada context dari SINTA, pakai role dari sana
-                if user_ctx and not user_role or user_role.lower() == "employee":
+                if user_ctx and ((not user_role) or user_role.lower() == "employee"):
                     user_role = user_ctx.get("role", user_role)
             except Exception:
                 user_ctx = None
@@ -528,12 +673,13 @@ Balas HANYA dengan JSON valid:
                     if _sp:
                         _sp.update(output={"standalone": standalone_question})
 
-                # ✨ STEP 3: Always run A+B in parallel for HR users
-                run_a = True
-                run_b = True
-                query_for_a = standalone_question
-                query_for_b = standalone_question
-                logger.info(f"🧭 [ORCHESTRATOR] run_a=True | run_b=True (always parallel) | A: {query_for_a[:50]} | B: {query_for_b[:50]}")
+                # ✨ STEP 3: Decompose for HR users so route B gets a proper base-data query
+                decomposed = await self._decompose_query(standalone_question)
+                run_a = decomposed["run_a"]
+                run_b = decomposed["run_b"]
+                query_for_a = decomposed["query_a"] or standalone_question
+                query_for_b = decomposed["query_b"] or standalone_question
+                logger.info(f"🧭 [ORCHESTRATOR] run_a={run_a} | run_b={run_b} | A: {query_for_a[:50]} | B: {query_for_b[:50]}")
 
                 # Safety gatekeeper
                 if run_b and not is_hr_user:
@@ -751,17 +897,29 @@ Balas HANYA dengan JSON valid:
             query_for_a = f"[{', '.join(_ctx_parts)}] {query_for_a}"
             logger.info(f"📍 Re-injected user context into query_for_a after decomposition")
 
+        # Safeguard: pastikan rute perjalanan dinas (dari X ke Y) tidak hilang setelah decomposition
+        # LLM kadang menyederhanakan query_a sehingga nama kota tujuan terhapus
+        import re as _re_decomp
+        _route_match = _re_decomp.search(r'\bdari\s+(\w+)\s+ke\s+(\w+)', standalone_question, _re_decomp.IGNORECASE)
+        if _route_match and query_for_a:
+            _kota_asal_d = _route_match.group(1)
+            _kota_tujuan_d = _route_match.group(2)
+            if _kota_tujuan_d.lower() not in query_for_a.lower():
+                query_for_a = query_for_a.rstrip('?') + f" dari {_kota_asal_d} ke {_kota_tujuan_d}?"
+                logger.info(f"📍 Re-injected route into query_for_a: {_kota_asal_d} → {_kota_tujuan_d}")
+
         logger.info(f"🧭 [STREAM ORCHESTRATOR] run_a={run_a} | run_b={run_b} | A: {query_for_a[:60]} | B: {query_for_b[:50]}")
 
         from app.tools import search_sop, query_hr_database, StructuredResponse as _SR
 
-        def _process_b_result(raw, q_b: str) -> Dict[str, Any]:
+        def _process_b_result(raw, q_b: str, display_question: str) -> Dict[str, Any]:
             """Convert query_hr_database output to a standard result dict."""
             if isinstance(raw, _SR) and raw.data_type == "analytics":
                 sd = raw.structured_data or {}
                 cols = ["category" if c == "Undefined" else c for c in sd.get("columns", [])]
                 rows = sd.get("rows", [])
-                title = f'<h3 class="analytics-query-title">{q_b.title()}</h3>'
+                title_text = (display_question or q_b or "Hasil Analisis Data").strip()
+                title = f'<h3 class="analytics-query-title">{html.escape(title_text.title())}</h3>'
                 viz = (raw.visualization_available and 2 <= len(rows) <= 500 and len(cols) >= 2)
                 result = build_analytics_response(
                     domain="hr", text=title, columns=cols, rows=rows,
@@ -788,7 +946,7 @@ Balas HANYA dengan JSON valid:
                 raw = await query_hr_database(
                     question=query_for_b, user_role=user_role, session_id=session_id
                 )
-                return _process_b_result(raw, query_for_b)
+                return _process_b_result(raw, query_for_b, question)
 
         logger.info(f"⚡ [STREAM A+B] Direct tool calls: A={query_for_a[:40]} | B={query_for_b[:40]}")
 
@@ -1041,7 +1199,7 @@ Balas HANYA dengan JSON valid:
                     
                     # Use question as styled HTML heading for chat bubble
                     title_text = original_question.title() if original_question else "Hasil Analisis Data"
-                    brief_text = f'<h3 class="analytics-query-title">{title_text}</h3>'
+                    brief_text = f'<h3 class="analytics-query-title">{html.escape(title_text)}</h3>'
 
                     viz_available = (tool_result.visualization_available and len(rows) >= 2 and len(columns) >= 2 and len(rows) <= 500)
                     chart_hints = generate_chart_hints(domain, columns, rows) if viz_available else None
@@ -1132,7 +1290,15 @@ Balas HANYA dengan JSON valid:
 
         base_prompt = "DENAI, asisten AI perusahaan. Jawab dalam bahasa Indonesia."
         if mode == "call":
-            base_prompt = "DENAI, asisten AI. Mode panggilan: Jawab dengan ramah, natural, dan JABARKAN SEMUA POIN PENTING secara lengkap tanpa ada yang tertinggal."
+            base_prompt = (
+                "DENAI, asisten AI. Mode panggilan: jawab seperti sedang menelepon user secara langsung. "
+                "Gunakan bahasa lisan Indonesia yang hangat, santai-profesional, dan mudah didengar. "
+                "Utamakan jawaban ringkas, tetapi JANGAN menghilangkan syarat, pengecualian, batasan, atau angka penting. "
+                "Mulai dengan inti jawabannya, lalu lanjutkan poin penting yang wajib diketahui user dalam 2-4 kalimat pendek. "
+                "Jangan terdengar seperti membaca dokumen atau laporan. "
+                "Jika ada ketentuan bersyarat, sebutkan syarat utamanya dengan jelas. "
+                "Jangan membuat daftar panjang kecuali user memintanya."
+            )
 
         system_prompt = base_prompt + user_ctx_block
 

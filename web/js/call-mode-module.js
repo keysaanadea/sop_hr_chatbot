@@ -9,6 +9,8 @@ let isCallModeActive = false;
 let continuousListening = false;
 let callSession = null;
 let isProcessingCall = false;
+let callTurnStartedAt = 0;
+let userSpeechDetectedAt = 0;
 
 // Timer State
 let callTimerInterval = null;
@@ -27,6 +29,65 @@ const audioVisualizer = document.getElementById("audioVisualizer");
 const callTimerDisplay = document.getElementById("callTimer");
 
 /* ================= CALL MODE MANAGEMENT ================= */
+function _ensureCallSession() {
+  if (!window.CoreApp?.activeChatId && window.CoreApp?.newChat) {
+    window.CoreApp.newChat();
+  }
+  callSession = window.CoreApp?.activeChatId || callSession || crypto.randomUUID();
+  if (window.CoreApp && !window.CoreApp.activeChatId) {
+    window.CoreApp.activeChatId = callSession;
+  }
+  return callSession;
+}
+
+function _restartListeningSoon(delay = 500) {
+  if (!isCallModeActive || !continuousListening) return;
+  setTimeout(() => {
+    if (!isCallModeActive || !continuousListening || window.SpeechModule?.isSpeaking) return;
+    isProcessingCall = false;
+    setCallStatus('listening');
+    window.SpeechModule?.restartCallListening();
+  }, delay);
+}
+
+function recoverAfterFailure(reason = 'unknown') {
+  console.warn(`[CALL] Recovering after failure: ${reason}`);
+  isProcessingCall = false;
+  window.SpeechModule?.stopProcessingFeedback();
+  _restartListeningSoon(300);
+}
+
+function markBackendAnswerReady(answerText = '') {
+  if (!callTurnStartedAt) return;
+  const elapsed = ((performance.now() - callTurnStartedAt) / 1000).toFixed(2);
+  console.log(`[CALL] Backend answer ready in ${elapsed}s (${answerText.length} chars)`);
+}
+
+function markSpeechDetected() {
+  if (!userSpeechDetectedAt) {
+    userSpeechDetectedAt = performance.now();
+  }
+}
+
+function markTranscriptFinalized(transcriptText = '') {
+  if (!userSpeechDetectedAt) return;
+  const elapsed = ((performance.now() - userSpeechDetectedAt) / 1000).toFixed(2);
+  console.log(`[CALL] STT finalized in ${elapsed}s (${transcriptText.length} chars)`);
+}
+
+function markPlaybackStarted() {
+  if (!callTurnStartedAt) return;
+  const elapsed = ((performance.now() - callTurnStartedAt) / 1000).toFixed(2);
+  console.log(`[CALL] TTS playback started in ${elapsed}s`);
+}
+
+function markPlaybackEnded() {
+  if (!callTurnStartedAt) return;
+  const elapsed = ((performance.now() - callTurnStartedAt) / 1000).toFixed(2);
+  console.log(`[CALL] Turn completed in ${elapsed}s`);
+  callTurnStartedAt = 0;
+}
+
 async function startCallMode() {
   if (isCallModeActive) return endCallMode();
 
@@ -39,7 +100,6 @@ async function startCallMode() {
     isCallModeActive = true;
     continuousListening = true;
     isProcessingCall = false;
-    callSession = window.CoreApp?.activeChatId || crypto.randomUUID();
     
     if (window.CoreApp) {
       window.CoreApp.isTextOnlyMode = false;
@@ -52,6 +112,7 @@ async function startCallMode() {
         if (!window.CoreApp.activeChatId) window.CoreApp.newChat();
       }
     }
+    callSession = _ensureCallSession();
     
     // UI Resets
     callModeOverlay?.classList.add('active');
@@ -67,7 +128,7 @@ async function startCallMode() {
     setTimeout(() => {
         setCallStatus('listening');
         window.SpeechModule?.restartCallListening();
-    }, 1000);
+    }, 150);
 
     console.log('🔥 CALL MODE: Activated - Natural speech-to-speech ready!');
     
@@ -81,10 +142,21 @@ function endCallMode() {
   isCallModeActive = false;
   continuousListening = false;
   isProcessingCall = false;
+  userSpeechDetectedAt = 0;
+  callTurnStartedAt = 0;
 
   if (window.SpeechModule?.isListening) window.SpeechModule.stopRecognition();
+  window.SpeechModule?.stopProcessingFeedback();
   if (window.SpeechModule?.isSpeaking) window.SpeechModule.stopTextToSpeech();
   window.SpeechModule?.clearTTSQueue();
+  if (window.CoreApp?.currentRequestController) {
+    try {
+      window.CoreApp.currentRequestController.abort();
+    } catch (error) {
+      console.warn('[CALL] Failed to abort active request on endCallMode:', error);
+    }
+    window.CoreApp.currentRequestController = null;
+  }
 
   callModeOverlay?.classList.remove('active');
   showAudioVisualization(false);
@@ -106,6 +178,9 @@ async function handleCallModeInput(transcript) {
   if (!transcript || isProcessingCall) return;
 
   isProcessingCall = true;
+  callTurnStartedAt = performance.now();
+  markTranscriptFinalized(transcript);
+  userSpeechDetectedAt = 0;
   
   setCallStatus('processing');
   _updateLastInput(transcript);
@@ -128,15 +203,7 @@ async function handleCallModeInput(transcript) {
     
   } catch (error) {
     console.error('[CALL] Error processing input:', error);
-    window.SpeechModule?.stopProcessingFeedback();
-    
-    setTimeout(() => {
-      if (isCallModeActive && continuousListening) {
-        isProcessingCall = false;
-        setCallStatus('listening');
-        window.SpeechModule?.restartCallListening();
-      }
-    }, 1000);
+    recoverAfterFailure('handleCallModeInput');
   }
 }
 
@@ -253,6 +320,8 @@ function setCallStatus(type) {
 function _cleanTranscriptText(text) {
   let clean = text.replace(/<[^>]*>/g, ' ');
   clean = clean
+    .replace(/\bRujukan Dokumen\b[\s\S]*$/i, ' ')
+    .replace(/\[\d+\]/g, ' ')
     .replace(/#{1,6}\s*/g, '')
     .replace(/\*{1,2}([^*]+)\*{1,2}/g, '$1')
     .replace(/`{1,3}[^`]*`{1,3}/g, '')
@@ -279,11 +348,13 @@ function appendCallTranscript(role, text) {
   // AI: render markdown → HTML; User: plain cleaned text
   let bubbleContent;
   if (isAI) {
-    try {
-      bubbleContent = (window.marked?.parse || window.marked)(text.trim());
-    } catch (e) {
-      bubbleContent = _cleanTranscriptText(text);
-    }
+    const aiText = _cleanTranscriptText(text);
+    bubbleContent = aiText
+      .split(/\n{2,}|(?<=[.!?])\s+(?=[A-Z])/)
+      .map(part => part.trim())
+      .filter(Boolean)
+      .map(part => `<p>${part}</p>`)
+      .join('');
   } else {
     bubbleContent = _cleanTranscriptText(text);
   }
@@ -327,6 +398,7 @@ function skipSpeaking() {
   window.SpeechModule?.stopTextToSpeech();
   window.SpeechModule?.clearTTSQueue();
   window.isProcessingCall = false;
+  callTurnStartedAt = 0;
 
   const skipBtn = document.getElementById('skipBtn');
   if (skipBtn) skipBtn.style.display = 'none';
@@ -360,6 +432,12 @@ window.CallModeModule = {
   startCallMode,
   endCallMode,
   handleCallModeInput,
+  recoverAfterFailure,
+  markSpeechDetected,
+  markTranscriptFinalized,
+  markBackendAnswerReady,
+  markPlaybackStarted,
+  markPlaybackEnded,
   toggleMute,
   showAudioVisualization,
   setCallStatus,

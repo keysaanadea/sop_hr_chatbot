@@ -135,6 +135,17 @@ async def startup_event():
     logger.info("🎯 Architecture: API → ChatService → Universal Analytics")
     logger.info("📋 Schema Explorer: ENABLED (/api/schema/)")
 
+    # Warm-up: init Redis connection di background agar request pertama tidak cold-start
+    import asyncio as _asyncio
+    async def _warmup_user_ctx_redis():
+        try:
+            from backend.services.user_context import _get_redis
+            await _asyncio.to_thread(_get_redis)
+            logger.info("✅ User context Redis warmed up")
+        except Exception as _e:
+            logger.warning(f"⚠️ Redis warm-up skipped: {_e}")
+    _asyncio.create_task(_warmup_user_ctx_redis())
+
 
 @app.on_event("shutdown")
 async def shutdown_event():
@@ -153,7 +164,7 @@ async def get_history_alias(
     from memory.memory_hybrid import get_hybrid_history
     from backend.api.sessions import get_session_owner
     import asyncio as _asyncio
-    if auth_nik:
+    if auth_nik is not None:
         owner = await _asyncio.to_thread(get_session_owner, session_id)
         if owner and owner != auth_nik:
             from fastapi import HTTPException as _HTTPEx

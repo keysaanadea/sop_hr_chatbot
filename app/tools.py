@@ -8,6 +8,7 @@ DENAI Tools - Universal Structured Response Handler (CANCELLATION PATCHED)
 import os
 import logging
 import asyncio
+from datetime import datetime, timezone
 from typing import Dict, Any, List, Optional, Union, Callable
 from dataclasses import dataclass
 
@@ -120,7 +121,7 @@ def _get_hr_tools() -> List[Dict[str, Any]]:
                     "user_role": {
                         "type": "string",
                         "description": "User role for authorization",
-                        "enum": ["HR", "hr", "admin", "manager"],
+                        "enum": ["HR", "hr", "admin", "manager", "hc"],
                         "default": "HR"
                     }
                 },
@@ -153,7 +154,7 @@ async def search_sop(
             return "<h3>❌ Sistem Tidak Tersedia</h3><p>Sistem pencarian SOP sedang dalam pemeliharaan.</p>"
     except Exception as e:
         logger.error(f"❌ SOP search error: {e}", exc_info=True)
-        return f"<h3>❌ Error Pencarian SOP</h3><p>Terjadi kesalahan: {str(e)}</p>"
+        return "<h3>❌ Error Pencarian SOP</h3><p>Terjadi kesalahan saat memproses permintaan. Silakan coba lagi.</p>"
 
 
 async def query_hr_database(question: str, user_role: str = "HR", session_id: str = "default") -> Union[str, StructuredResponse]:
@@ -230,7 +231,7 @@ async def query_hr_database(question: str, user_role: str = "HR", session_id: st
                     data_type="analytics",
                     structured_data=structured_payload,
                     visualization_available=viz_available,
-                    metadata={"query": question, "user_role": user_role, "timestamp": logger.name},
+                    metadata={"query": question, "user_role": user_role, "timestamp": datetime.now(timezone.utc).isoformat()},
                     sql_query=sql_q,
                     sql_explanation=sql_exp
                 )
@@ -240,7 +241,7 @@ async def query_hr_database(question: str, user_role: str = "HR", session_id: st
             
     except Exception as e:
         logger.error(f"❌ HR query failed: {e}", exc_info=True)
-        return f"❌ **Error Query HR Database**\n\nTerjadi kesalahan: {str(e)}"
+        return "❌ **Error Query HR Database**\n\nTerjadi kesalahan saat memproses permintaan. Silakan coba lagi."
 
 def _can_data_be_visualized(rows: List[Dict], columns: List[str]) -> bool:
     return bool(rows and columns and 2 <= len(rows) <= 500 and len(columns) >= 2)

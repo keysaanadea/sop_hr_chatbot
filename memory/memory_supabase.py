@@ -91,19 +91,7 @@ def get_sessions(nik: str = None, limit: int = 30):
     """
     if not supabase: return []
     try:
-        # Ambil session_ids yang benar-benar punya pesan (anti-ghost)
-        msgs_res = (
-            supabase
-            .table("chat_memory")
-            .select("session_id")
-            .limit(500)
-            .execute()
-        )
-        ids_with_msgs = {m["session_id"] for m in (msgs_res.data or [])}
-        if not ids_with_msgs:
-            return []
-
-        # Ambil sessions dengan filter NIK
+        # Ambil sessions dengan filter NIK dulu — sudah pakai server-side filter
         query = (
             supabase
             .table("chat_sessions")
@@ -111,14 +99,38 @@ def get_sessions(nik: str = None, limit: int = 30):
             .order("pinned", desc=True)
             .order("last_message_at", desc=True)
             .order("created_at", desc=True)
-            .limit(limit * 3)
+            # Ambil window lebih lebar agar ghost sessions (sesi tanpa pesan) tidak
+            # mendorong sesi valid keluar dari jendela filter. Ghost sessions terjadi
+            # saat setup_hybrid_session() membuat row sebelum pesan pertama dikirim.
+            .limit(limit * 10)
         )
-        if nik is not None and nik != "":
-            # Filter: milik user ini ATAU sesi lama yang belum punya NIK (backwards compat)
-            query = query.or_(f"nik.eq.{nik},nik.is.null,nik.eq.")
+        if nik is not None:
+            if nik != "":
+                # NIK valid: tampilkan HANYA sesi milik user ini
+                query = query.eq("nik", nik)
+            else:
+                # Context expired (nik=""): hanya sesi tanpa NIK
+                query = query.or_("nik.is.null,nik.eq.")
 
         res = query.execute()
         sessions = res.data or []
+        if not sessions:
+            return []
+
+        # Filter anti-ghost: buang sesi yang tidak punya pesan sama sekali.
+        # Query distinct session_id dari chat_memory agar tidak terbatas 500 row.
+        session_ids = [s["session_id"] for s in sessions]
+        # Supabase tidak support IN filter langsung untuk list besar, pakai satu query per batch
+        # Batasi ke session_ids yang ada di hasil sesi (sudah server-filtered) bukan seluruh tabel
+        msgs_res = (
+            supabase
+            .table("chat_memory")
+            .select("session_id")
+            .in_("session_id", session_ids)
+            .execute()
+        )
+        ids_with_msgs = {m["session_id"] for m in (msgs_res.data or [])}
+
         filtered = [s for s in sessions if s["session_id"] in ids_with_msgs]
         return filtered[:limit]
     except Exception as e:

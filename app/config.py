@@ -57,6 +57,7 @@ ELEVENLABS_VOICE_ID_INDONESIAN = os.getenv("ELEVENLABS_VOICE_ID_INDONESIAN", "iW
 # MODEL CONFIGURATION
 # ======================================================
 LLM_MODEL = os.getenv("LLM_MODEL", "gpt-4o-mini")
+SQL_LLM_MODEL = os.getenv("SQL_LLM_MODEL", "gpt-4o")  # SQL route default lebih kuat; tetap bisa di-override via env
 LLM_TEMPERATURE = float(os.getenv("LLM_TEMPERATURE", 0.1))
 LLM_MAX_TOKENS = int(os.getenv("LLM_MAX_TOKENS", 2000))
 EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "text-embedding-3-small")
@@ -156,9 +157,9 @@ API_TIMEOUT_DEFAULT = int(os.getenv("API_TIMEOUT_DEFAULT", 60))
 API_TIMEOUT_CALL_MODE = int(os.getenv("API_TIMEOUT_CALL_MODE", 15))
 API_TIMEOUT_TTS = int(os.getenv("API_TIMEOUT_TTS", 8))
 
-CALL_MODE_TEMPERATURE = 0.0
+CALL_MODE_TEMPERATURE = float(os.getenv("CALL_MODE_TEMPERATURE", "0.0"))
 CHAT_MODE_TEMPERATURE = 0.1
-CALL_MODE_MAX_TOKENS = 150
+CALL_MODE_MAX_TOKENS = int(os.getenv("CALL_MODE_MAX_TOKENS", 130))
 CHAT_MODE_MAX_TOKENS = 2000
 
 # ======================================================
@@ -166,6 +167,7 @@ CHAT_MODE_MAX_TOKENS = 2000
 # ======================================================
 FEATURE_NATURAL_TTS = os.getenv("FEATURE_NATURAL_TTS", "true").lower() == "true"
 FEATURE_VERBOSE_LOGGING = os.getenv("FEATURE_VERBOSE_LOGGING", "false").lower() == "true"
+FEATURE_LANGFUSE = os.getenv("FEATURE_LANGFUSE", "true").lower() == "true"
 
 ENVIRONMENT = os.getenv("ENVIRONMENT", "development")
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO" if ENVIRONMENT == "production" else "DEBUG")
@@ -196,7 +198,9 @@ if not GOOGLE_MAPS_API_KEY:
 if not ELEVENLABS_API_KEY:
     print("⚠️ ElevenLabs not configured - using OpenAI TTS fallback")
 # Tambahkan ini:
-if not LANGFUSE_SECRET_KEY or not LANGFUSE_PUBLIC_KEY:
+if not FEATURE_LANGFUSE:
+    print("⚠️ Langfuse temporarily disabled by FEATURE_LANGFUSE=false")
+elif not LANGFUSE_SECRET_KEY or not LANGFUSE_PUBLIC_KEY:
     print("⚠️ Langfuse not configured - observability/tracing will be disabled")
 if not UPSTASH_REDIS_URL or not UPSTASH_REDIS_TOKEN:
     print("⚠️ Upstash Redis not configured - chat history caching will use Supabase fallback")

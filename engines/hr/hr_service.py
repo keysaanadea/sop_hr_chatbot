@@ -59,11 +59,16 @@ class HRService:
         🔥 MAIN ENTRY POINT
         SQL Result → Insight Generation → Frontend-Ready HRResponse + SQL Transparency
         """
+        # State SQL transparency disimpan lokal per-call, bukan di instance
+        # (cegah race condition: singleton dipanggil concurrent dari asyncio.to_thread)
+        _local_sql = None
+        _local_question = None
+
         try:
             # 1. Security check
             if not self._validate_hr_access(user_role):
                 return HRResponse(errors=["Access denied. HR role required for this operation."])
-            
+
             # =========================================================================
             # 🧠 2. STANDALONE QUESTION HANDLING (CLEAN ARCHITECTURE)
             # Karena sudah diparafrase oleh Chat Service di pintu depan,
@@ -72,11 +77,11 @@ class HRService:
             standalone_question = question
             self.logger.info(f"⚙️ Memproses HR Query: '{standalone_question}'")
 
-            # 3. Execute query flow
-            query_result = self._execute_query_flow(standalone_question)
+            # 3. Execute query flow — hasilnya diambil lewat return value, bukan state instance
+            query_result, _local_sql, _local_question = self._execute_query_flow(standalone_question)
             
             # 4. Check results
-            if not query_result or not query_result.rows:
+            if not query_result or not query_result.rows:  # query_result adalah QueryResult, bukan tuple
                 return HRResponse(errors=[f"No data found for your query: '{standalone_question}'"])
             
             # 5. Production Analytics Pipeline
@@ -105,10 +110,10 @@ class HRService:
                 query_dict = query_result.to_dict()
                 
                 # ✅ SUNTIKKAN SQL LANGSUNG KE DALAM DICTIONARY
-                if self._last_generated_sql:
-                    query_dict['sql_query'] = self._last_generated_sql
+                if _local_sql:
+                    query_dict['sql_query'] = _local_sql
                     query_dict['sql_explanation'] = self._generate_sql_explanation(
-                        self._last_generated_sql, self._last_user_question
+                        _local_sql, _local_question
                     )
                 
                 response = HRResponse(
@@ -130,8 +135,8 @@ class HRService:
                     analysis={'note': 'Analysis temporarily unavailable'},
                     recommendations=[]
                 )
-                if self._last_generated_sql:
-                    fallback.sql_query = self._last_generated_sql
+                if _local_sql:
+                    fallback.sql_query = _local_sql
                     fallback.sql_explanation = "Query untuk mengambil data HR."
                 return fallback
             
@@ -184,33 +189,31 @@ class HRService:
     
     def _validate_hr_access(self, user_role: str) -> bool:
         """Validate HR access permissions"""
-        valid_roles = ['hr', 'admin', 'manager']
+        valid_roles = ['hr', 'admin', 'manager', 'hc']
         return str(user_role).lower() in valid_roles
     
-    def _execute_query_flow(self, question: str) -> Optional[QueryResult]:
-        """Orchestrate SQL Generation -> Validation -> Execution"""
+    def _execute_query_flow(self, question: str):
+        """Orchestrate SQL Generation -> Validation -> Execution.
+        Returns (QueryResult, sql, question) — sql/question dikembalikan agar caller
+        bisa simpan lokal tanpa bergantung pada instance state yang bisa di-race."""
         try:
-            schema = self.schema_reader.get_schema_text() 
-            
+            schema = self.schema_reader.get_schema_text()
+
             sql = self.sql_generator.generate_sql(question, schema)
-            
-            self._last_generated_sql = sql
-            self._last_user_question = question
-            
-            if not self.sql_validator.is_valid(sql):
+
+            if not self.sql_validator.is_valid(sql, question=question):
                 raise Exception("SQL did not pass security validation.")
-            
-            # Menggunakan fitur execute_with_limit dari QueryExecutor untuk safety
+
             query_result = self.query_executor.execute_with_limit(sql, max_rows=1000)
-            return query_result
-            
+            return query_result, sql, question
+
         except Exception as e:
             err_msg = str(e)
             if "INVALID_QUERY" in err_msg:
                 self.logger.warning(f"⚠️ Query rejected (non-DB/simulasi): {err_msg}")
             else:
                 self.logger.error(f"❌ Query execution flow failed: {err_msg}")
-            return None
+            return None, None, question
     
     def _generate_sql_explanation(self, sql_query: str, user_question: str) -> str:
         """Memanggil LLM untuk menjelaskan SQL"""

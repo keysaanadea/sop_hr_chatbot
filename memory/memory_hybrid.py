@@ -12,6 +12,48 @@ from app.config import UPSTASH_REDIS_URL, UPSTASH_REDIS_TOKEN
 import re
 
 logger = logging.getLogger(__name__)
+_SESSION_META_TTL = 86400 * 7
+_local_session_meta: Dict[str, Dict[str, Any]] = {}
+
+
+def _session_meta_key(session_id: str) -> str:
+    return f"chat:meta:{session_id}"
+
+
+def _build_session_title(initial_message: str) -> str:
+    base = (initial_message or "Percakapan baru").strip()
+    return (base[:50] + "...") if base else "Percakapan baru"
+
+
+async def _get_session_meta(session_id: str) -> Dict[str, Any]:
+    if REDIS_AVAILABLE:
+        try:
+            raw = await redis_client.get(_session_meta_key(session_id))
+            if raw:
+                return json.loads(raw) if isinstance(raw, str) else raw
+        except Exception as e:
+            logger.debug(f"⚠️ Session meta read failed for {session_id}: {e}")
+    return dict(_local_session_meta.get(session_id, {}))
+
+
+async def _set_session_meta(session_id: str, meta: Dict[str, Any]):
+    safe_meta = dict(meta or {})
+    if REDIS_AVAILABLE:
+        try:
+            await redis_client.set(_session_meta_key(session_id), json.dumps(safe_meta))
+            await redis_client.expire(_session_meta_key(session_id), _SESSION_META_TTL)
+        except Exception as e:
+            logger.debug(f"⚠️ Session meta write failed for {session_id}: {e}")
+    _local_session_meta[session_id] = safe_meta
+
+
+async def _delete_session_meta(session_id: str):
+    if REDIS_AVAILABLE:
+        try:
+            await redis_client.delete(_session_meta_key(session_id))
+        except Exception as e:
+            logger.debug(f"⚠️ Session meta delete failed for {session_id}: {e}")
+    _local_session_meta.pop(session_id, None)
 
 def _strip_html_payload(content: str) -> str:
     """Buang HANYA hidden payload span sebelum disimpan ke Redis.
@@ -57,29 +99,38 @@ except Exception as e:
 # CORE HYBRID FUNCTIONS (FULLY ASYNC)
 # ---------------------------------------------------------
 
-async def setup_hybrid_session(session_id: str, initial_message: str, nik: str = ""):
-    """Membantu inisialisasi session pertama kali di Supabase.
-    Cek Redis dulu — kalau sudah ada history, session pasti sudah terbuat, skip Supabase."""
-    # Kalau Redis sudah ada history untuk session ini, session sudah terbuat — skip Supabase
-    if REDIS_AVAILABLE:
-        try:
-            exists = await redis_client.exists(f"chat:{session_id}")
-            if exists:
-                return
-        except Exception:
-            pass
+async def setup_hybrid_session(session_id: str, initial_message: str, nik: str = "", has_history: bool = False):
+    """Inisialisasi metadata session secara ringan.
+    Session permanen di Supabase baru dibuat saat pesan pertama benar-benar disimpan.
+    Dengan begitu, new chat yang dibatalkan tidak meninggalkan ghost session."""
+    existing = await _get_session_meta(session_id)
+    merged = {
+        "title": existing.get("title") or _build_session_title(initial_message),
+        "nik": existing.get("nik") or (nik or ""),
+        "persisted": bool(existing.get("persisted")) or bool(has_history),
+    }
+    await _set_session_meta(session_id, merged)
 
-    if MEMORY_AVAILABLE:
-        history = await get_recent_history_async(session_id, limit=1)
-        if not history:
-            # save_session masih sync, kita lempar ke thread agar aman
-            await asyncio.to_thread(save_session, session_id, initial_message[:50] + "...", nik)
-            # Invalidate sessions list cache agar sidebar langsung tampil session baru
-            try:
-                from backend.api.sessions import _invalidate_sessions_cache
-                _invalidate_sessions_cache()
-            except Exception:
-                pass
+
+async def _ensure_session_persisted(session_id: str):
+    if not MEMORY_AVAILABLE:
+        return
+
+    meta = await _get_session_meta(session_id)
+    if meta.get("persisted"):
+        return
+
+    title = meta.get("title") or "Percakapan baru"
+    nik = meta.get("nik") or ""
+    await asyncio.to_thread(save_session, session_id, title, nik)
+    meta["persisted"] = True
+    await _set_session_meta(session_id, meta)
+
+    try:
+        from backend.api.sessions import _invalidate_sessions_cache
+        _invalidate_sessions_cache(nik or None)
+    except Exception:
+        pass
 
 async def get_hybrid_history(session_id: str, limit: int = 4) -> List[Dict[str, Any]]:
     """Mengambil history dengan prioritas: 1. Redis (RAM), 2. Supabase (Disk)"""
@@ -97,8 +148,11 @@ async def get_hybrid_history(session_id: str, limit: int = 4) -> List[Dict[str, 
 
     # Prioritas 2: Kalau Redis kosong/gagal, ambil dari Supabase
     if MEMORY_AVAILABLE:
-        logger.info("💾 History ditarik dari Supabase (Lalu di-cache ke Redis)")
         history = await get_recent_history_async(session_id, limit=limit)
+        if history:
+            logger.info("💾 History ditarik dari Supabase lalu di-cache ke Redis")
+        else:
+            logger.info("🪹 History kosong di Redis dan Supabase")
         
         # Simpan kembali ke Redis biar pemanggilan berikutnya kencang
         if REDIS_AVAILABLE and history:
@@ -107,7 +161,7 @@ async def get_hybrid_history(session_id: str, limit: int = 4) -> List[Dict[str, 
                 for msg in history:
                     msg_dict = msg if isinstance(msg, dict) else msg.__dict__
                     # Ekstrak waktu/data complex agar aman saat di json.dumps
-                    safe_dict = {k: v for k, v in msg_dict.items() if k in ["role", "message"]}
+                    safe_dict = {k: v for k, v in msg_dict.items() if k in ["role", "message", "sql_query", "sql_explanation", "last_query"]}
                     await redis_client.rpush(f"chat:{session_id}", json.dumps(safe_dict))
                 await redis_client.expire(f"chat:{session_id}", 86400) # Expire 24 Jam
             except Exception:
@@ -120,6 +174,9 @@ async def save_hybrid_message(session_id: str, role: str, content: str, **kwargs
     """Menyimpan pesan secara paralel ke Supabase dan Redis"""
     
     tasks = []
+
+    if MEMORY_AVAILABLE:
+        await _ensure_session_persisted(session_id)
     
     # Task 1: Simpan ke Supabase (Permanen)
     if MEMORY_AVAILABLE:
@@ -130,6 +187,10 @@ async def save_hybrid_message(session_id: str, role: str, content: str, **kwargs
         async def save_to_redis():
             try:
                 msg_obj = {"role": role, "message": _strip_html_payload(content)}
+                # Simpan metadata SQL agar history dari Redis sama lengkapnya dengan dari Supabase
+                for key in ["sql_query", "sql_explanation", "last_query"]:
+                    if key in kwargs and kwargs[key]:
+                        msg_obj[key] = kwargs[key]
                 await redis_client.rpush(f"chat:{session_id}", json.dumps(msg_obj))
                 await redis_client.ltrim(f"chat:{session_id}", -20, -1)  # cap list 20 pesan terakhir
                 await redis_client.expire(f"chat:{session_id}", 86400)
@@ -141,3 +202,24 @@ async def save_hybrid_message(session_id: str, role: str, content: str, **kwargs
     # Jalankan kedua task penyimpanan secara bersamaan tanpa saling menunggu lama
     if tasks:
         await asyncio.gather(*tasks)
+
+
+async def delete_hybrid_session(session_id: str):
+    """Hapus session dari Supabase DAN invalidate Redis cache-nya secara bersamaan."""
+    tasks = []
+
+    if MEMORY_AVAILABLE:
+        from memory.memory_supabase import delete_session_and_messages
+        tasks.append(asyncio.to_thread(delete_session_and_messages, session_id))
+
+    if REDIS_AVAILABLE:
+        async def _delete_redis():
+            try:
+                await redis_client.delete(f"chat:{session_id}")
+            except Exception as e:
+                logger.error(f"❌ Redis delete error for {session_id}: {e}")
+        tasks.append(_delete_redis())
+
+    if tasks:
+        await asyncio.gather(*tasks)
+    await _delete_session_meta(session_id)

@@ -8,18 +8,18 @@ from typing import Dict, Any
 from openai import OpenAI
 
 # ✅ FIX: Mengambil Key dan Model dari sumber yang benar (config.py)
-from app.config import OPENAI_API_KEY, LLM_MODEL
+from app.config import OPENAI_API_KEY, SQL_LLM_MODEL
 
 class SQLGenerator:
     """Enhanced PostgreSQL SQL generator untuk Supabase"""
-    
+
     def __init__(self):
         self.logger = logging.getLogger(__name__)
         if not OPENAI_API_KEY:
             raise ValueError("OPENAI_API_KEY is missing!")
-            
+
         self.client = OpenAI(api_key=OPENAI_API_KEY)
-        self.model = LLM_MODEL
+        self.model = SQL_LLM_MODEL
         
         # Enhanced natural Indonesian language prompt template
         self.sql_prompt_template = """
@@ -177,6 +177,34 @@ TECHNICAL RULES:
 • Window Functions: Gunakan untuk percentage dan ranking calculations
 • Mathematical Accuracy: Pastikan percentage sum = 100%
 
+DATA GRAIN & DEDUPLICATION RULES (SANGAT KRITIS):
+• Anda HARUS berpikir dulu: 1 baris di tabel sumber mewakili APA? karyawan unik, payroll item, assignment, atau riwayat?
+• Untuk pertanyaan headcount/jumlah karyawan/distribusi karyawan/penempatan/daftar karyawan, hasil HARUS berbasis KARYAWAN UNIK.
+• Jika ada potensi satu karyawan muncul lebih dari sekali, WAJIB deduplicate dulu menggunakan identifier karyawan unik yang tersedia di schema (misal: nik, employee_id, person_id, nrp, employee_number, atau kolom identitas unik sejenis yang benar-benar ada di schema).
+• Untuk headcount, default yang AMAN adalah COUNT(DISTINCT employee_key), BUKAN COUNT(*), kecuali Anda 100% yakin tabel sudah satu baris per karyawan.
+• Untuk agregasi gaji/biaya lembur/biaya bonus/biaya tunjangan pada level karyawan, JANGAN menjumlah baris mentah jika grain tabel bukan satu baris per karyawan. Buat CTE/base subquery yang lebih dulu memilih SATU baris per karyawan.
+• Contoh pola aman:
+  WITH employee_base AS (
+      SELECT DISTINCT employee_key, company_host, company_home, band, gaji_pokok
+      FROM hr.some_table
+      WHERE ...
+  )
+  SELECT COUNT(*) ... FROM employee_base;
+• Jika query menyebut "seluruh karyawan", "semua band", "berapa karyawan", "berapa pegawai", "penempatan karyawan", "daftar karyawan", "total biaya seluruh karyawan", maka biasakan berpikir DISTINCT PER KARYAWAN terlebih dahulu.
+
+RULES KHUSUS company_host vs company_home:
+• company_host = lokasi/perusahaan penempatan / tempat karyawan saat ini ditempatkan atau bekerja.
+• company_home = perusahaan asal / legal home company / entitas asal karyawan.
+• Jika user bertanya tentang penempatan, lokasi kerja, "di mana karyawan ditempatkan", "karyawan di Semen Padang", "karyawan yang bekerja di", "headcount di company X", gunakan company_host sebagai default utama.
+• Jika user bertanya tentang perusahaan asal, home company, induk asal, atau afiliasi asal karyawan, gunakan company_home.
+• Jika user hanya menyebut nama perusahaan tanpa kata "asal/home" dan konteksnya adalah headcount/penempatan/distribusi karyawan per perusahaan, PREFER company_host.
+• Jika user meminta perbandingan penempatan vs asal, tampilkan company_host dan company_home secara eksplisit.
+
+RULES KHUSUS GROUP CALCULATION / HYPOTHETICAL COST:
+• Untuk pertanyaan seperti "berapa total uang yang dikeluarkan perusahaan jika seluruh Band 5 di Semen Padang lembur", SQL Anda HARUS mengambil DATA DASAR per karyawan unik, bukan menghitung formula final bisnis penuh dari baris duplikat.
+• Artinya: tarik minimal headcount unik + rata-rata/total gaji dari employee_base yang sudah distinct.
+• Jika konteksnya "di Semen Padang" dan itu merujuk penempatan, filter dengan company_host = 'SP', bukan company_home, kecuali user eksplisit menyebut perusahaan asal.
+
 DATABASE SCHEMA:
 {schema}
 
@@ -194,15 +222,19 @@ LANGKAH ANALYSIS:
 
 PATTERN 5 - GROUP HYPOTHETICAL & BASE DATA EXTRACTION (untuk simulasi/hipotetis kelompok: "jika seluruh X lembur", "kalau divisi Y dapat bonus", "estimasi biaya jika semua Z dinas"):
 Anda adalah bagian dari sistem Multi-Agent. JANGAN hitung metrik akhir (total lembur, total bonus, dsb.). Cukup tarik DATA DASAR (headcount + agregat gaji atau kolom relevan) untuk kelompok yang dimaksud. Agen orkestrator akan menyelesaikan kalkulasi bisnis menggunakan data yang diperoleh dari SOP/kebijakan.
-Contoh mengekstrak data dasar untuk "jika seluruh band 5 lembur":
+Contoh mengekstrak data dasar untuk "jika seluruh band 5 lembur" (WAJIB distinct per karyawan):
 ```sql
+WITH employee_base AS (
+    SELECT DISTINCT employee_id, band, company_host, gaji_pokok
+    FROM hr.employees
+    WHERE band = '5'
+)
 SELECT
     band,
     COUNT(*) AS jumlah_karyawan,
     AVG(gaji_pokok) AS rata_rata_gaji_pokok,
     SUM(gaji_pokok) AS total_gaji_pokok
-FROM hr.employees
-WHERE band = '5'
+FROM employee_base
 GROUP BY band;
 ```
 
@@ -220,6 +252,9 @@ EXPERTISE ANDA:
 5. Untuk queries "dibagi per" atau "berdasarkan" → GROUP BY dengan proper aggregation
 6. Selalu tambahkan ORDER BY yang logis untuk hasil yang readable
 7. Pastikan percentage calculations benar (total = 100%)
+8. Untuk headcount, distribusi karyawan, penempatan, dan kalkulasi biaya kelompok: pikirkan grain data dan gunakan DISTINCT per karyawan bila ada risiko duplikasi
+9. Gunakan company_host untuk pertanyaan penempatan/lokasi kerja, dan company_home untuk perusahaan asal
+10. Jika grain tabel berisiko dobel, bentuk CTE employee_base yang sudah deduplicate sebelum agregasi
 
 PENTING: Generate HANYA SQL PostgreSQL yang valid untuk hr schema di Supabase, tanpa penjelasan atau komentar."""
     
@@ -262,6 +297,7 @@ PENTING: Generate HANYA SQL PostgreSQL yang valid untuk hr schema di Supabase, t
             
             # Extract SQL dari response
             sql = response.choices[0].message.content.strip()
+            self.logger.info(f"🧪 Raw SQL model output: {sql[:300]}")
 
             # Handle INVALID_QUERY signal from LLM (expected: simulasi/hipotetikal terdeteksi)
             if sql.strip().upper() == 'INVALID_QUERY':
@@ -345,6 +381,8 @@ Berikan penjelasan logikanya dalam format HTML tersebut:"""
 
         # Remove markdown code blocks
         sql = sql.replace("```sql", "").replace("```", "").strip()
+        if "INVALID_QUERY" in sql.upper() and "SELECT" not in sql.upper() and "WITH" not in sql.upper():
+            raise ValueError("INVALID_QUERY: Pertanyaan bukan query database yang valid")
         
         # Remove explanations that might slip through
         lines = sql.split('\n')
@@ -363,14 +401,19 @@ Berikan penjelasan logikanya dalam format HTML tersebut:"""
                 break
             sql_lines.append(line)
         
-        sql = ' '.join(sql_lines)
-        
+        sql = ' '.join(sql_lines).strip()
+
+        # If model adds preamble text before SQL, slice from the first WITH/SELECT
+        match = re.search(r'\b(WITH|SELECT)\b', sql, flags=re.IGNORECASE)
+        if match:
+            sql = sql[match.start():].strip()
+
         # Basic PostgreSQL validation
         sql_upper = sql.upper()
         
-        # Ensure SELECT query
-        if not sql_upper.startswith('SELECT'):
-            raise ValueError("Generated query must be SELECT statement")
+        # Ensure read-only query (SELECT or CTE starting with WITH)
+        if not (sql_upper.startswith('SELECT') or sql_upper.startswith('WITH')):
+            raise ValueError("Generated query must be SELECT or WITH statement")
         
         # Ensure hr schema usage
         if 'hr.' not in sql.lower() and 'FROM' in sql_upper:

@@ -19,7 +19,10 @@ let hasInitialized = false;
 
 // ✨ NEW: Debounce timer untuk mencegah processing saat jeda nafas
 let finalTranscriptTimer = null;
-const SPEECH_PAUSE_DELAY = 1500; // 1.5 detik delay sebelum processing
+const DEFAULT_SPEECH_PAUSE_DELAY = 1500;
+const CALL_MODE_SPEECH_PAUSE_DELAY = 2500;
+let processingFeedbackTimer = null;
+let processingFeedbackActive = false;
 
 // Sentence-level TTS queue (call mode streaming)
 const ttsQueue = [];    // Array of { text, audioPromise }
@@ -95,6 +98,9 @@ function initializeSpeechRecognition() {
       // Show live interim text under the waveform
       const interimEl = document.getElementById("callInterimText");
       if (interimEl) interimEl.textContent = displayText || '';
+      if (displayText) {
+        window.CallModeModule?.markSpeechDetected();
+      }
     }
     
     if (currentInput && displayText) {
@@ -129,7 +135,7 @@ function initializeSpeechRecognition() {
         
         // Reset timer
         finalTranscriptTimer = null;
-      }, SPEECH_PAUSE_DELAY);
+      }, window.isCallModeActive ? CALL_MODE_SPEECH_PAUSE_DELAY : DEFAULT_SPEECH_PAUSE_DELAY);
     }
   };
 
@@ -270,7 +276,13 @@ async function _fetchTTSAudio(text) {
   const response = await fetch(`${window.API_URL}/speech/text-to-speech`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ text, language: 'id', voice: 'indonesian', slow: false })
+    body: JSON.stringify({
+      text,
+      language: 'id',
+      voice: 'indonesian',
+      slow: false,
+      question: window._lastUserQuestion || ''
+    })
   });
   if (!response.ok) throw new Error(`TTS ${response.status}`);
   return response.blob();
@@ -287,6 +299,7 @@ async function _playQueueNext() {
         window.CallModeModule?.setCallStatus('listening');
         const interimEl = document.getElementById("callInterimText");
         if (interimEl) interimEl.textContent = '';
+        window.CallModeModule?.markPlaybackEnded();
         restartCallListening();
       }, 500);
     }
@@ -304,6 +317,9 @@ async function _playQueueNext() {
     if (currentAudio) { currentAudio.pause(); currentAudio = null; }
     currentAudio = new Audio(audioUrl);
     currentAudio.volume = 1.0;
+    currentAudio.onplay = () => {
+      window.CallModeModule?.markPlaybackStarted();
+    };
 
     currentAudio.onended = () => {
       URL.revokeObjectURL(audioUrl);
@@ -319,6 +335,10 @@ async function _playQueueNext() {
     await currentAudio.play();
   } catch (err) {
     console.error('[TTS Queue] Playback error:', err);
+    if (window.isCallModeActive) {
+      window.isProcessingCall = false;
+      window.CallModeModule?.recoverAfterFailure('tts_queue_playback');
+    }
     _playQueueNext();
   }
 }
@@ -352,7 +372,8 @@ async function speakText(text, options = {}) {
       text: text,
       language: options.language || 'id',
       voice: options.voice || 'indonesian',
-      slow: options.slow || false
+      slow: options.slow || false,
+      question: options.question || window._lastUserQuestion || ''
     };
 
     // 2. Fetch Audio dari Backend
@@ -382,6 +403,7 @@ async function speakText(text, options = {}) {
       currentAudio.onplay = () => {
         isSpeaking = true;
         stopRecognition();
+        window.CallModeModule?.markPlaybackStarted();
         
         // ✨ NEW: Show skip button saat AI bicara
         if (window.isCallModeActive) {
@@ -423,6 +445,7 @@ async function speakText(text, options = {}) {
               restartCallListening();
             }, 500);
           }
+          window.CallModeModule?.markPlaybackEnded();
         }
         resolve(currentAudio);
       };
@@ -447,6 +470,9 @@ async function speakText(text, options = {}) {
   } catch (error) {
     console.error('TTS Playback Error:', error);
     isSpeaking = false;
+    if (window.isCallModeActive) {
+      window.isProcessingCall = false;
+    }
     
     // Jika API gagal, kembalikan state UI dan nyalakan mic lagi
     if (window.isCallModeActive) {
@@ -459,6 +485,8 @@ async function speakText(text, options = {}) {
               window.CallModeModule.setCallStatus('listening', 'LISTENING');
             }
             restartCallListening();
+        } else {
+            window.CallModeModule?.recoverAfterFailure('tts_error');
         }
     }
     return null;
@@ -476,6 +504,7 @@ function stopTextToSpeech() {
   if (window.isCallModeActive) {
       const avatar = document.querySelector('.call-avatar');
       if (avatar) avatar.classList.remove('speaking');
+      window.CallModeModule?.markPlaybackEnded();
   }
 }
 
@@ -492,11 +521,38 @@ function speakMessage(button) {
 
 /* ================= AUDIO FEEDBACK SYSTEM ================= */
 async function playProcessingFeedback() {
-  // Dihapus agar tidak bertabrakan dengan audio TTS utama
+  if (!window.isCallModeActive || !window.speechSynthesis) return;
+
+  stopProcessingFeedback();
+  processingFeedbackTimer = setTimeout(() => {
+    if (!window.isCallModeActive || window.SpeechModule?.isSpeaking || !window.isProcessingCall) return;
+
+    try {
+      const utterance = new SpeechSynthesisUtterance("DENAI sedang berpikir. Mohon tunggu sebentar.");
+      utterance.lang = 'id-ID';
+      utterance.rate = 1.02;
+      utterance.pitch = 1.0;
+      utterance.volume = 0.9;
+      utterance.onstart = () => { processingFeedbackActive = true; };
+      utterance.onend = () => { processingFeedbackActive = false; };
+      utterance.onerror = () => { processingFeedbackActive = false; };
+      window.speechSynthesis.speak(utterance);
+    } catch (error) {
+      console.warn('[CALL] Failed to play processing feedback:', error);
+      processingFeedbackActive = false;
+    }
+  }, 1300);
 }
 
 function stopProcessingFeedback() {
-  if (window.speechSynthesis) window.speechSynthesis.cancel();
+  if (processingFeedbackTimer) {
+    clearTimeout(processingFeedbackTimer);
+    processingFeedbackTimer = null;
+  }
+  if (processingFeedbackActive && window.speechSynthesis) {
+    window.speechSynthesis.cancel();
+  }
+  processingFeedbackActive = false;
 }
 
 /* ================= MODULE INITIALIZATION ================= */

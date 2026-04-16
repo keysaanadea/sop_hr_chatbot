@@ -20,6 +20,24 @@ let _recentsExpanded = false;
 // Deduplicate: kalau loadSessions sedang berjalan, jangan spawn concurrent request
 let _loadSessionsInFlight = false;
 let _loadSessionsPending = false;
+let _loadSessionsTimer = null;
+
+function _escapeHtml(value) {
+  return String(value ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+function scheduleLoadSessions(delay = 350) {
+  if (_loadSessionsTimer) clearTimeout(_loadSessionsTimer);
+  _loadSessionsTimer = setTimeout(() => {
+    _loadSessionsTimer = null;
+    loadSessions();
+  }, delay);
+}
 
 async function togglePinSession(sessionId, event) {
   event.stopPropagation();
@@ -103,7 +121,7 @@ function addOptimisticSession(sessionId, firstMessage) {
   div.className = "session-item active optimistic";
   div.dataset.sessionId = sessionId;
   const title = (firstMessage || 'Percakapan baru').slice(0, 45);
-  div.innerHTML = `<span class="title">${title}</span>`;
+  div.innerHTML = `<span class="title">${_escapeHtml(title)}</span>`;
 
   recentsList.prepend(div);
 }
@@ -126,11 +144,9 @@ async function loadSessions() {
 
     list.innerHTML = "";
 
-    // Filter: hanya tampilkan session milik user yang sedang login
-    const mySessionIds = window.CoreApp?.getMySessionIds?.();
-    let filteredSessions = mySessionIds
-      ? sessions.filter(s => mySessionIds.includes(s.session_id))
-      : sessions;   // null = mode dev/standalone, tampilkan semua
+    // Server sudah mem-filter sesi berdasarkan NIK (backend/api/sessions.py).
+    // Filter localStorage dihapus — menyembunyikan sesi valid saat ganti device / clear storage.
+    let filteredSessions = sessions;
     
     const pinnedSessions = filteredSessions.filter(s => s.pinned);
     const recentSessions = filteredSessions.filter(s => !s.pinned);
@@ -193,9 +209,10 @@ function createSessionItem(s) {
   const div = document.createElement("div"); div.className = "session-item";
   if (window.CoreApp && s.session_id === window.CoreApp.activeChatId) div.classList.add("active");
   const isPinned = s.pinned || false;
+  const safeTitle = _escapeHtml(s.title || 'Untitled Conversation');
   
   div.innerHTML = `
-    <span class="title">${s.title || 'Untitled Conversation'}</span>
+    <span class="title">${safeTitle}</span>
     <div class="session-actions">
       <button class="session-action-btn pin-btn ${isPinned ? 'active' : ''}" onclick="window.SessionModule.togglePinSession('${s.session_id}', event)" title="${isPinned ? 'Unstar' : 'Star'}"><svg fill="${isPinned ? 'currentColor' : 'none'}" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z"></path></svg></button>
       <button class="session-action-btn delete-btn" onclick="window.SessionModule.deleteSession('${s.session_id}', event)" title="Delete"><svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg></button>
@@ -218,8 +235,10 @@ async function loadSession(sessionId) {
 
     if (window.CoreApp) {
       if (history.length === 0) {
-        // Session kosong — tetap di chat view, tapi tampilkan info
-        window.CoreApp.addMessage("bot", "Riwayat percakapan ini tidak ditemukan atau sudah kedaluwarsa.", false);
+        // Session kosong/expired — kembali ke landing page, bukan tampilkan error di chat
+        window.CoreApp.landing.style.display = "flex";
+        window.CoreApp.chat.style.display = "none";
+        window.CoreApp.messages.innerHTML = "";
       } else {
         history.forEach(m => {
           // 🔥 FIX: Handle stopped messages smoothly
@@ -428,7 +447,7 @@ function initialize() {
 }
 
 window.SessionModule = {
-  loadSessions, loadSession, togglePinSession, deleteSession,
+  loadSessions, scheduleLoadSessions, loadSession, togglePinSession, deleteSession,
   exportSessionHistory, clearAllSessions, createSessionItem,
   showStoppedResponseFromHistory, // 🔥 FIX 2 INCLUDED
   addOptimisticSession,

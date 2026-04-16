@@ -43,6 +43,45 @@ let isVoiceToTextMode = false;
 let currentRequestController = null;
 let currentThinkingMessage = null;
 
+function escapeHtml(value) {
+  return String(value ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+function sanitizeHtmlFragment(html) {
+  if (!html) return html;
+
+  const parser = new DOMParser();
+  const doc = parser.parseFromString(`<div id="__san_root">${html}</div>`, "text/html");
+  const root = doc.getElementById("__san_root");
+  if (!root) return html;
+
+  root.querySelectorAll("script, style, iframe, object, embed, link, meta, form, input, textarea, select").forEach((el) => el.remove());
+
+  root.querySelectorAll("*").forEach((el) => {
+    Array.from(el.attributes).forEach((attr) => {
+      const attrName = attr.name.toLowerCase();
+      const attrValue = attr.value.trim();
+      if (attrName.startsWith("on")) {
+        el.removeAttribute(attr.name);
+        return;
+      }
+      if (["href", "src", "xlink:href"].includes(attrName)) {
+        const lower = attrValue.toLowerCase();
+        if (lower.startsWith("javascript:") || lower.startsWith("data:text/html")) {
+          el.removeAttribute(attr.name);
+        }
+      }
+    });
+  });
+
+  return root.innerHTML;
+}
+
 // ⚡ OPTIMIZED: Pre-allocate static arrays to save memory on every keystroke
 const VIZ_KEYWORDS = [
   'distribusi', 'distribution', 'breakdown', 'sebaran',
@@ -161,7 +200,7 @@ function _loadActiveChat() {
   } catch (e) { return null; }
 }
 
-function _applySintaData(data) {
+function _applySintaData(data, skipChatRestore = false) {
   activeChatId   = data.session_id;
   userRole       = data.role;
   isHR           = (data.role === 'hc');
@@ -173,15 +212,17 @@ function _applySintaData(data) {
   _applyPersonalizedGreeting(data);
   updateUserInterface();
 
-  // Restore sesi terakhir yang dibuka user (berlaku di semua mode login, termasuk Mode 1 dari SINTA)
-  // SINTA selalu buat session_id baru → tanpa ini, user selalu mulai dari sesi kosong
-  setTimeout(() => {
-    const lastActive = _loadActiveChat();
-    if (lastActive && lastActive !== activeChatId) {
-      console.log(`♻️ Restoring last active chat: ${lastActive.slice(0, 8)}...`);
-      window.SessionModule?.loadSession?.(lastActive);
-    }
-  }, 250);
+  // Restore sesi terakhir hanya saat fresh login (Mode 1 dari SINTA/login page).
+  // Mode 3 (restore sessionStorage) tidak auto-buka chat agar landing page tetap tampil.
+  if (!skipChatRestore) {
+    setTimeout(() => {
+      const lastActive = _loadActiveChat();
+      if (lastActive && lastActive !== activeChatId) {
+        console.log(`♻️ Restoring last active chat: ${lastActive.slice(0, 8)}...`);
+        window.SessionModule?.loadSession?.(lastActive);
+      }
+    }, 250);
+  }
 }
 
 async function getUserRole() {
@@ -218,10 +259,11 @@ async function getUserRole() {
   }
 
   // Mode 3: Restore dari sessionStorage (survive page refresh)
+  // skipChatRestore=true: apply user data saja, landing page tetap tampil, user pilih sesi sendiri dari sidebar
   const saved = _loadSintaSession();
   if (saved && saved.session_id) {
     console.log(`♻️ Restored SINTA session from storage | nama=${saved.first_name} | role=${saved.role}`);
-    _applySintaData(saved);   // sudah include restore last active chat
+    _applySintaData(saved, true);
     return;
   }
 
@@ -266,7 +308,7 @@ function _applyPersonalizedGreeting(data) {
   if (!el || !data.first_name) return;
   const name = data.first_name;
   const isHC = data.role === 'hc';
-  el.innerHTML = `Hai, <span class="text-primary italic">${name}!</span><br>Ada yang bisa DENAI bantu${isHC ? ' hari ini?' : '?'}`;
+  el.innerHTML = `Hai, <span class="text-primary italic">${escapeHtml(name)}!</span><br>Ada yang bisa DENAI bantu${isHC ? ' hari ini?' : '?'}`;
 }
 
 /** User info card dihapus — tidak dipakai lagi */
@@ -628,17 +670,23 @@ function startFromLanding() {
  * Tampilkan welcome card saat greeting — dengan quick action suggestions
  */
 function _buildGreetingCards(suggestions) {
-  return suggestions.map(s => `
-    <button class="greeting-suggestion-card" onclick="sendMessage('${s.title}')">
+  return suggestions.map(s => {
+    const safeTitle = escapeHtml(s.title || "");
+    const safeSub = escapeHtml(s.sub || "");
+    const safeIcon = escapeHtml(s.icon || "help");
+    const encodedTitle = encodeURIComponent(s.title || "");
+    return `
+    <button class="greeting-suggestion-card" onclick="sendMessage(decodeURIComponent('${encodedTitle}'))">
       <div class="greeting-suggestion-icon">
-        <span class="material-symbols-outlined" style="font-variation-settings:'FILL' 1,'wght' 400,'GRAD' 0,'opsz' 24;">${s.icon}</span>
+        <span class="material-symbols-outlined" style="font-variation-settings:'FILL' 1,'wght' 400,'GRAD' 0,'opsz' 24;">${safeIcon}</span>
       </div>
       <div class="greeting-suggestion-body">
-        <span class="greeting-suggestion-title">${s.title}</span>
-        <span class="greeting-suggestion-sub">${s.sub}</span>
+        <span class="greeting-suggestion-title">${safeTitle}</span>
+        <span class="greeting-suggestion-sub">${safeSub}</span>
       </div>
       <span class="material-symbols-outlined greeting-suggestion-arrow">chevron_right</span>
-    </button>`).join('');
+    </button>`;
+  }).join('');
 }
 
 async function _showGreetingCard() {
@@ -674,7 +722,7 @@ async function _showGreetingCard() {
   bubble.className = 'bubble greeting-card';
   bubble.innerHTML = `
     <div class="greeting-header">
-      <p class="greeting-name">Halo, ${firstName}!</p>
+      <p class="greeting-name">Halo, ${escapeHtml(firstName)}!</p>
       <p class="greeting-sub">${_greetingSub}</p>
     </div>
     <div class="greeting-suggestions">
@@ -794,7 +842,7 @@ function addMessage(role, text, shouldSave = true, responseData = null) {
       if (cleanText) {
         const bubbleDiv = document.createElement("div");
         bubbleDiv.className = "bubble";
-        bubbleDiv.innerHTML = text;
+        bubbleDiv.innerHTML = _renderBotBubbleContent(text);
         chatColumn.appendChild(bubbleDiv);
       }
 
@@ -893,14 +941,22 @@ function _stripCitations(html) {
 /**
  * Builds Rujukan Dokumen cards — GROUPED by filename.
  * Satu card per dokumen unik; bagian-bagian digabung.
- * Menyimpan data ke window._rujukanIndex untuk DocPanel.
+ * Setiap pesan mendapat key unik agar rujukan antar chat tidak saling tumpuk.
  */
 function _buildRujukanCards(grouped) {
   if (!grouped.length) return '';
   const ICONS = ['description', 'account_balance_wallet', 'health_and_safety', 'gavel', 'policy'];
 
-  // Simpan untuk DocPanel.openByIdx()
-  window._rujukanIndex = grouped;
+  // Key unik per message — mencegah window._rujukanIndex tertimpa chat berikutnya
+  const rujukanKey = `rk_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+  window._rujukanMap = window._rujukanMap || {};
+  window._rujukanMap[rujukanKey] = grouped;
+
+  // Snapshot source chunks saat ini agar klik pada chat lama tetap dapat chunks yang benar
+  window._rujukanChunksMap = window._rujukanChunksMap || {};
+  if (window._lastSourceChunks) {
+    window._rujukanChunksMap[rujukanKey] = window._lastSourceChunks;
+  }
 
   // Capture session_id saat card dibangun — bisa dipakai setelah refresh
   const _currentSessionId = window.CoreApp?.activeChatId || '';
@@ -909,7 +965,7 @@ function _buildRujukanCards(grouped) {
     const icon = ICONS[idx % ICONS.length];
     const isLastOdd = (idx === grouped.length - 1) && (grouped.length % 2 !== 0);
     const bagianDisplay = src.bagians.filter(Boolean).join(', ');
-    return `<div class="rujukan-card${isLastOdd ? ' rujukan-card--full' : ''}" onclick="window.DocPanel?.openByIdx(${idx},'${_currentSessionId}')" title="Lihat dokumen">
+    return `<div class="rujukan-card${isLastOdd ? ' rujukan-card--full' : ''}" onclick="window.DocPanel?.openByRujukan('${rujukanKey}',${idx},'${_currentSessionId}')" title="Lihat dokumen">
       <div class="rujukan-card-shimmer"></div>
       <div class="rujukan-card-inner">
         <div class="rujukan-card-icon">
@@ -941,6 +997,7 @@ function _buildRujukanCards(grouped) {
  */
 function _postProcessBotHTML(html) {
   if (!html) return html;
+  html = sanitizeHtmlFragment(html);
 
   const parser = new DOMParser();
   const doc = parser.parseFromString(`<div id="__root">${html}</div>`, 'text/html');
@@ -985,7 +1042,7 @@ function _postProcessBotHTML(html) {
 
   // Strip inline [N] dari teks
   const bodyHTML = _stripCitations(root.innerHTML);
-  return bodyHTML + rujukanHTML;
+  return sanitizeHtmlFragment(bodyHTML + rujukanHTML);
 }
 
 /**
@@ -995,6 +1052,13 @@ function _renderBotBubbleContent(text) {
   // Guard: already rendered as not-found card (e.g. loaded from history) — don't double-wrap
   if (text.includes('not-found-card')) {
     return text;
+  }
+
+  // If backend already produced HTML (common for A+B synthesis), render it directly.
+  // Sending this through marked.parse() can turn indented HTML chunks into code blocks.
+  const looksLikeHtml = /<(h[1-6]|p|ul|ol|li|strong|em|br|div|table|code|pre)\b/i.test(text);
+  if (looksLikeHtml) {
+    return _postProcessBotHTML(text);
   }
 
   // Format: "Informasi Tidak Ditemukan|..." from backend
@@ -1290,7 +1354,7 @@ function createSystemBubble(text = "", className = "") {
   const bubble = document.createElement("div");
   bubble.className = `bubble ${className}`.trim();
   if (text) {
-    bubble.innerHTML = text;
+    bubble.innerHTML = sanitizeHtmlFragment(text);
   }
   
   div.appendChild(avatar);
@@ -1564,21 +1628,31 @@ window.DocPanel = (() => {
   const error   = () => document.getElementById('docPanelError');
   const openBtn = () => document.getElementById('dpOpenBtn');
 
-  /** Load chunks dari sessionStorage — coba session-specific dulu, fallback ke 'last' */
+  /** Load chunks — localStorage (persisten, survive refresh & browser tutup) */
   function _loadCachedChunks(sessionId) {
     try {
       const sid = sessionId || window.CoreApp?.activeChatId;
       if (sid) {
-        const raw = sessionStorage.getItem(`dp_chunks_${sid}`);
+        const raw = localStorage.getItem(`dp_chunks_${sid}`);
         if (raw) return JSON.parse(raw);
       }
       // Fallback: ambil dari response terakhir manapun
-      const rawLast = sessionStorage.getItem('dp_chunks_last');
+      const rawLast = localStorage.getItem('dp_chunks_last');
       return rawLast ? JSON.parse(rawLast) : null;
     } catch (e) { return null; }
   }
 
-  /** Buka panel berdasarkan index dari window._rujukanIndex (hasil grouping) */
+  /** Buka panel berdasarkan unique rujukan key + index (fix: tiap chat punya datanya sendiri) */
+  function openByRujukan(rujukanKey, idx, sessionId) {
+    const grouped = window._rujukanMap?.[rujukanKey];
+    const src = grouped?.[idx];
+    if (!src) return;
+    // Prioritaskan chunks yang di-snapshot saat card dibangun, baru fallback ke session/last
+    const cachedChunks = window._rujukanChunksMap?.[rujukanKey] || _loadCachedChunks(sessionId) || window._lastSourceChunks;
+    open(src.fileName, src.bagians, cachedChunks);
+  }
+
+  /** @deprecated Gunakan openByRujukan — masih ada untuk kompatibilitas kartu lama */
   function openByIdx(idx, sessionId) {
     const src = window._rujukanIndex?.[idx];
     if (!src) return;
@@ -1751,7 +1825,7 @@ window.DocPanel = (() => {
     if (e.key === 'Escape' && panel()?.classList.contains('open')) close();
   });
 
-  return { open, close, openPDF, openByIdx };
+  return { open, close, openPDF, openByIdx, openByRujukan };
 })();
 
 /* ================= GLOBAL EXPORTS ================= */
@@ -1812,7 +1886,9 @@ window.CoreApp = {
   set currentRequestController(value) { currentRequestController = value; },
   
   // 🔥 NEW: Store last query for regenerate
-  _lastUserQuery: null
+  _lastUserQuery: null,
+  escapeHtml,
+  _sanitizeHtmlFragment: sanitizeHtmlFragment
 };
 
 // Expose ke SINTA agar bisa dipanggil: window.DenaiApp.authenticateWithSinta(data)

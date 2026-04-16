@@ -55,6 +55,8 @@ ATURAN WAJIB:
 3. Urutkan informasi dari yang PALING RELEVAN ke yang supporting
 4. Gunakan bahasa lisan yang natural tapi jelas
 5. Tetap profesional dan akurat
+6. Bunyikan jawaban seperti orang sedang menjelaskan lewat telepon, bukan membaca dokumen
+7. Jangan sebut nomor sitasi, label rujukan, atau judul bagian seperti "Rujukan Dokumen"
 
 CONTOH TRANSFORMASI:
 Pertanyaan: "Denda telat pajak berapa?"

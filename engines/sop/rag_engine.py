@@ -136,7 +136,9 @@ LANGKAH 1 — Tentukan sop_topic: Baca pertanyaan dengan cermat. Identifikasi to
 
 LANGKAH 2 — Buat search_keywords: Mulai dengan nama topik SOP, lalu tambahkan detail dari pertanyaan.
   JIKA nanya BIAYA PERJALANAN DINAS: WAJIB tambah "TABEL BIAYA PERJALANAN DINAS UPD-DN HARIAN".
-  JANGAN sertakan nama kota sebagai keyword jika sop_topic bukan 'perjalanan_dinas'.
+  ⚠️ UNTUK sop_topic='perjalanan_dinas': JANGAN PERNAH masukkan nama kota (Jakarta, Surabaya, dll) ke keywords!
+  Nama kota sudah ditangani di field kota_asal/kota_tujuan — bukan di keywords.
+  Keywords harus fokus pada KONTEN dokumen: tarif, band, fasilitas, UPD, hotel, akomodasi.
 
 LANGKAH 3 — Ekstrak konteks user dari prefix (jika ada pola "[Nama: X, Band: Y, Lokasi saat ini: Z]"):
   - user_band: angka band dari prefix, contoh "[Band: 3]" → user_band = "3"
@@ -144,11 +146,14 @@ LANGKAH 3 — Ekstrak konteks user dari prefix (jika ada pola "[Nama: X, Band: Y
 
 LANGKAH 4 — Isi field kota_asal dan kota_tujuan (hanya untuk sop_topic='perjalanan_dinas'):
   - kota_tujuan: kota yang disebut setelah "ke", "menuju", "tujuan", "di" dalam konteks dinas.
-  - kota_asal: kota yang disebut setelah "dari", "berangkat dari" ATAU — jika tidak ada dalam teks —
-    ambil dari prefix konteks user jika ada pola "[..., Lokasi saat ini: <kota>, ...]".
-    Contoh: query "[Nama: RAHMAD, Band: 3, Lokasi saat ini: Jakarta] dinas ke Surabaya"
+  - kota_asal: kota yang disebut setelah "dari", "berangkat dari" DALAM TEKS PERTANYAAN,
+    ATAU — jika tidak ada dalam teks — ambil dari prefix konteks user jika ada pola "[..., Lokasi saat ini: <kota>, ...]".
+    Contoh 1: query "perjalanan dinas dari Jakarta ke Surabaya fasilitas apa"
+    → kota_asal = "Jakarta", kota_tujuan = "Surabaya"
+    → search_keywords = "perjalanan dinas hotel fasilitas UPD"  (JANGAN masukkan nama kota ke keywords!)
+    Contoh 2: query "[Nama: RAHMAD, Band: 3, Lokasi saat ini: Jakarta] dinas ke Surabaya"
     → user_band = "3", kota_asal = "Jakarta", kota_tujuan = "Surabaya"
-    → search_keywords = "perjalanan dinas Band 3 hotel fasilitas Jakarta Surabaya UPD"
+    → search_keywords = "perjalanan dinas Band 3 hotel fasilitas UPD"  (nama kota TIDAK perlu di keywords)
 
 LANGKAH 5 — Isi field lainnya sesuai panduan di setiap field.
 
@@ -225,23 +230,22 @@ rag_engine = RAGEngine()
 # LAYER 3 & 4: RETRIEVAL (Multi-Query)
 # =====================
 async def _generate_multi_queries(question: str, sop_topic: str) -> List[str]:
-    """Generate 3 alternative search queries using synonym variation."""
+    """Generate 3 alternative search queries: aspect-expanded and synonym variation."""
     prompt = f"""Kamu adalah asisten pencarian dokumen regulasi HR perusahaan.
-Tugasmu: buat TEPAT 3 query pencarian dengan TERMINOLOGI yang BENAR-BENAR BERBEDA dari pertanyaan berikut.
-PENTING: Jangan hanya mengubah struktur kalimat — ganti kata kunci utamanya dengan sinonim/istilah alternatif.
+Tugasmu: buat TEPAT 3 query pencarian LENGKAP dan BERBEDA ASPEK dari pertanyaan berikut.
 
 Topik: {sop_topic}
 Pertanyaan: {question}
 
 Panduan:
-1. [SINONIM FORMAL] Ganti kata kunci utama dengan istilah yang lazim di dokumen regulasi/SK Direksi.
-   Contoh: "mobil dinas" → "kendaraan jabatan" / "fasilitas kendaraan" / "tunjangan kendaraan"
-   Contoh: "pulsa" → "biaya komunikasi" / "fasilitas komunikasi"
-   Contoh: "gaji" → "honorarium" / "penghasilan tetap"
-2. [ENTITAS LENGKAP] Gunakan nama entitas/jabatan secara lengkap dan spesifik.
-   Contoh: "Pengurus" → "Pengurus Dana Pensiun Semen Gresik"
-3. [KONTEKS PASAL] Tambahkan konteks dokumen formal seperti nomor pasal atau nama SK.
-   Contoh: "tunjangan kendaraan Pengurus Dana Pensiun SK Direksi Pasal 3"
+1. [ASPEK LENGKAP] Setiap query harus menyebutkan aspek yang LEBIH SPESIFIK dan LENGKAP dari pertanyaan asli.
+   Contoh topik perjalanan_dinas: satu query tentang tarif hotel/akomodasi per Band jabatan,
+   satu tentang uang harian (UPD) dan kategorinya, satu tentang transportasi dan biaya lain.
+2. [SINONIM FORMAL] Gunakan istilah yang lazim di dokumen regulasi/SK Direksi.
+   Contoh: "hotel" → "plafon akomodasi" / "tarif penginapan per Band"
+   Contoh: "uang jalan" → "Uang Perjalanan Dinas Dalam Negeri (UPD-DN)"
+3. [ENTITAS LENGKAP] Gunakan nama entitas/jabatan secara lengkap dan spesifik.
+4. [ANTI FABRIKASI] Jika user TIDAK menyebut pasal, nomor SK, atau tahun, JANGAN menambahkannya.
 
 Tulis HANYA 3 baris, satu query per baris, tanpa nomor atau label apapun."""
     try:
@@ -262,11 +266,22 @@ async def retrieve_context_async(query: str, search_keywords: str, scope: str, s
     )
 
     # Step 2: Embed alternative queries secara paralel
-    alt_vectors = list(await asyncio.gather(*[
-        rag_engine.embeddings.aembed_query(q) for q in alt_queries
-    ])) if alt_queries else []
+    # Untuk perjalanan_dinas, tambahkan guaranteed query untuk tabel hotel + UPD
+    # agar chunk tarif akomodasi per Band selalu masuk pool Pinecone (bukan LLM call)
+    _guaranteed_queries: List[str] = []
+    if sop_topic == 'perjalanan_dinas':
+        _guaranteed_queries = [
+            "tabel tarif plafon hotel akomodasi per Band jabatan perjalanan dinas dalam negeri",
+            "TABEL BIAYA PERJALANAN DINAS UPD-DN HARIAN kategori nominal per hari",
+        ]
 
-    all_vectors = [primary_vector] + alt_vectors
+    embed_tasks = [rag_engine.embeddings.aembed_query(q) for q in alt_queries + _guaranteed_queries]
+    all_extra_vectors = list(await asyncio.gather(*embed_tasks)) if embed_tasks else []
+
+    alt_vectors = all_extra_vectors[:len(alt_queries)]
+    guaranteed_vectors = all_extra_vectors[len(alt_queries):]
+
+    all_vectors = [primary_vector] + alt_vectors + guaranteed_vectors
 
     def _run_pinecone_query(vector, filter_dict, top_k):
         return rag_engine.index.query(
@@ -307,12 +322,14 @@ async def retrieve_context_async(query: str, search_keywords: str, scope: str, s
             seen[vid] = {'id': vid, 'metadata': m.metadata, 'score': m.score}
 
     merged = list(seen.values())
-    logger.info(f"🔀 Multi-query: {len(all_vectors)} queries → {len(merged)} unique chunks sebelum rerank")
+    logger.info(f"🔀 Multi-query: {len(all_vectors)} queries ({len(alt_queries)} LLM alts + {len(_guaranteed_queries)} guaranteed) → {len(merged)} unique chunks sebelum rerank")
 
     # Step 7: Cohere rerank dari pool yang lebih besar
     if rag_engine.cohere_reranker and merged:
         metrics.cohere_rerank_calls += 1
-        rerank_query = f"[Topik: {sop_topic}] {query}" if sop_topic and sop_topic != "general" else query
+        _base = f"[Topik: {sop_topic}] {query}" if sop_topic and sop_topic != "general" else query
+        _alts = " | ".join(alt_queries) if alt_queries else ""
+        rerank_query = f"{_base} | {_alts}" if _alts else _base
         logger.info(f"🔍 Cohere rerank query: {rerank_query}")
         merged = await rag_engine.cohere_reranker.rerank_async(query=rerank_query, chunks=merged, top_k=RAG_TOP_K)
 
@@ -490,14 +507,21 @@ async def answer_question_async(
         kota_asal = str(kota_asal[0]) if isinstance(kota_asal, list) else str(kota_asal).strip()
         kota_tujuan = str(kota_tujuan[0]) if isinstance(kota_tujuan, list) else str(kota_tujuan).strip()
 
-        # Fallback: kalau LLM tidak ekstrak kota_asal, coba ambil dari prefix konteks user
-        # Format prefix: "[..., Lokasi saat ini: <kota>, ...]"
+        # Fallback 1: coba ambil kota_asal dari prefix konteks user "[..., Lokasi saat ini: <kota>, ...]"
         if not kota_asal or kota_asal.lower() in ["", "none", "null", "-", "tidak ada"]:
             import re as _re
             _lokasi_match = _re.search(r'\[.*?Lokasi saat ini:\s*([^,\]]+)', question)
             if _lokasi_match:
                 kota_asal = _lokasi_match.group(1).strip()
                 logger.info(f"📍 kota_asal di-fallback dari prefix user: {kota_asal}")
+
+        # Fallback 2: coba parse pola "dari <Kota>" langsung dari teks pertanyaan
+        # Hanya match kata berawalan huruf kapital untuk menghindari false positive ("dari sini", "dari mana")
+        if not kota_asal or kota_asal.lower() in ["", "none", "null", "-", "tidak ada"]:
+            _dari_match = _re.search(r'\bdari\s+([A-Z][a-zA-Z]+(?:\s+[A-Z][a-zA-Z]+)?)', question)
+            if _dari_match:
+                kota_asal = _dari_match.group(1).strip()
+                logger.info(f"📍 kota_asal di-fallback dari 'dari <Kota>' dalam teks: {kota_asal}")
 
         is_valid_destination = bool(kota_tujuan and kota_tujuan.lower() not in ["", "none", "null", "-", "tidak ada"])
 
@@ -541,8 +565,26 @@ async def answer_question_async(
         # Template & Formatting
         html_template = rag_engine.template_engine.get_template(template_type, question)
         
-        if travel_data.get('processed') and scope == 'domestic' and 0 < travel_data.get('distance_km', 0) < 120:
-            html_template = """<h3>Informasi Perjalanan Dinas</h3>\n<p>[Tulis rute dan jarak asli dari INFO SISTEM. Berdasarkan regulasi perusahaan, perjalanan kurang dari 120 km BUKAN termasuk Perjalanan Dinas.]</p>\n<h3>Ketentuan Kelayakan Fasilitas</h3>\n<p>[Tuliskan TEGAS bahwa seluruh fasilitas standar perjalanan dinas TIDAK BERLAKU untuk perjalanan ini. 🚫 DILARANG KERAS MENAMPILKAN DAFTAR TABEL HARGA!]</p>"""
+        if travel_data.get('processed') and scope == 'domestic':
+            _td_dist = travel_data.get('distance_km', 0)
+            _td_route = travel_data.get('route', route_str)
+            _td_dur = travel_data.get('duration_hours', dur_hrs)
+            if 0 < _td_dist < 120:
+                html_template = (
+                    f"<h3>Informasi Perjalanan Dinas</h3>"
+                    f"<p>Rute <strong>{_td_route}</strong> memiliki estimasi jarak <strong>{_td_dist} km</strong>. "
+                    f"Berdasarkan regulasi perusahaan, jarak minimal untuk Perjalanan Dinas adalah <strong>120 km</strong> (pergi-pulang).</p>"
+                    f"<h3>Ketentuan Kelayakan Fasilitas</h3>"
+                    f"<p>Karena jarak perjalanan ini di bawah 120 km, seluruh fasilitas perjalanan dinas — termasuk UPD harian, akomodasi/hotel, dan transportasi — <strong>tidak dapat diberikan</strong>.</p>"
+                )
+            elif _td_dist >= 120:
+                # Prepend route info block — LLM hanya melengkapi sisa template
+                _route_header = (
+                    f"<p><strong>Rute:</strong> {_td_route} &nbsp;|&nbsp; "
+                    f"<strong>Estimasi Jarak:</strong> {_td_dist} km &nbsp;|&nbsp; "
+                    f"<strong>Durasi Perjalanan Darat:</strong> {_td_dur:.1f} jam</p>\n"
+                )
+                html_template = _route_header + html_template
 
         enforcement_instructions = rag_engine.template_engine.get_enforcement_instructions(html_template)
 
@@ -552,7 +594,13 @@ async def answer_question_async(
         # KEMBALIKAN KEKUATAN DETAIL
         detail_enforcer = ""
         if "singkat" not in question.lower():
-            detail_enforcer = "8. 📝 KEDALAMAN JAWABAN: Anda WAJIB menjabarkan aturan, nominal, rincian, dan tata cara secara SANGAT DETAIL, TERSTRUKTUR, dan LENGKAP. Jangan ada poin penting dari KNOWLEDGE BASE yang disembunyikan!"
+            detail_enforcer = (
+                "8. 📝 KEDALAMAN JAWABAN: Anda WAJIB menjabarkan aturan, nominal, rincian, dan tata cara secara SANGAT DETAIL, TERSTRUKTUR, dan LENGKAP. "
+                "Jangan ada poin penting dari KNOWLEDGE BASE yang disembunyikan! "
+                "DILARANG KERAS merangkum menjadi satu kalimat generic seperti 'biaya transportasi ditanggung' — "
+                "HARUS dijabarkan MASING-MASING komponen secara spesifik. "
+                "Jika [INFO SISTEM] mencantumkan daftar komponen wajib, SEMUA komponen tersebut wajib muncul di jawaban."
+            )
 
         # 🔥 PERUBAHAN KRUSIAL ADA DI SINI 🔥
         prompt = f"""=== SYSTEM ROLE ===
@@ -718,6 +766,21 @@ async def answer_question_stream(
         _is_relokasi = _sop_topic in ('relokasi', 'tunjangan', 'karir', 'phk') or \
                        any(w in question.lower() for w in ["penempatan", "relokasi", "pindah", "mutasi", "dipindahkan"])
 
+        # ── Fallback Band (sama dengan path non-stream) ──────────────────────
+        # Kalau LLM tidak inject band ke keywords, ambil dari prefix [Band: X]
+        import re as _re_kw_s
+        _band_from_prefix_s = analysis.get('user_band', '').strip()
+        if not _band_from_prefix_s or _band_from_prefix_s == "0":
+            _band_match_s = _re_kw_s.search(r'\[.*?Band:\s*([1-9]\d*)', question)
+            if _band_match_s:
+                _band_from_prefix_s = _band_match_s.group(1).strip()
+            else:
+                _band_from_prefix_s = ""
+        if _band_from_prefix_s and _band_from_prefix_s.isdigit() and int(_band_from_prefix_s) > 0 \
+                and f"Band {_band_from_prefix_s}" not in keywords:
+            keywords = f"{keywords} Band {_band_from_prefix_s}"
+            logger.info(f"📍 [STREAM] Band {_band_from_prefix_s} di-inject ke search keywords")
+
         # scope filter (domestic/international) hanya relevan untuk perjalanan dinas.
         # Untuk topik lain, Pinecone scope filter menyingkirkan dokumen scope=general.
         if _sop_topic != 'perjalanan_dinas' and scope != 'general':
@@ -736,6 +799,7 @@ async def answer_question_stream(
             f"🏙️  Kota Asal       : {analysis.get('kota_asal', '-')}\n"
             f"🏙️  Kota Tujuan     : {analysis.get('kota_tujuan', '-')}\n"
             f"📏  Kalkulasi Jarak : {butuh_kalkulasi}\n"
+            f"👤  User Band       : {_band_from_prefix_s or '-'}\n"
             + "🔮" * 25
         )
 
@@ -793,6 +857,23 @@ async def answer_question_stream(
         kota_tujuan = analysis.get('kota_tujuan', '')
         kota_asal = str(kota_asal[0]) if isinstance(kota_asal, list) else str(kota_asal).strip()
         kota_tujuan = str(kota_tujuan[0]) if isinstance(kota_tujuan, list) else str(kota_tujuan).strip()
+
+        # ── Fallback Lokasi (sama dengan path non-stream) ────────────────────
+        # Fallback 1: coba ambil kota_asal dari prefix [Lokasi saat ini: ...]
+        if not kota_asal or kota_asal.lower() in ["", "none", "null", "-", "tidak ada"]:
+            import re as _re_s
+            _lokasi_match_s = _re_s.search(r'\[.*?Lokasi saat ini:\s*([^,\]]+)', question)
+            if _lokasi_match_s:
+                kota_asal = _lokasi_match_s.group(1).strip()
+                logger.info(f"📍 [STREAM] kota_asal di-fallback dari prefix user: {kota_asal}")
+
+        # Fallback 2: parse pola "dari <Kota>" langsung dari teks pertanyaan
+        if not kota_asal or kota_asal.lower() in ["", "none", "null", "-", "tidak ada"]:
+            _dari_match_s = _re_s.search(r'\bdari\s+([A-Z][a-zA-Z]+(?:\s+[A-Z][a-zA-Z]+)?)', question)
+            if _dari_match_s:
+                kota_asal = _dari_match_s.group(1).strip()
+                logger.info(f"📍 [STREAM] kota_asal di-fallback dari 'dari <Kota>' dalam teks: {kota_asal}")
+
         is_valid_destination = bool(kota_tujuan and kota_tujuan.lower() not in ["", "none", "null", "-", "tidak ada"])
 
         # Trigger TravelAnalyzer otomatis jika perjalanan_dinas dengan kota asal+tujuan valid.
@@ -829,15 +910,38 @@ async def answer_question_stream(
         await check_cancelled()
 
         html_template = rag_engine.template_engine.get_template(template_type, question)
-        if travel_data.get('processed') and scope == 'domestic' and 0 < travel_data.get('distance_km', 0) < 120:
-            html_template = """<h3>Informasi Perjalanan Dinas</h3>\n<p>[Tulis rute dan jarak asli dari INFO SISTEM. Berdasarkan regulasi perusahaan, perjalanan kurang dari 120 km BUKAN termasuk Perjalanan Dinas.]</p>\n<h3>Ketentuan Kelayakan Fasilitas</h3>\n<p>[Tuliskan TEGAS bahwa seluruh fasilitas standar perjalanan dinas TIDAK BERLAKU untuk perjalanan ini. 🚫 DILARANG KERAS MENAMPILKAN DAFTAR TABEL HARGA!]</p>"""
+        if travel_data.get('processed') and scope == 'domestic':
+            _td_dist = travel_data.get('distance_km', 0)
+            _td_route = travel_data.get('route', route_str)
+            _td_dur = travel_data.get('duration_hours', dur_hrs)
+            if 0 < _td_dist < 120:
+                html_template = (
+                    f"<h3>Informasi Perjalanan Dinas</h3>"
+                    f"<p>Rute <strong>{_td_route}</strong> memiliki estimasi jarak <strong>{_td_dist} km</strong>. "
+                    f"Berdasarkan regulasi perusahaan, jarak minimal untuk Perjalanan Dinas adalah <strong>120 km</strong> (pergi-pulang).</p>"
+                    f"<h3>Ketentuan Kelayakan Fasilitas</h3>"
+                    f"<p>Karena jarak perjalanan ini di bawah 120 km, seluruh fasilitas perjalanan dinas — termasuk UPD harian, akomodasi/hotel, dan transportasi — <strong>tidak dapat diberikan</strong>.</p>"
+                )
+            elif _td_dist >= 120:
+                _route_header = (
+                    f"<p><strong>Rute:</strong> {_td_route} &nbsp;|&nbsp; "
+                    f"<strong>Estimasi Jarak:</strong> {_td_dist} km &nbsp;|&nbsp; "
+                    f"<strong>Durasi Perjalanan Darat:</strong> {_td_dur:.1f} jam</p>\n"
+                )
+                html_template = _route_header + html_template
 
         enforcement_instructions = rag_engine.template_engine.get_enforcement_instructions(html_template)
         guardrails = await satpam_aturan.generate_guardrail_prompt_async(relevant_filenames)
 
         detail_enforcer = ""
         if "singkat" not in question.lower():
-            detail_enforcer = "8. 📝 KEDALAMAN JAWABAN: Anda WAJIB menjabarkan aturan, nominal, rincian, dan tata cara secara SANGAT DETAIL, TERSTRUKTUR, dan LENGKAP. Jangan ada poin penting dari KNOWLEDGE BASE yang disembunyikan!"
+            detail_enforcer = (
+                "8. 📝 KEDALAMAN JAWABAN: Anda WAJIB menjabarkan aturan, nominal, rincian, dan tata cara secara SANGAT DETAIL, TERSTRUKTUR, dan LENGKAP. "
+                "Jangan ada poin penting dari KNOWLEDGE BASE yang disembunyikan! "
+                "DILARANG KERAS merangkum menjadi satu kalimat generic seperti 'biaya transportasi ditanggung' — "
+                "HARUS dijabarkan MASING-MASING komponen secara spesifik. "
+                "Jika [INFO SISTEM] mencantumkan daftar komponen wajib, SEMUA komponen tersebut wajib muncul di jawaban."
+            )
 
         prompt = f"""=== SYSTEM ROLE ===
 Anda adalah Asisten Profesional HRD PT Semen Indonesia.

@@ -83,8 +83,10 @@ async def get_session_history(
     try:
         limit = min(limit, 200)
 
-        # Validasi kepemilikan: hanya jika NIK tersedia di kedua sisi
-        if auth_nik:
+        # Validasi kepemilikan: cek jika header auth hadir (termasuk saat nik="" / expired)
+        # auth_nik=None → dev mode tanpa header, skip cek
+        # auth_nik=""   → context expired, tetap cek agar session ber-NIK tidak bisa diakses
+        if auth_nik is not None:
             owner = await asyncio.to_thread(get_session_owner, session_id)
             if owner and owner != auth_nik:
                 raise HTTPException(status_code=403, detail="Access denied: session belongs to another user")
@@ -110,7 +112,7 @@ async def toggle_session_pin(
         if not MEMORY_AVAILABLE:
             raise HTTPException(status_code=503, detail="Session management system not available")
 
-        if auth_nik:
+        if auth_nik is not None:
             owner = await asyncio.to_thread(get_session_owner, session_id)
             if owner and owner != auth_nik:
                 raise HTTPException(status_code=403, detail="Access denied")
@@ -138,12 +140,13 @@ async def delete_session(session_id: str, auth_nik: Optional[str] = Depends(get_
         if not MEMORY_AVAILABLE:
             raise HTTPException(status_code=503, detail="Session management system not available")
 
-        if auth_nik:
+        if auth_nik is not None:
             owner = await asyncio.to_thread(get_session_owner, session_id)
             if owner and owner != auth_nik:
                 raise HTTPException(status_code=403, detail="Access denied")
 
-        await asyncio.to_thread(delete_session_and_messages, session_id)
+        from memory.memory_hybrid import delete_hybrid_session
+        await delete_hybrid_session(session_id)
         _invalidate_sessions_cache(auth_nik)
         logger.info(f"🗑️ Session deleted: {session_id[:8]}...")
         return SessionResponse(

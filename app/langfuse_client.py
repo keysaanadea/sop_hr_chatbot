@@ -12,9 +12,11 @@ logger = logging.getLogger(__name__)
 LANGFUSE_ENABLED = False
 
 try:
-    from app.config import LANGFUSE_SECRET_KEY, LANGFUSE_PUBLIC_KEY, LANGFUSE_BASE_URL
+    from app.config import FEATURE_LANGFUSE, LANGFUSE_SECRET_KEY, LANGFUSE_PUBLIC_KEY, LANGFUSE_BASE_URL
 
-    if LANGFUSE_SECRET_KEY and LANGFUSE_PUBLIC_KEY:
+    if not FEATURE_LANGFUSE:
+        logger.warning("⚠️ Langfuse disabled by FEATURE_LANGFUSE=false")
+    elif LANGFUSE_SECRET_KEY and LANGFUSE_PUBLIC_KEY:
         # Set env vars — Langfuse v4 membaca ini secara otomatis
         os.environ.setdefault("LANGFUSE_SECRET_KEY", LANGFUSE_SECRET_KEY)
         os.environ.setdefault("LANGFUSE_PUBLIC_KEY", LANGFUSE_PUBLIC_KEY)

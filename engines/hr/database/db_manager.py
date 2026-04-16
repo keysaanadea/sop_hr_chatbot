@@ -55,8 +55,8 @@ class DatabaseManager:
     def execute_query(self, sql: str, params: Optional[Tuple] = None) -> Dict[str, Any]:
         """Execute SELECT query pada Supabase dan return hasil"""
         sql_upper = sql.strip().upper()
-        if not sql_upper.startswith('SELECT'):
-            raise ValueError("Only SELECT queries are allowed")
+        if not (sql_upper.startswith('SELECT') or sql_upper.startswith('WITH')):
+            raise ValueError("Only read-only SELECT/WITH queries are allowed")
         
         try:
             with self.get_connection() as conn:

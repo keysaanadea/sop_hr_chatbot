@@ -9,6 +9,7 @@
 /* ================= CORE API COMMUNICATION ================= */
 async function askBackend(text) {
   if (window.CoreApp?.isWaitingForResponse && !window.isCallModeActive) return;
+  const requestStartedInCallMode = !!window.isCallModeActive;
 
   // Simpan pertanyaan terakhir untuk tombol "Coba Lagi"
   window._lastUserQuestion = text;
@@ -28,10 +29,14 @@ async function askBackend(text) {
   }
 
   const _sd = window.DenaiApp?.sintaUserData;
+  const _history = window.CoreApp?.conversationHistory || [];
+  const _isNewChat = _history.length === 1 && _history[0]?.role === "user";
   const payload = {
     question: text,
     session_id: window.CoreApp?.activeChatId || null,
     user_role: window.CoreApp?.userRole || "Employee",
+    mode: window.isCallModeActive ? "call" : "chat",
+    is_new_chat: _isNewChat,
     // Kirim user context dari SINTA agar band/lokasi tetap ter-inject meski buka sesi lama
     user_context: _sd ? {
       nama: _sd.nama || "",
@@ -46,6 +51,7 @@ async function askBackend(text) {
 
   let streamingBubble = null;
   let fullAnswer = "";
+  const shouldSuppressEndedCallOutput = () => requestStartedInCallMode && !window.isCallModeActive;
 
   try {
     const timeoutId = setTimeout(() => controller.abort(), 120000);
@@ -63,7 +69,6 @@ async function askBackend(text) {
     });
 
     clearTimeout(timeoutId);
-    window.SpeechModule?.stopProcessingFeedback();
 
     if (!res.ok) {
       if (res.status === 429) throw new Error("Rate Limit: Terlalu banyak permintaan.");
@@ -87,7 +92,15 @@ async function askBackend(text) {
         let event;
         try { event = JSON.parse(part.slice(6)); } catch { continue; }
 
+        if (shouldSuppressEndedCallOutput()) {
+          if (controller && !controller.signal.aborted) {
+            controller.abort();
+          }
+          return;
+        }
+
         if (event.type === "token") {
+          window.SpeechModule?.stopProcessingFeedback();
           // First token: remove thinking animation and create streaming bubble
           if (!streamingBubble) {
             if (thinkingMessage) {
@@ -114,9 +127,14 @@ async function askBackend(text) {
                 rendered = rendered.replace(/\s*\[\d+\]/g, '');
               }
 
+              const sanitize = window.CoreApp?._sanitizeHtmlFragment;
+              if (sanitize) {
+                rendered = sanitize(rendered);
+              }
+
               streamingBubble.innerHTML = rendered;
             } catch (e) {
-              streamingBubble.innerHTML = fullAnswer;
+              streamingBubble.textContent = fullAnswer;
             }
             // Auto-scroll hanya kalau user sudah dekat bawah (≤120px dari bottom)
             // Kalau user scroll ke atas, biarkan — jangan ganggu
@@ -133,14 +151,25 @@ async function askBackend(text) {
           if (streamingBubble) streamingBubble.innerHTML = "";
 
         } else if (event.type === "done") {
+          window.SpeechModule?.stopProcessingFeedback();
+          if (shouldSuppressEndedCallOutput()) {
+            return;
+          }
           // Simpan source chunks agar DocPanel bisa tampilkan teks kutipan asli
           window._lastSourceChunks = event.source_chunks?.length ? event.source_chunks : null;
-          // Persist ke sessionStorage — dua key: session-specific + 'last' sebagai fallback
+          // Persist ke localStorage (survive refresh & browser tutup), bukan sessionStorage
           if (window._lastSourceChunks) {
             const _sid = event.session_id || window.CoreApp?.activeChatId;
             const _json = JSON.stringify(window._lastSourceChunks);
-            try { sessionStorage.setItem('dp_chunks_last', _json); } catch(e) {}
-            if (_sid) try { sessionStorage.setItem(`dp_chunks_${_sid}`, _json); } catch(e) {}
+            try { localStorage.setItem('dp_chunks_last', _json); } catch(e) {}
+            if (_sid) {
+              try { localStorage.setItem(`dp_chunks_${_sid}`, _json); } catch(e) {}
+              // Bersihkan entri lama agar localStorage tidak penuh (simpan maks 20 sesi)
+              try {
+                const _keys = Object.keys(localStorage).filter(k => k.startsWith('dp_chunks_') && k !== 'dp_chunks_last');
+                if (_keys.length > 20) _keys.slice(0, _keys.length - 20).forEach(k => localStorage.removeItem(k));
+              } catch(e) {}
+            }
           }
           window.CoreApp?.removeThinkingAnimation();
 
@@ -181,9 +210,14 @@ async function askBackend(text) {
             const finishedMsgDiv = _finalizeStreamingBubble(streamingBubble, fullAnswer, event.trace_id);
             streamingBubble = null;
             if (window.isCallModeActive) {
-              window.CallModeModule?.appendCallTranscript('ai', fullAnswer);
+              const callModeAnswer = _prepareCallModeTranscriptText(fullAnswer);
+              window.CallModeModule?.appendCallTranscript('ai', callModeAnswer);
+              window.CallModeModule?.markBackendAnswerReady(callModeAnswer);
+              scheduleAutoSpeech(callModeAnswer);
             }
-            scheduleAutoSpeech(fullAnswer);
+            if (!window.isCallModeActive) {
+              scheduleAutoSpeech(fullAnswer);
+            }
 
             // A+B merge: append analytics table INSIDE the same chat bubble
             if (event.message_type === "analytics_result" && event.data) {
@@ -210,6 +244,10 @@ async function askBackend(text) {
           }
 
         } else if (event.type === "error") {
+          window.SpeechModule?.stopProcessingFeedback();
+          if (shouldSuppressEndedCallOutput()) {
+            return;
+          }
           window.CoreApp?.removeThinkingAnimation();
           if (streamingBubble) { streamingBubble.closest(".msg")?.remove(); streamingBubble = null; }
           if (event.error_code === "rate_limit") {
@@ -217,10 +255,20 @@ async function askBackend(text) {
           } else {
             window.CoreApp?.addMessage("bot", `❌ ${event.message}`);
           }
+          if (window.isCallModeActive) {
+            window.CallModeModule?.recoverAfterFailure(`sse_error:${event.error_code || 'generic'}`);
+          }
 
         } else if (event.type === "cancelled") {
+          window.SpeechModule?.stopProcessingFeedback();
+          if (shouldSuppressEndedCallOutput()) {
+            return;
+          }
           _stopAndKeepPartial(streamingBubble, fullAnswer);
           streamingBubble = null;
+          if (window.isCallModeActive) {
+            window.CallModeModule?.recoverAfterFailure('sse_cancelled');
+          }
         }
       }
     }
@@ -229,10 +277,17 @@ async function askBackend(text) {
     window.SpeechModule?.stopProcessingFeedback();
     window.CoreApp?.removeThinkingAnimation();
 
+    if (shouldSuppressEndedCallOutput()) {
+      return;
+    }
+
     if (err.name === "AbortError") {
       console.log("🛑 Request was cancelled by user");
       _stopAndKeepPartial(streamingBubble, fullAnswer);
       streamingBubble = null;
+      if (window.isCallModeActive) {
+        window.CallModeModule?.recoverAfterFailure('abort');
+      }
       return;
     }
     if (streamingBubble) { streamingBubble.closest(".msg")?.remove(); streamingBubble = null; }
@@ -240,12 +295,21 @@ async function askBackend(text) {
       ? "❌ Connection Error: Unable to reach server."
       : `❌ ${err.message}`;
     window.CoreApp?.addMessage("bot", errorMessage);
+    if (window.isCallModeActive) {
+      window.CallModeModule?.recoverAfterFailure('request_exception');
+    }
 
   } finally {
     if (window.CoreApp) window.CoreApp.currentRequestController = null;
+    // Pastikan thinking animation selalu dihapus, even jika stream berakhir tanpa event done/error
+    window.CoreApp?.removeThinkingAnimation();
     window.CoreApp?.setInputState(false);
     if (!window.isCallModeActive) window.CoreApp?.chatInput?.focus();
-    window.SessionModule?.loadSessions();
+    if (window.SessionModule?.scheduleLoadSessions) {
+      window.SessionModule.scheduleLoadSessions(500);
+    } else {
+      window.SessionModule?.loadSessions();
+    }
   }
 }
 
@@ -356,6 +420,20 @@ function _appendAnalyticsToMessage(msgDiv, eventData) {
   if (eventData.turn_id) {
     window._hrVizBubbleMap = window._hrVizBubbleMap || {};
     window._hrVizBubbleMap[eventData.turn_id] = chatColumn;
+
+    // Inject analytics data ke VisualizationModule agar renderVisualizationOffer
+    // tidak jatuh ke getSampleData() pada path streaming A+B
+    if (window.VisualizationModule?.setAnalyticsData && eventData.data) {
+      const rows = eventData.data.rows || [];
+      const columns = eventData.data.columns || [];
+      if (rows.length && columns.length) {
+        window.VisualizationModule.setAnalyticsData(eventData.turn_id, {
+          rows, columns,
+          categoryKey: columns[0] || 'category',
+          valueKey: columns[1] || 'value',
+        });
+      }
+    }
   }
 
   const msgs = document.getElementById("messages");
@@ -417,8 +495,50 @@ function scheduleAutoSpeech(text) {
   if (!text || window.CoreApp?.isTextOnlyMode) return;
 
   setTimeout(() => {
+    if (window.isCallModeActive) {
+      const plain = _prepareCallModeVoiceText(text);
+      if (plain) {
+        window.SpeechModule?.clearTTSQueue();
+        window.SpeechModule?.speakText(plain, {
+          language: 'id',
+          question: window._lastUserQuestion || ''
+        });
+        return;
+      }
+    }
     window.SpeechModule?.speakText(text, { language: 'id' });
-  }, window.isCallModeActive ? 200 : 800);
+  }, window.isCallModeActive ? 80 : 800);
+}
+
+function _prepareCallModeTranscriptText(text) {
+  if (!text) return '';
+
+  const stripped = window.CoreApp?.stripHtml
+    ? window.CoreApp.stripHtml(text)
+    : text.replace(/<[^>]*>/g, ' ');
+
+  const withoutReferences = stripped
+    .replace(/\[\d+\]/g, ' ')
+    .replace(/\bSumber\s*:\s*/gi, ' ')
+    .replace(/\bBagian\s*:\s*/gi, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  return withoutReferences;
+}
+
+function _prepareCallModeVoiceText(text) {
+  const cleaned = _prepareCallModeTranscriptText(text)
+    .replace(/\bRujukan Dokumen\b[\s\S]*$/i, ' ')
+    .replace(/\b(border|background|padding|margin|color|font|display|width|height|shadow|radius|opacity|flex|grid)\b\s*-?\s*\b(radius|color|size|weight|family|top|left|right|bottom)?\b/gi, ' ')
+    .replace(/\b(border radius|background color|box shadow|font size|font weight|line height|display flex|position absolute)\b/gi, ' ')
+    .replace(/\b(px|rem|rgba|rgb|linear-gradient|solid|dashed)\b/gi, ' ')
+    .replace(/\bRincian Ketentuan\s*\/\s*Fasilitas\b/gi, 'Ketentuannya begini.')
+    .replace(/\bMaksimal Pengumpulan\b/gi, 'Batas maksimal pengumpulan')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  return cleaned;
 }
 
 /* ================= MODULE INITIALIZATION ================= */

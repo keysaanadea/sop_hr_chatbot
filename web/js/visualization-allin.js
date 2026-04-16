@@ -700,8 +700,10 @@ class DenaiVisualizationEngine {
       const { chart_types } = await res.json();
       
       const count = data.rows.length;
-      let recType = count > 15 ? 'horizontal_bar' : 'pie';
-      
+      // Gunakan nama chart sesuai katalog backend (viz_recommender.py).
+      // horizontal_bar_chart tidak ada — dataset besar pakai bar_chart sebagai default.
+      let recType = count > 15 ? 'bar_chart' : 'pie_chart';
+
       const withCompat = chart_types.map(c => ({ ...c, _compat: window.ChartCompatibility.validateChartCompatibility(c.chart_type, data) }));
       const recommendations = {
         recommended: withCompat.filter(c => c.chart_type === recType),

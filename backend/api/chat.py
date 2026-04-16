@@ -9,6 +9,7 @@ import io
 import json
 import urllib.parse
 import asyncio
+import time
 from fastapi import APIRouter, BackgroundTasks, Request, UploadFile, File
 from fastapi.responses import StreamingResponse, JSONResponse
 from typing import Optional
@@ -41,6 +42,15 @@ stt_service = STTService()
 # Track active requests for cancellation
 active_requests = {}
 
+
+async def _persist_stream_turn(session_id: str, user_message: str, assistant_message: str):
+    """Persist chat turn after stream completion without blocking SSE done delivery."""
+    try:
+        await save_hybrid_message(session_id, "user", user_message)
+        await save_hybrid_message(session_id, "assistant", assistant_message)
+    except Exception as e:
+        logger.error(f"❌ Deferred stream persistence failed for {session_id[:8]}...: {e}", exc_info=True)
+
 class StoppedRequest(BaseModel):
     last_query: str
 
@@ -61,6 +71,7 @@ async def ask_question(
     """
     Enhanced endpoint with proper cancellation handling.
     """
+    task = None  # Inisialisasi agar finally tidak UnboundLocalError jika exception sebelum task dibuat
     try:
         req.session_id = req.session_id or str(uuid.uuid4())
         user_role = req.user_role or "Employee"
@@ -134,7 +145,9 @@ async def ask_question(
         )
 
     finally:
-        if req.session_id and req.session_id in active_requests:
+        # Hanya hapus entry jika task yang ada masih milik request ini
+        # (cegah race condition: task baru sudah menggantikan sebelum finally jalan)
+        if req.session_id and active_requests.get(req.session_id) is task:
             del active_requests[req.session_id]
 
 
@@ -219,7 +232,7 @@ async def process_question_with_cancellation(
         history = await get_hybrid_history(session_id, limit=4)
 
         # Setup session
-        await setup_hybrid_session(session_id, question)
+        await setup_hybrid_session(session_id, question, has_history=bool(history))
 
         # Checkpoint 2: Before AI processing
         if await request.is_disconnected():
@@ -354,7 +367,13 @@ async def ask_question_stream(
             pass
 
         try:
-            history = await get_hybrid_history(req.session_id, limit=4)
+            _request_mode = req.mode if req.mode in ("chat", "call") else "chat"
+            _stream_t0 = time.perf_counter()
+            if req.is_new_chat:
+                history = []
+                logger.info(f"🆕 New chat detected — skip history fetch for session {req.session_id[:8]}...")
+            else:
+                history = await get_hybrid_history(req.session_id, limit=4)
             # Buang seluruh exchange greeting (user message + [GREETING_CARD])
             # agar LLM kontekstualisasi tidak salah tebak dari pesan "halo"
             _clean_history = []
@@ -366,19 +385,28 @@ async def ask_question_stream(
                     continue
                 _clean_history.append(_h)
             history = _clean_history
+            logger.info(f"⏱️ ask/stream history ready in {(time.perf_counter() - _stream_t0):.2f}s | session={req.session_id[:8]}... | items={len(history)}")
+            logger.info(f"➡️ ask/stream lanjut ke user_context | session={req.session_id[:8]}...")
             # Load user context dari SINTA (jika ada), override role jika perlu
+            # Gunakan asyncio.to_thread agar sync Redis calls tidak blok event loop
             from backend.services.user_context import get_user_context as _get_user_ctx, set_user_context as _set_user_ctx
-            _user_ctx = _get_user_ctx(req.session_id)
+            _ctx_t0 = time.perf_counter()
+            _user_ctx = await asyncio.to_thread(_get_user_ctx, req.session_id)
 
             # Kalau session store kosong (sesi lama / akses langsung) tapi frontend kirim context, pakai itu
             if _user_ctx is None and req.user_context:
                 _user_ctx = req.user_context
-                _set_user_ctx(req.session_id, req.user_context)  # cache untuk query berikutnya
+                await asyncio.to_thread(_set_user_ctx, req.session_id, req.user_context)  # cache untuk query berikutnya
                 logger.info(f"♻️ User context di-restore dari payload | session={req.session_id[:8]}...")
+            logger.info(f"⏱️ ask/stream user_context ready in {(time.perf_counter() - _ctx_t0):.2f}s | session={req.session_id[:8]}... | restored={'yes' if _user_ctx else 'no'}")
+            logger.info(f"➡️ ask/stream lanjut ke session setup | session={req.session_id[:8]}...")
 
             # Setup session — sertakan NIK agar sesi tercatat milik user ini di Supabase
             _nik = (_user_ctx or {}).get("nik") or (req.user_context or {}).get("nik", "") if isinstance(req.user_context, dict) else ""
-            await setup_hybrid_session(req.session_id, req.question, nik=_nik)
+            _sess_t0 = time.perf_counter()
+            await setup_hybrid_session(req.session_id, req.question, nik=_nik, has_history=bool(history))
+            logger.info(f"⏱️ ask/stream session setup in {(time.perf_counter() - _sess_t0):.2f}s | session={req.session_id[:8]}...")
+            logger.info(f"➡️ ask/stream lanjut ke classifier | session={req.session_id[:8]}...")
 
             _effective_role = user_role  # variable baru agar tidak trigger UnboundLocalError
             if _user_ctx and _effective_role.lower() in ['employee', 'karyawan']:
@@ -390,7 +418,10 @@ async def ask_question_stream(
                 GREETING_RESPONSE,
                 CASUAL_CHAT_RESPONSE,
             )
+            logger.info(f"🚦 ask/stream starting classifier | session={req.session_id[:8]}... | role={_effective_role}")
+            _clf_t0 = time.perf_counter()
             intent = await classify_intent_unified(req.question, history)
+            logger.info(f"⏱️ ask/stream classifier done in {(time.perf_counter() - _clf_t0):.2f}s | session={req.session_id[:8]}... | intent={intent}")
 
             is_hr_user = _effective_role.lower() in ['hr', 'admin', 'manager', 'hc']
 
@@ -424,7 +455,7 @@ async def ask_question_stream(
                         user_role=_effective_role,
                         session_id=req.session_id,
                         history=history,
-                        mode="chat",
+                        mode=_request_mode,
                         cancellation_check=lambda: request.is_disconnected(),
                     )
                 except Exception as _rt_err:
@@ -614,9 +645,6 @@ async def ask_question_stream(
                 except Exception:
                     pass
 
-            await save_hybrid_message(req.session_id, "user", req.question)
-            await save_hybrid_message(req.session_id, "assistant", full_response)
-
             trace_id = None
             if _lf_span:
                 try: trace_id = _lf_span.trace_id
@@ -664,6 +692,7 @@ async def ask_question_stream(
                     logger.debug(f"Topic freq save skipped: {_te}")
 
             yield f"data: {json.dumps(done_payload)}\n\n"
+            asyncio.create_task(_persist_stream_turn(req.session_id, req.question, full_response))
 
         except asyncio.CancelledError:
             yield f"data: {json.dumps({'type': 'cancelled'})}\n\n"
@@ -721,7 +750,7 @@ async def call_mode_natural(
         
         # (✅ FIX: Use await)
         history = await get_hybrid_history(session_id, limit=1)
-        await setup_hybrid_session(session_id, "📞 Call")
+        await setup_hybrid_session(session_id, "📞 Call", has_history=bool(history))
         
         result = await chat_service.process_question(
             question=transcript,
@@ -788,6 +817,11 @@ async def chat_system_status():
 
 @router.get("/debug/active-requests")
 async def debug_active_requests():
+    # Endpoint ini hanya aktif di development — blokir di production
+    import os as _os
+    if _os.getenv("ENVIRONMENT", "development") != "development":
+        from fastapi import HTTPException
+        raise HTTPException(status_code=404, detail="Not found")
     return {
         "active_sessions": list(active_requests.keys()),
         "count": len(active_requests)

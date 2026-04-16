@@ -11,8 +11,7 @@ class HRTravelPolicy:
         # Inisialisasi dasar
         tool_info = f"\n\n=== INFO SISTEM (ESTIMASI GOOGLE MAPS) ===\nRute: {route_str}\nJarak Asli: {dist_km} km\nDurasi Perjalanan Darat: {dur_hrs} jam\n"
         
-        # 👇 TAMBAHKAN KALIMAT INI 👇
-        tool_info += "🚨 INSTRUKSI TAMPILAN: Anda WAJIB mengawali jawaban Anda dengan menyebutkan Rute dan Estimasi Jarak (km) dari INFO SISTEM ini agar user tahu sistem telah mengeceknya!\n"
+        tool_info += f"ℹ️ INFO SISTEM sudah mencantumkan jarak {dist_km} km untuk rute {route_str}. Gunakan angka ini jika perlu menyebutkan jarak.\n"
                 
         # 1. LOGIKA JARAK & PENOLAKAN
         if dist_km < 120:
@@ -33,7 +32,8 @@ class HRTravelPolicy:
 
         # 2. RUMUS MATEMATIKA ANTI-RUGI (HOTEL)
         tool_info += """🧮 ATURAN MATEMATIKA AKOMODASI (HOTEL): JIKA Anda menghitung total biaya akomodasi/hotel berdasarkan jumlah hari, INGAT RUMUS MUTLAK INI: Jumlah Malam = (Jumlah Hari - 1). JADI, kalikan tarif plafon hotel dengan (Jumlah Hari - 1 malam)!\n"""
-        
+
+
         return tool_info
         
     @staticmethod

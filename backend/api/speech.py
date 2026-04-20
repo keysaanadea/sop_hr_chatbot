@@ -61,8 +61,9 @@ async def text_to_speech_natural(tts_request: TTSRequest):
             try:
                 # ✅ REORDER dengan context pertanyaan
                 voice_text = await rewrite_for_speech(clean_text, question)
-                logger.info(f"   ✅ Optimized for voice: {len(voice_text)} chars")
-                clean_text = voice_text
+                # Re-clean after LLM rewrite because model may reintroduce digits/numeric formatting.
+                clean_text = clean_text_for_tts(voice_text)
+                logger.info(f"   ✅ Optimized for voice: {len(voice_text)} chars | recleaned={len(clean_text)} chars")
                 was_optimized = True
             except Exception as rewrite_error:
                 logger.warning(f"   ⚠️ Optimization failed, using original: {rewrite_error}")

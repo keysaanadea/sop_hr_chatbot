@@ -528,7 +528,7 @@ async function playProcessingFeedback() {
     if (!window.isCallModeActive || window.SpeechModule?.isSpeaking || !window.isProcessingCall) return;
 
     try {
-      const utterance = new SpeechSynthesisUtterance("DENAI sedang berpikir. Mohon tunggu sebentar.");
+      const utterance = new SpeechSynthesisUtterance("Mohon ditunggu sebentar.");
       utterance.lang = 'id-ID';
       utterance.rate = 1.02;
       utterance.pitch = 1.0;

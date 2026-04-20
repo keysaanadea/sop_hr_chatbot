@@ -59,6 +59,7 @@ ELEVENLABS_VOICE_ID_INDONESIAN = os.getenv("ELEVENLABS_VOICE_ID_INDONESIAN", "iW
 LLM_MODEL = os.getenv("LLM_MODEL", "gpt-4o-mini")
 SQL_LLM_MODEL = os.getenv("SQL_LLM_MODEL", "gpt-4o")  # SQL route default lebih kuat; tetap bisa di-override via env
 LLM_TEMPERATURE = float(os.getenv("LLM_TEMPERATURE", 0.1))
+RAG_LLM_TEMPERATURE = float(os.getenv("RAG_LLM_TEMPERATURE", "0.1"))
 LLM_MAX_TOKENS = int(os.getenv("LLM_MAX_TOKENS", 2000))
 EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "text-embedding-3-small")
 
@@ -168,6 +169,7 @@ CHAT_MODE_MAX_TOKENS = 2000
 FEATURE_NATURAL_TTS = os.getenv("FEATURE_NATURAL_TTS", "true").lower() == "true"
 FEATURE_VERBOSE_LOGGING = os.getenv("FEATURE_VERBOSE_LOGGING", "false").lower() == "true"
 FEATURE_LANGFUSE = os.getenv("FEATURE_LANGFUSE", "true").lower() == "true"
+FEATURE_LLM_EVALUATOR = os.getenv("FEATURE_LLM_EVALUATOR", "false").lower() == "true"
 
 ENVIRONMENT = os.getenv("ENVIRONMENT", "development")
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO" if ENVIRONMENT == "production" else "DEBUG")

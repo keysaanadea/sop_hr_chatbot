@@ -34,14 +34,18 @@ class SimpleTemplateEngine:
 
     def _get_general_calculation_template(self) -> str:
         return """<h3>[Tulis Judul Topik Perhitungan]</h3>
-<p>[Berikan 1 kalimat pengantar singkat saja. DILARANG KERAS menulis rumus/angka/aturan di sini!]</p>
+<p>[Berikan pengantar singkat yang langsung menjawab inti pertanyaan user secara natural.]</p>
 
 [KOTAK_PERINGATAN_KOREKSI]
 
+<h3>Status / Jawaban Singkat</h3>
+<p>[Jika ada konflik antara profil/konteks user dan aturan dokumen, tulis putusan personal yang tegas di sini terlebih dahulu. Jika tidak ada konflik, isi dengan ringkasan hasil akhir atau inti jawaban.]</p>
+
 <h3>Rincian Perhitungan / Kalkulasi</h3>
 <ul>
-  <li>[Jabarkan syarat kelayakannya secara detail. WAJIB akhiri dengan nomor sitasi gaya akademik, contoh: [1]]</li>
-  <li>[Jabarkan rumus dan rincian angkanya. WAJIB perhatikan INFO SISTEM jika ini perjalanan dinas! WAJIB akhiri dengan nomor sitasi, contoh: [2]]</li>
+  <li>[Jelaskan syarat/kelayakan atau asumsi yang relevan. Jika ada konflik dengan profil user, jelaskan konflik itu secara tegas namun tetap natural, lalu lanjutkan penjelasan aturan umum.]</li>
+  <li>[Jabarkan langkah hitung secara detail dan terpisah per skenario jika ada lebih dari satu kondisi, misalnya hari kerja vs hari libur. WAJIB perhatikan INFO SISTEM jika ini perjalanan dinas.]</li>
+  <li>[Tutup dengan HASIL AKHIR atau GRAND TOTAL yang eksplisit dan mudah ditemukan user. Jika ada konflik eligibility, JANGAN berikan total personal user; gantilah dengan penjelasan kapan/untuk siapa aturan atau hitungan itu berlaku.]</li>
 </ul>
 <h3>Rujukan Dokumen</h3>
 <ul>
@@ -65,14 +69,13 @@ class SimpleTemplateEngine:
 
     def _get_rules_template(self) -> str:
         return """<h3>[Tulis Judul Aturan / Fasilitas]</h3>
-<p>[Berikan 1 kalimat pengantar singkat saja. DILARANG KERAS menulis rincian aturan/angka di sini!]</p>
+<p>[Berikan penjelasan singkat yang langsung menjawab inti pertanyaan user.]</p>
 
 [KOTAK_PERINGATAN_KOREKSI]
 
 <h3>Rincian Ketentuan / Fasilitas</h3>
 <ul>
-  <li>[Jabarkan aturan kelayakan atau syarat utama. WAJIB akhiri dengan nomor sitasi, contoh: [1]]</li>
-  <li>[Jabarkan nominal atau detail fasilitas selanjutnya. WAJIB akhiri dengan nomor sitasi, contoh: [2]]</li>
+  <li>[Jabarkan seluruh aturan, syarat, pengecualian, nominal, atau detail fasilitas yang relevan secara lengkap dan natural. Jangan batasi hanya dua poin jika dokumen memuat lebih banyak detail.]</li>
 </ul>
 <h3>Rujukan Dokumen</h3>
 <ul>
@@ -92,14 +95,13 @@ class SimpleTemplateEngine:
 
     def _get_general_template(self) -> str:
         return """<h3>[Tulis Topik Pertanyaan]</h3>
-<p>[Berikan 1 kalimat pengantar singkat saja. DILARANG KERAS menulis rincian aturan/angka di sini!]</p>
+<p>[Berikan pengantar singkat yang menjawab inti pertanyaan user.]</p>
 
 [KOTAK_PERINGATAN_KOREKSI]
 
 <h3>[Sesuaikan Judul Poin-Poin]</h3>
 <ul>
-  <li>[Jabarkan poin informasi pertama. WAJIB akhiri dengan nomor sitasi, contoh: [1]]</li>
-  <li>[Jabarkan poin informasi kedua (jika ada). WAJIB akhiri dengan nomor sitasi, contoh: [2]]</li>
+  <li>[Jabarkan seluruh poin informasi yang relevan secara lengkap, natural, dan tidak terpotong. Gunakan beberapa kalimat bila perlu.]</li>
 </ul>
 <h3>Rujukan Dokumen</h3>
 <ul>
@@ -116,16 +118,12 @@ Kerangka HTML yang WAJIB Anda ikuti strukturnya:
 
 🚨 ATURAN MUTLAK (SANGAT PENTING):
 1. 🌟 JAWABAN DETAIL & NATURAL: JIKA ditanya "Fasilitas apa saja" atau pertanyaan serupa, JABARKAN SEMUA FASILITAS/KOMPONEN secara terstruktur dan rinci — setiap komponen dijabarkan sendiri-sendiri. DILARANG merangkum jadi satu kalimat generic seperti "biaya transportasi ditanggung". HARUS menyebut detail spesifiknya (moda apa, syarat apa, nominal berapa, dll).
-2. 📏 ATURAN JARAK & PENOLAKAN: JIKA jarak < 120 km (Dalam Negeri), TOLAK pengajuan dan hapus rincian fasilitas.
-3. 💰 PENJABARAN UPD (WAJIB PATUH!): JIKA membahas Uang Perjalanan Dinas (UPD), WAJIB bedakan kategori Umum, Lokasi Tertentu, dan Pelatihan.
-4. 💱 ATURAN MATA UANG, BAND, & PELATIHAN (HARAM DILANGGAR): 
-   - 🇮🇩 DALAM NEGERI: Selalu gunakan Rupiah (Rp).
-   - 🌍 LUAR NEGERI: WAJIB MATA UANG ASING (US $).
-   - 👥 TAMPILKAN SEMUA BAND: JIKA user TIDAK menyebutkan spesifik Band-nya, Anda WAJIB menjabarkan tarif untuk SEMUA Band (Band 1, 2, 3, 4, 5) tanpa terkecuali!
-   - 🎓 DISKON PELATIHAN 50%: Tarif untuk tujuan Pelatihan/Training adalah TEPAT 50% (setengah) dari tarif Umum. Anda WAJIB menuliskannya di rincian UPD!
-5. 🚫 DILARANG MENULIS 'TIDAK BERLAKU': Jika suatu aturan tidak relevan, HAPUS saja bagian HTML tersebut!
+2. 📏 JANGAN MENGARANG ATURAN: Semua syarat kelayakan, kategori manfaat, nominal, batasan, formula, dan pengecualian HARUS diambil dari [KNOWLEDGE BASE]. DILARANG menetapkan aturan bisnis sendiri dari prompt.
+3. 💱 MATA UANG & TARIF: Gunakan mata uang, kategori tarif, band, dan nominal persis seperti yang tertulis di [KNOWLEDGE BASE]. Jika dokumen tidak cukup, jelaskan keterbatasannya; jangan mengarang.
+4. 🚫 DILARANG MENULIS 'TIDAK BERLAKU': Jika suatu aturan tidak relevan, HAPUS saja bagian HTML tersebut.
 10. 🔎 ELIGIBILITY CHECK (WAJIB!): Untuk pertanyaan "apakah saya wajib/berhak/eligible/dapat", BACA daftar yang eligible KATA PER KATA dari dokumen. JANGAN generalisasi antar entitas yang berbeda. Contoh: "Karyawan Band-1 AP Semen" adalah entitas berbeda dari "Karyawan Band-1 AP Non Semen" — keduanya TIDAK bisa disamakan meskipun sama-sama Band-1. Jika entitas yang ditanyakan user TIDAK muncul PERSIS di daftar → jawab TIDAK WAJIB / TIDAK BERHAK dengan tegas sejak kalimat pertama.
-6. 🏨 ATURAN KALKULASI HOTEL/AKOMODASI (WAJIB!): Jika user meminta total hitungan biaya hotel/penginapan untuk N hari, maka jumlah malam pengalinya WAJIB dikurangi 1 (N - 1 malam). Contoh: Jika dinas 5 hari, maka biaya hotel dikalikan 4 malam!
+10a. 🔢 PERBANDINGAN ANGKA WAJIB: Jika eligibility bergantung pada angka eksplisit (misal masa kerja 3 bulan, 30 hari, 10 tahun, 120 km, 14 jam), bandingkan angka user dengan angka dokumen secara literal sebelum menulis kesimpulan. DILARANG menulis "tidak berhak" jika angka user jelas memenuhi batas minimal dokumen.
+6. 🏨 KALKULASI AKOMODASI/HOTEL: Jika user meminta total biaya akomodasi/hotel, gunakan formula dan satuan pengali yang TERTULIS di [KNOWLEDGE BASE]. Jika dokumen tidak menjelaskan formula secara eksplisit, jangan menetapkan formula sendiri.
 7. ⚠️ TAMPILAN KOREKSI (HUKUM BESI — TIDAK BOLEH DILANGGAR): Teks literal "[KOTAK_PERINGATAN_KOREKSI]" DILARANG KERAS muncul di output final Anda. Anda WAJIB memilih salah satu dari dua tindakan berikut:
    a) JIKA Anda mengoreksi/menyesuaikan asumsi atau aturan dari pertanyaan user → GANTI [KOTAK_PERINGATAN_KOREKSI] dengan kode HTML berikut (isi bagian [Tuliskan...] dengan penjelasan koreksi Anda):
 <div style="background-color: #fff9f0; border: 1px solid rgba(245,225,192,0.35); border-radius: 16px; padding: 28px 32px; margin-bottom: 20px; position: relative; overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,0.04);"><div style="position: absolute; top: -40px; right: -40px; width: 120px; height: 120px; background-color: #fde68a; opacity: 0.15; border-radius: 50%;"></div><div style="display: flex; align-items: center; gap: 10px; margin-bottom: 14px;"><span class="material-symbols-outlined" style="color: #d97706; font-size: 18px; font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;">gavel</span><span style="font-size: 11px; font-weight: 800; color: #92400e; text-transform: uppercase; letter-spacing: 0.2em;">Penyesuaian Aturan</span></div><div style="color: #78350f; font-size: 14px; line-height: 1.7;">[Tuliskan penjelasan koreksi Anda di sini]</div></div>

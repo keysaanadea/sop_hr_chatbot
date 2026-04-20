@@ -3,7 +3,7 @@ import json
 import psycopg2
 import asyncio
 import logging
-from typing import List, Dict
+from typing import List, Dict, Any
 
 logger = logging.getLogger(__name__)
 
@@ -15,32 +15,29 @@ class ConstraintInterceptor:
         
         # ✅ SIMPLE CACHE: Store guardrails by filename
         self._guardrails_cache = {}
+        self._rules_payload_cache = {}
 
-    async def get_rules_async(self, filename: str) -> List[Dict]:
+    async def get_rules_payload_async(self, filename: str) -> Dict[str, Any]:
         """
-        Menarik "Buku Aturan" (JSON Constraints) dari Supabase berdasarkan nama file.
-        ✅ WITH CACHING: Hanya fetch dari DB sekali, selanjutnya pakai cache!
+        Menarik payload rules_json utuh dari Supabase agar runtime bisa
+        mendahulukan fakta aturan, bukan hanya prompt guardrail.
         """
-        # ✅ Check cache first
-        if filename in self._guardrails_cache:
-            logger.debug(f"⚡ Cache hit for guardrails: {filename}")
-            return self._guardrails_cache[filename]
-        
+        if filename in self._rules_payload_cache:
+            logger.debug(f"⚡ Cache hit for full rules payload: {filename}")
+            return self._rules_payload_cache[filename]
+
         if not self.db_conn_str:
-            return []
+            return {}
 
         def _fetch():
             try:
                 conn = psycopg2.connect(self.db_conn_str)
                 cursor = conn.cursor()
-
-                # Tarik data JSONB dari database
                 cursor.execute("""
-                    SELECT rules_json 
-                    FROM sop.document_rules 
+                    SELECT rules_json
+                    FROM sop.document_rules
                     WHERE filename = %s;
                 """, (filename,))
-                
                 result = cursor.fetchone()
                 cursor.close()
                 conn.close()
@@ -49,22 +46,43 @@ class ConstraintInterceptor:
                     rules_data = result[0]
                     if isinstance(rules_data, str):
                         rules_data = json.loads(rules_data)
-                    
-                    # Mengembalikan list of constraints
-                    return rules_data.get("constraints", [])
-                return []
+                    return rules_data or {}
+                return {}
             except Exception as e:
-                logger.error(f"⚠️ Gagal menarik aturan dari Supabase untuk {filename}: {e}")
-                return []
+                logger.error(f"⚠️ Gagal menarik payload rules dari Supabase untuk {filename}: {e}")
+                return {}
 
-        # Jalankan fungsi blocking di background thread agar aman untuk asyncio
-        rules = await asyncio.to_thread(_fetch)
-        
-        # ✅ Store in cache
+        payload = await asyncio.to_thread(_fetch)
+        self._rules_payload_cache[filename] = payload
+        logger.debug(f"💾 Cached full rules payload for: {filename}")
+        return payload
+
+    async def get_rules_async(self, filename: str) -> List[Dict]:
+        """
+        Menarik "Buku Aturan" (JSON Constraints) dari Supabase berdasarkan nama file.
+        ✅ WITH CACHING: Hanya fetch dari DB sekali, selanjutnya pakai cache!
+        """
+        if filename in self._guardrails_cache:
+            logger.debug(f"⚡ Cache hit for guardrails: {filename}")
+            return self._guardrails_cache[filename]
+
+        payload = await self.get_rules_payload_async(filename)
+        rules = payload.get("constraints", []) if isinstance(payload, dict) else []
         self._guardrails_cache[filename] = rules
         logger.debug(f"💾 Cached guardrails for: {filename}")
-        
         return rules
+
+    async def get_rules_map_async(self, filenames: List[str]) -> Dict[str, Dict[str, Any]]:
+        unique_files = list(dict.fromkeys(fname for fname in filenames if fname))
+        if not unique_files:
+            return {}
+
+        payloads = await asyncio.gather(*[self.get_rules_payload_async(fname) for fname in unique_files])
+        return {
+            filename: payload
+            for filename, payload in zip(unique_files, payloads)
+            if isinstance(payload, dict) and payload
+        }
 
     async def generate_guardrail_prompt_async(self, relevant_filenames: List[str]) -> str:
         """

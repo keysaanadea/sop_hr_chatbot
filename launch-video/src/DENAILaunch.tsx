@@ -7,6 +7,7 @@ import { Scene04Landing } from './components/Scene04Landing';
 import { Scene05Chat } from './components/Scene05Chat';
 import { Scene06CallMode } from './components/Scene06CallMode';
 import { Scene07Closing } from './components/Scene07Closing';
+import { AudioLayer } from './components/AudioLayer';
 import { SCENES } from './constants';
 
 export const DENAILaunch: React.FC = () => {
@@ -16,6 +17,9 @@ export const DENAILaunch: React.FC = () => {
         @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800;900&display=swap');
         * { box-sizing: border-box; }
       `}</style>
+
+      {/* Audio — background music + SFX */}
+      <AudioLayer />
 
       {/* Scene 1: Opening — 0s to 3s */}
       <Sequence

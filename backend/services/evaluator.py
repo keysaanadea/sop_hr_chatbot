@@ -13,6 +13,7 @@ di bawah chat_interaction, bukan sebagai trace terpisah.
 import asyncio
 import json
 import logging
+from app.config import FEATURE_LLM_EVALUATOR
 
 logger = logging.getLogger(__name__)
 
@@ -39,6 +40,9 @@ async def evaluate_interaction_background(
     """
     if not trace_id:
         logger.debug("LLM Judge skipped — no trace_id")
+        return
+    if not FEATURE_LLM_EVALUATOR:
+        logger.debug("LLM Judge skipped — FEATURE_LLM_EVALUATOR=false")
         return
 
     try:

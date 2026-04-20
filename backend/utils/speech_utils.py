@@ -30,6 +30,11 @@ async def rewrite_for_speech(text: str, question: str = "") -> str:
     if not text or not text.strip():
         return ""
 
+    is_calculation_heavy = any(marker in text.lower() for marker in [
+        "rincian perhitungan", "kalkulasi", "tarif lembur", "uang lembur",
+        "1/173", "=", " x ", " kali ", "ditambah", "sama dengan"
+    ])
+
     # Build context-aware prompt
     if question and question.strip():
         context_info = f"""
@@ -40,6 +45,33 @@ Fokus jawab pertanyaan ini dulu, baru kasih supporting details!
 """
     else:
         context_info = ""
+
+    calculation_rules = ""
+    if is_calculation_heavy:
+        calculation_rules = """
+
+ATURAN TAMBAHAN KHUSUS TEKS KALKULASI:
+8. Jika teks berisi rumus atau perhitungan, JANGAN bacakan simbol, operator, atau persamaan satu per satu seperti robot.
+9. Ubah rumus menjadi penjelasan kontekstual yang natural.
+10. Jelaskan dengan urutan seperti orang menjelaskan lewat telepon:
+   - sebut dulu hasil akhirnya,
+   - lalu jelaskan cara hitungnya secara singkat,
+   - lalu sebut angka pentingnya.
+11. Boleh menyebut langkah hitung, tapi dalam kalimat natural.
+12. Hindari gaya seperti:
+   - "satu per seratus tujuh puluh tiga dikali..."
+   - "sama dengan..."
+   - "buka kurung... tutup kurung..."
+13. Untuk lembur, jelaskan contohnya seperti:
+   - "Per jam nilainya sekitar ..."
+   - "Jam pertama dibayar satu setengah kali tarif per jam"
+   - "Jam berikutnya dibayar dua kali tarif per jam"
+   - "Jadi total untuk tiga jam sekitar ..."
+
+CONTOH GAYA YANG DIINGINKAN:
+❌ BURUK: "Tarif lembur standar satu per seratus tujuh puluh tiga kali lima juta tujuh ratus ribu sama dengan ..."
+✅ BAGUS: "Kalau gaji pokok Anda lima juta tujuh ratus ribu, tarif lembur per jamnya sekitar tiga puluh dua ribu sembilan ratus rupiah. Jam pertama dibayar satu setengah kali tarif itu, lalu dua jam berikutnya dibayar dua kali tarif per jam. Jadi total lembur untuk tiga jam sekitar seratus lima belas ribu rupiah."
+"""
 
     prompt = f"""
 Kamu adalah asisten suara yang harus menjawab LANGSUNG ke pertanyaan user.
@@ -57,6 +89,9 @@ ATURAN WAJIB:
 5. Tetap profesional dan akurat
 6. Bunyikan jawaban seperti orang sedang menjelaskan lewat telepon, bukan membaca dokumen
 7. Jangan sebut nomor sitasi, label rujukan, atau judul bagian seperti "Rujukan Dokumen"
+8. Jika ada angka penting, nominal uang, jumlah hari, jumlah jam, tarif, atau total, tuliskan dalam BENTUK KATA-KATA bahasa Indonesia, jangan pakai digit angka.
+9. Contoh: 65.800 menjadi "enam puluh lima ribu delapan ratus", 115.151 menjadi "seratus lima belas ribu seratus lima puluh satu".
+{calculation_rules}
 
 CONTOH TRANSFORMASI:
 Pertanyaan: "Denda telat pajak berapa?"
@@ -79,6 +114,7 @@ INSTRUKSI: Jawab LANGSUNG apa yang ditanya, tetap lengkap tapi tanpa bertele-tel
         )
         
         result = response.choices[0].message.content.strip()
+        result = " ".join(result.split())
         logger.info(f"   📝 Answer-first rewrite: {len(text)} → {len(result)} chars (with question context)")
         return result
         

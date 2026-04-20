@@ -22,6 +22,7 @@ from backend.services.stt_service import STTService
 from backend.services.evaluator import evaluate_interaction_background
 from backend.utils.text_utils import clean_text_for_tts
 from backend.limiter import limiter
+from app.config import FEATURE_LLM_EVALUATOR
 
 from memory.memory_hybrid import (
     get_hybrid_history, 
@@ -108,7 +109,7 @@ async def ask_question(
             trace_id = result.get("trace_id")
 
             # 🔥 Trigger LLM Judge in background — non-blocking
-            if trace_id:
+            if trace_id and FEATURE_LLM_EVALUATOR:
                 background_tasks.add_task(
                     evaluate_interaction_background,
                     trace_id=trace_id,
@@ -499,7 +500,7 @@ async def ask_question_stream(
                     if _lf_span:
                         try: trace_id = _lf_span.trace_id
                         except Exception: pass
-                    if trace_id:
+                    if trace_id and FEATURE_LLM_EVALUATOR:
                         background_tasks.add_task(evaluate_interaction_background, trace_id=trace_id, question=req.question, context=routing["eval_ctx"], answer=full_response)
                     result_base = routing["result_base"]
                     result_base["answer"] = full_response
@@ -564,7 +565,7 @@ async def ask_question_stream(
                     _b_hidden_span = f'<span class="denai-hidden-payload" data-payload="{urllib.parse.quote(_b_payload_json)}" style="display:none"></span>'
                     await save_hybrid_message(req.session_id, "assistant", answer + _b_hidden_span)
                     b_trace_id = result.get("trace_id")
-                    if b_trace_id:
+                    if b_trace_id and FEATURE_LLM_EVALUATOR:
                         background_tasks.add_task(evaluate_interaction_background, trace_id=b_trace_id, question=req.question, context=answer, answer=answer)
                     # HC topic tracking (b_only = analytics — classify dari pertanyaan)
                     _hc_topic = _quick_topic_classify(routing.get("query_for_b", req.question))
@@ -650,7 +651,7 @@ async def ask_question_stream(
                 try: trace_id = _lf_span.trace_id
                 except Exception: pass
 
-            if trace_id:
+            if trace_id and FEATURE_LLM_EVALUATOR:
                 background_tasks.add_task(
                     evaluate_interaction_background,
                     trace_id=trace_id,

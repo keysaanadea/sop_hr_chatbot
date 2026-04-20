@@ -46,7 +46,7 @@ logger = logging.getLogger(__name__)
 from app.config import (
     OPENAI_API_KEY, PINECONE_API_KEY, PINECONE_INDEX,
     EMBEDDING_MODEL, COHERE_API_KEY, COHERE_MODEL,
-    RAG_TOP_K, RAG_RETRIEVAL_K, RAG_MIN_SCORE, LLM_MODEL, LLM_TEMPERATURE,
+    RAG_TOP_K, RAG_RETRIEVAL_K, RAG_MIN_SCORE, LLM_MODEL, RAG_LLM_TEMPERATURE,
     PINECONE_NAMESPACE
 )
 
@@ -65,6 +65,203 @@ class RAGMetrics:
 
 metrics = RAGMetrics()
 satpam_aturan = ConstraintInterceptor()
+
+
+def _strip_html_tags(text: str) -> str:
+    return re.sub(r"<[^>]+>", " ", text or "")
+
+
+def _extract_band_set_from_text(lower_text: str) -> List[str]:
+    band_values = set()
+
+    for start, end in re.findall(r"band\s*([1-9]\d*)\s*(?:s\/d|sd|s\.d\.|sampai|hingga|-)\s*([1-9]\d*)", lower_text):
+        try:
+            start_i = int(start)
+            end_i = int(end)
+            lo, hi = sorted((start_i, end_i))
+            for value in range(lo, hi + 1):
+                band_values.add(str(value))
+        except ValueError:
+            continue
+
+    for group in re.findall(r"band\s+((?:[1-9]\d*\s*(?:,|dan|atau)?\s*){1,8})", lower_text):
+        for value in re.findall(r"[1-9]\d*", group):
+            band_values.add(value)
+
+    for value in re.findall(r"band\s*([1-9]\d*)", lower_text):
+        band_values.add(value)
+
+    return sorted(band_values, key=lambda x: int(x))
+
+
+def _detect_document_eligibility_conflict(
+    matches: List[Dict],
+    user_band: str,
+    sop_topic: str,
+) -> Optional[Dict[str, str]]:
+    """
+    Deterministic gate for explicit eligibility conflicts sourced from retrieved text.
+    The document wins if it clearly restricts eligibility to certain band(s) and
+    the trusted login/profile band falls outside that set.
+    """
+    if not user_band or not user_band.isdigit():
+        return None
+
+    normalized_band = user_band.strip()
+    for match in matches or []:
+        metadata = match.get("metadata", {}) or {}
+        raw_text = _strip_html_tags(metadata.get("text", ""))
+        text = re.sub(r"\s+", " ", raw_text).strip()
+        lower = text.lower()
+
+        restrictive_markers = [
+            "hanya",
+            "khusus",
+            "diberikan kepada",
+            "berlaku untuk",
+            "yang berhak",
+            "berhak atas",
+            "eligible",
+            "job grade",
+        ]
+        if any(marker in lower for marker in restrictive_markers) and "band" in lower:
+            allowed_bands = _extract_band_set_from_text(lower)
+            if allowed_bands and normalized_band not in allowed_bands:
+                return {
+                    "reason": text[:300],
+                    "source": metadata.get("filename") or metadata.get("source_file") or "Dokumen SOP",
+                    "section": metadata.get("heading") or metadata.get("parent_section") or metadata.get("section_title") or "Bagian tidak spesifik",
+                    "allowed_bands": ", ".join(f"Band {value}" for value in allowed_bands),
+                    "sop_topic": sop_topic or "general",
+                }
+    return None
+
+
+def _detect_rules_eligibility_conflict(
+    rules_map: Dict[str, Dict],
+    user_band: str,
+    sop_topic: str,
+) -> Optional[Dict[str, str]]:
+    """
+    Mendahulukan rules_json dari Supabase sebagai source of truth.
+    Jika rules hasil ingest secara eksplisit membatasi eligibility ke band tertentu
+    dan band user login berada di luar daftar itu, konflik harus dihormati.
+    """
+    if not user_band or not user_band.isdigit():
+        return None
+
+    normalized_band = user_band.strip()
+    restrictive_markers = [
+        "hanya",
+        "khusus",
+        "diberikan kepada",
+        "hanya diberikan",
+        "yang berhak",
+        "berhak atas",
+        "berlaku untuk",
+        "job grade",
+        "band",
+    ]
+
+    for filename, payload in (rules_map or {}).items():
+        constraints = payload.get("constraints", []) if isinstance(payload, dict) else []
+        if not isinstance(constraints, list):
+            continue
+
+        for rule in constraints:
+            if not isinstance(rule, dict):
+                continue
+
+            rule_type = str(rule.get("type", "")).lower()
+            category = str(rule.get("category", "")).lower()
+            severity = str(rule.get("severity", "")).lower()
+            applies_to = str(rule.get("applies_to", "") or "")
+            value = str(rule.get("value", "") or "")
+            condition = str(rule.get("condition", "") or "")
+            description = str(rule.get("description", "") or "")
+            source_section = str(rule.get("source_section", "") or "")
+
+            combined = " ".join(
+                part for part in [applies_to, value, condition, description, source_section] if part
+            ).strip()
+            lower = combined.lower()
+            if "band" not in lower:
+                continue
+
+            is_eligibility_rule = (
+                rule_type in {"eligibility", "prohibition", "requirement"}
+                or category in {"eligibility", "prohibition"}
+                or severity == "critical"
+            )
+            if not is_eligibility_rule and not any(marker in lower for marker in restrictive_markers):
+                continue
+
+            allowed_bands = _extract_band_set_from_text(lower)
+            if not allowed_bands:
+                continue
+
+            if normalized_band not in allowed_bands:
+                reason = description.strip() or combined.strip()
+                return {
+                    "reason": reason[:300],
+                    "source": filename or "Dokumen SOP",
+                    "section": source_section or "Rules Supabase",
+                    "allowed_bands": ", ".join(f"Band {value}" for value in allowed_bands),
+                    "sop_topic": sop_topic or "general",
+                }
+    return None
+
+
+def _build_eligibility_conflict_response(user_band: str, conflict: Dict[str, str]) -> str:
+    source = conflict.get("source", "Dokumen SOP")
+    section = conflict.get("section", "Bagian tidak spesifik")
+    reason = conflict.get("reason", "").strip()
+    allowed_bands = conflict.get("allowed_bands", "")
+    sop_topic = conflict.get("sop_topic", "general")
+    topic_titles = {
+        "lembur": "Perhitungan Upah Kerja Lembur",
+        "perjalanan_dinas": "Fasilitas Perjalanan Dinas",
+        "tunjangan": "Informasi Tunjangan",
+        "relokasi": "Fasilitas Relokasi",
+        "karir": "Informasi Karir",
+        "phk": "Informasi PHK/Pensiun",
+        "cuti": "Informasi Cuti",
+        "kesehatan": "Informasi Fasilitas Kesehatan",
+        "disiplin": "Informasi Ketentuan",
+    }
+    title = topic_titles.get(sop_topic, "Informasi Kebijakan")
+    allowed_text = f" Ketentuan ini ditujukan untuk {allowed_bands}." if allowed_bands else ""
+    status_map = {
+        "lembur": "Untuk profil Anda saat ini, upah lembur ini tidak berlaku.",
+        "perjalanan_dinas": "Untuk profil Anda saat ini, fasilitas ini tidak dapat diberikan.",
+        "tunjangan": "Untuk profil Anda saat ini, manfaat ini tidak dapat diberikan.",
+        "relokasi": "Untuk profil Anda saat ini, fasilitas relokasi ini tidak berlaku.",
+        "karir": "Untuk profil Anda saat ini, ketentuan ini belum dapat diterapkan.",
+        "phk": "Untuk profil Anda saat ini, ketentuan ini belum dapat diterapkan.",
+        "cuti": "Untuk profil Anda saat ini, ketentuan ini belum dapat diterapkan.",
+        "kesehatan": "Untuk profil Anda saat ini, fasilitas ini tidak dapat diberikan.",
+        "disiplin": "Untuk profil Anda saat ini, ketentuan ini tidak dapat diterapkan seperti yang ditanyakan.",
+    }
+    short_status = status_map.get(sop_topic, "Untuk profil Anda saat ini, ketentuan ini tidak dapat diterapkan seperti yang ditanyakan.")
+    return (
+        f"<h3>{title}</h3>"
+        f"<p>{short_status}</p>"
+        "<div style=\"background-color: #fff9f0; border: 1px solid rgba(245,225,192,0.35); border-radius: 16px; "
+        "padding: 28px 32px; margin-bottom: 20px; position: relative; overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,0.04);\">"
+        "<div style=\"display: flex; align-items: center; gap: 10px; margin-bottom: 14px;\">"
+        "<span class=\"material-symbols-outlined\" style=\"color: #d97706; font-size: 18px;\">gavel</span>"
+        "<span style=\"font-size: 11px; font-weight: 800; color: #92400e; text-transform: uppercase; letter-spacing: 0.2em;\">Penyesuaian Aturan</span>"
+        "</div>"
+        f"<div style=\"color: #78350f; font-size: 14px; line-height: 1.7;\">Berdasarkan dokumen yang ditemukan, aturan kelayakannya menyebut: {reason}.{allowed_text} "
+        f"Karena profil Anda saat ini adalah Band {user_band}, jawaban mengikuti ketentuan tersebut.</div>"
+        "</div>"
+        "<h3>Penjelasan Aturan</h3>"
+        "<p>Saya tetap bisa menjelaskan aturan umumnya sebagai informasi. Namun, perhitungan atau manfaat personal baru bisa diterapkan jika profil Anda sesuai dengan syarat yang tertulis pada dokumen.</p>"
+        "<h3>Rujukan Dokumen</h3>"
+        "<ul>"
+        f"<li><strong>[1] Sumber:</strong> {source} | <strong>Bagian:</strong> {section}</li>"
+        "</ul>"
+    )
 
 def validate_input(question: str) -> Tuple[bool, str]:
     if not question or not question.strip():
@@ -208,7 +405,7 @@ class RAGEngine:
         lf_callbacks = [lf_callback] if lf_callback else []
 
         self.llm = ChatOpenAI(
-            model=LLM_MODEL, temperature=LLM_TEMPERATURE, openai_api_key=OPENAI_API_KEY,
+            model=LLM_MODEL, temperature=RAG_LLM_TEMPERATURE, openai_api_key=OPENAI_API_KEY,
             timeout=30, max_retries=1, callbacks=lf_callbacks
         )
         self.embeddings = OpenAIEmbeddings(
@@ -497,6 +694,23 @@ async def answer_question_async(
         context_str = "\n\n".join(context_parts)
         primary_source = relevant_filenames[0] if relevant_filenames else None
         unique_sources = list(dict.fromkeys(relevant_filenames))  # dedup, preserve order
+        rules_map = await satpam_aturan.get_rules_map_async(unique_sources)
+        if rules_map:
+            logger.info(f"📘 Loaded document_rules for {len(rules_map)} source file(s) before eligibility check")
+        elif unique_sources:
+            logger.info("📘 No document_rules found for retrieved files; eligibility check will fallback to chunk text")
+
+        eligibility_conflict = None
+        if _band_from_prefix:
+            eligibility_conflict = _detect_rules_eligibility_conflict(rules_map, _band_from_prefix, _sop_topic_async)
+            if not eligibility_conflict:
+                eligibility_conflict = _detect_document_eligibility_conflict(matches, _band_from_prefix, _sop_topic_async)
+            if eligibility_conflict:
+                logger.warning(
+                    f"🛑 Eligibility conflict detected | sop_topic={_sop_topic_async} | user_band={_band_from_prefix} | "
+                    f"source={eligibility_conflict.get('source')} | section={eligibility_conflict.get('section')}"
+                )
+                return _build_eligibility_conflict_response(_band_from_prefix, eligibility_conflict)
 
         # Tools & Policy Injections
         tool_info = ""
@@ -609,14 +823,20 @@ Anda adalah Asisten Profesional HRD PT Semen Indonesia.
 === CRITICAL RULES ===
 1. Jawab HANYA menggunakan informasi dari [KNOWLEDGE BASE].
 2. 🚨 CEK KELAYAKAN (ELIGIBILITY) SEBELUM MENGHITUNG: Anda WAJIB memeriksa apakah user berhak atas fasilitas tersebut berdasarkan aturan di [KNOWLEDGE BASE].
-   - Contoh: Upah Kerja Lembur HANYA diberikan untuk karyawan Job Grade 10 ke bawah atau Band 5.
-   - JIKA user menyebutkan ia adalah Band 1, 2, 3, atau 4 dan meminta hitungan lembur, Anda DILARANG KERAS memberikan hitungan/rumus. Anda WAJIB menolak dengan sopan dan menjelaskan bahwa sesuai aturan, Band tersebut tidak mendapatkan upah lembur.
-   - [BARU] JIKA user TIDAK MENYEBUTKAN Band/Grade mereka sama sekali, Anda WAJIB: (1) jelaskan terlebih dahulu syarat kelayakannya dari dokumen, KEMUDIAN (2) tetap berikan penjelasan rumus/aturan/tarif sebagai informasi simulasi agar user tahu cara perhitungannya.
+   - JIKA sistem/login menyediakan konteks terpercaya seperti prefix "[Nama: ..., Band: X, ...]", ANGGAP itu sebagai data user yang valid dan GUNAKAN Band X sebagai acuan personalisasi jawaban.
+   - JIKA user atau konteks login menyebut band/grade/jabatan tertentu, cocokan kelayakannya secara ketat dengan dokumen.
+   - UNTUK SYARAT NUMERIK EKSPLISIT seperti masa kerja, jumlah hari, bulan, tahun, jam, kilometer, band, atau grade: bandingkan angka user dengan angka dokumen secara literal/aritmetis sebelum menulis berhak atau tidak berhak. Jika syarat minimal 3 bulan dan user menyebut 6 bulan, jawab BERHAK. Jika syarat minimal 10 tahun dan user menyebut 9 tahun, jawab TIDAK BERHAK.
+   - JIKA user TIDAK menyebutkan band/grade mereka dan sistem juga tidak punya konteks terpercaya, JANGAN mengasumsikan band tertentu. Jelaskan syarat kelayakan dari dokumen, lalu jika memungkinkan berikan simulasi netral/umum tanpa mempersonalisasi band.
+   - JIKA hasil pencocokan menunjukkan KONFLIK (misalnya profil user/login mengatakan Band 3 tetapi dokumen menyatakan manfaat hanya untuk Band 5 / entitas lain), MAKA DAHULUKAN FAKTA DOKUMEN. Anda WAJIB:
+     1. menyatakan putusan personal user dengan tegas di awal,
+     2. TIDAK memberikan hitungan atau total personal untuk user tersebut,
+     3. TETAP menjelaskan aturan umum, syarat, skema, atau kapan manfaat itu berlaku agar jawaban tetap lengkap dan berguna.
+   - Dalam kondisi konflik, blok hanya kesimpulan/hitungan personal. Penjelasan aturan umum tetap boleh dan sebaiknya tetap lengkap.
 3. 🚨 KESEIMBANGAN ANTI-HALUSINASI & KELENTURAN (SANGAT KRITIS):
    - CEK TOPIK ALIEN: Coba lihat [KNOWLEDGE BASE] dengan seksama. Apakah topik yang ditanyakan SAMA SEKALI TIDAK ADA referensinya di sana (bukan hanya mirip topiknya, tapi benar-benar tidak ada sama sekali di seluruh teks)? JIKA YA (Topik Alien), Anda WAJIB BERHENTI dan HANYA MENGELUARKAN KODE INI TANPA TAMBAHAN TEKS LAIN:
 [DATA_TIDAK_DITEMUKAN_DI_SOP]
    - CEK TOPIK RELEVAN TAPI KURANG DATA: JIKA topik yang ditanyakan ADA di [KNOWLEDGE BASE] (misal: Lembur, Perjalanan Dinas, Hari Libur, UPD, akomodasi, tunjangan), tetapi data tidak cukup untuk hitungan angka pasti (misal: gaji pokok tidak diketahui), JANGAN GUNAKAN KODE ERROR! Anda WAJIB tetap menjawab dengan ramah berdasarkan aturan/rumus/tarif yang tersedia, dan sampaikan secara profesional bahwa Anda membutuhkan data tambahan untuk menghitung angka pastinya.
-   - 🔢 KHUSUS TABEL TARIF (UPD, Lembur, Akomodasi, dll): Jika tabel tarif PER BAND tersedia di [KNOWLEDGE BASE] dan user tidak menyebutkan band-nya, WAJIB tampilkan perhitungan untuk SEMUA band dari tabel. JANGAN gunakan kode error hanya karena band tidak disebutkan — data sudah ada di tabel.
+   - 🔢 KHUSUS TABEL TARIF (UPD, Lembur, Akomodasi, dll): Jika tabel tarif atau kategori tarif tersedia di [KNOWLEDGE BASE] dan user tidak menyebutkan band/kategori spesifik, jelaskan seluruh opsi yang memang tertulis di dokumen dan relevan dengan pertanyaan user. Jangan menghilangkan opsi yang penting, dan jangan mengarang opsi baru.
    - CEK TOPIK ADA TAPI DATA TERBATAS: Jika topik ada namun informasinya tidak lengkap, jawab HANYA berdasarkan yang BENAR-BENAR TERTULIS di [KNOWLEDGE BASE]. DILARANG menambahkan informasi dari pengetahuan umum.
 4. 🚫 CEK RELEVANSI BERDASARKAN ISI PASAL, BUKAN NAMA FILE:
    Sebelum menggunakan isi sebuah chunk, pastikan ISI TEKS di dalamnya relevan dengan topik kompensasi yang ditanyakan user.
@@ -629,6 +849,12 @@ Anda adalah Asisten Profesional HRD PT Semen Indonesia.
 5. 🚫 DILARANG MERANGKAI ATURAN LINTAS TOPIK: DILARANG KERAS memaksakan angka/aturan dari satu konteks (misal: nominal Tunjangan Tugas) untuk menjawab konteks lain (misal: Upah Lembur), meski berasal dari file yang sama.
 6. Angka tarif, jarak, dan durasi HARUS persis sama dengan dokumen.
 7. 🔥 TUGAS KALKULASI: JIKA ADA angka jarak (km) atau durasi (jam) dari [INFO SISTEM & INSTRUKSI MUTLAK], WAJIB gunakan angka tersebut.
+10. 🧮 KALKULASI HARUS SELESAI (WAJIB): Jika user meminta "hitung", "simulasi", "berapa total", atau memberi beberapa kondisi/skenario, Anda WAJIB:
+   - menghitung setiap skenario secara terpisah,
+   - menuliskan subtotal tiap skenario jika ada lebih dari satu,
+   - dan mengakhiri jawaban dengan TOTAL AKHIR/GRAND TOTAL yang eksplisit.
+   Jawaban dianggap tidak lengkap jika hanya menjelaskan aturan tanpa hasil akhir yang diminta user.
+   - PENGECUALIAN: Jika ada konflik eligibility personal sesuai aturan di atas, JANGAN tampilkan total personal user. Sebagai gantinya, tampilkan penjelasan aturan umum dan kapan/untuk siapa hitungan itu berlaku.
 8. 🚨 KEPATUHAN FORMAT: WAJIB MEMATUHI SEMUA PERINTAH di dalam [INFO SISTEM & INSTRUKSI MUTLAK] TANPA TERKECUALI!
 9. 🚨 ATURAN KUTIPAN SUMBER — WAJIB URUT & RAPI (HINDARI OVER-CITATION):
    - 🌟 WAJIB RE-INDEX: Nomor sitasi di dalam teks keluaran Anda WAJIB diurutkan dinamis mulai dari [1], lalu [2], dst., TERLEPAS dari atribut id asli tag <dokumen> di [KNOWLEDGE BASE].
@@ -847,9 +1073,32 @@ async def answer_question_stream(
         context_str = "\n\n".join(context_parts)
         primary_source = relevant_filenames[0] if relevant_filenames else None
         unique_sources = list(dict.fromkeys(relevant_filenames))  # dedup, preserve order
+        rules_map = await satpam_aturan.get_rules_map_async(unique_sources)
+        if rules_map:
+            logger.info(f"📘 [STREAM] Loaded document_rules for {len(rules_map)} source file(s) before eligibility check")
+        elif unique_sources:
+            logger.info("📘 [STREAM] No document_rules found for retrieved files; eligibility check will fallback to chunk text")
         if out_context is not None:
             out_context["context"] = context_str
             out_context["sop_topic"] = _sop_topic
+
+        # Deterministic eligibility gate using retrieved document facts.
+        # If trusted login/profile band conflicts with restrictive document eligibility,
+        # stop before the LLM can produce a contradictory personal answer.
+        if _band_from_prefix_s:
+            eligibility_conflict = _detect_rules_eligibility_conflict(rules_map, _band_from_prefix_s, _sop_topic)
+            if not eligibility_conflict:
+                eligibility_conflict = _detect_document_eligibility_conflict(matches, _band_from_prefix_s, _sop_topic)
+            if eligibility_conflict:
+                logger.warning(
+                    "⛔ [STREAM] Eligibility conflict detected | sop_topic=%s | band=%s | source=%s | section=%s",
+                    _sop_topic,
+                    _band_from_prefix_s or "-",
+                    eligibility_conflict.get("source", "-"),
+                    eligibility_conflict.get("section", "-"),
+                )
+                yield _build_eligibility_conflict_response(_band_from_prefix_s, eligibility_conflict)
+                return
 
         tool_info = ""
         travel_data = {}
@@ -949,13 +1198,20 @@ Anda adalah Asisten Profesional HRD PT Semen Indonesia.
 === CRITICAL RULES ===
 1. Jawab HANYA menggunakan informasi dari [KNOWLEDGE BASE].
 2. 🚨 CEK KELAYAKAN (ELIGIBILITY) SEBELUM MENGHITUNG: Anda WAJIB memeriksa apakah user berhak atas fasilitas tersebut berdasarkan aturan di [KNOWLEDGE BASE].
-   - Contoh: Upah Kerja Lembur HANYA diberikan untuk karyawan Job Grade 10 ke bawah atau Band 5.
-   - JIKA user menyebutkan ia adalah Band 1, 2, 3, atau 4 dan meminta hitungan lembur, Anda DILARANG KERAS memberikan hitungan/rumus. Anda WAJIB menolak dengan sopan dan menjelaskan bahwa sesuai aturan, Band tersebut tidak mendapatkan upah lembur.
+   - JIKA sistem/login menyediakan konteks terpercaya seperti prefix "[Nama: ..., Band: X, ...]", ANGGAP itu sebagai data user yang valid dan GUNAKAN Band X sebagai acuan personalisasi jawaban.
+   - JIKA user atau konteks login menyebut band/grade/jabatan tertentu, cocokan kelayakannya secara ketat dengan dokumen.
+   - UNTUK SYARAT NUMERIK EKSPLISIT seperti masa kerja, jumlah hari, bulan, tahun, jam, kilometer, band, atau grade: bandingkan angka user dengan angka dokumen secara literal/aritmetis sebelum menulis berhak atau tidak berhak. Jika syarat minimal 3 bulan dan user menyebut 6 bulan, jawab BERHAK. Jika syarat minimal 10 tahun dan user menyebut 9 tahun, jawab TIDAK BERHAK.
+   - JIKA user TIDAK menyebutkan band/grade mereka dan sistem juga tidak punya konteks terpercaya, JANGAN mengasumsikan band tertentu. Jelaskan syarat kelayakan dari dokumen, lalu jika memungkinkan berikan simulasi netral/umum tanpa mempersonalisasi band.
+   - JIKA hasil pencocokan menunjukkan KONFLIK (misalnya profil user/login mengatakan Band 3 tetapi dokumen menyatakan manfaat hanya untuk Band 5 / entitas lain), MAKA DAHULUKAN FAKTA DOKUMEN. Anda WAJIB:
+     1. menyatakan putusan personal user dengan tegas di awal,
+     2. TIDAK memberikan hitungan atau total personal untuk user tersebut,
+     3. TETAP menjelaskan aturan umum, syarat, skema, atau kapan manfaat itu berlaku agar jawaban tetap lengkap dan berguna.
+   - Dalam kondisi konflik, blok hanya kesimpulan/hitungan personal. Penjelasan aturan umum tetap boleh dan sebaiknya tetap lengkap.
 3. 🚨 KESEIMBANGAN ANTI-HALUSINASI & KELENTURAN (SANGAT KRITIS):
    - CEK TOPIK ALIEN: Coba lihat [KNOWLEDGE BASE] dengan seksama. Apakah topik yang ditanyakan SAMA SEKALI TIDAK ADA referensinya di sana (bukan hanya mirip topiknya, tapi benar-benar tidak ada sama sekali di seluruh teks)? JIKA YA (Topik Alien), Anda WAJIB BERHENTI dan HANYA MENGELUARKAN KODE INI TANPA TAMBAHAN TEKS LAIN:
 [DATA_TIDAK_DITEMUKAN_DI_SOP]
    - CEK TOPIK RELEVAN TAPI KURANG DATA: JIKA topik yang ditanyakan ADA di [KNOWLEDGE BASE] (misal: Lembur, Perjalanan Dinas, Hari Libur, UPD, akomodasi, tunjangan), tetapi data tidak cukup untuk hitungan angka pasti (misal: gaji pokok tidak diketahui), JANGAN GUNAKAN KODE ERROR! Anda WAJIB tetap menjawab dengan ramah berdasarkan aturan/rumus/tarif yang tersedia, dan sampaikan secara profesional bahwa Anda membutuhkan data tambahan untuk menghitung angka pastinya.
-   - 🔢 KHUSUS TABEL TARIF (UPD, Lembur, Akomodasi, dll): Jika tabel tarif PER BAND tersedia di [KNOWLEDGE BASE] dan user tidak menyebutkan band-nya, WAJIB tampilkan perhitungan untuk SEMUA band dari tabel. JANGAN gunakan kode error hanya karena band tidak disebutkan — data sudah ada di tabel.
+   - 🔢 KHUSUS TABEL TARIF (UPD, Lembur, Akomodasi, dll): Jika tabel tarif atau kategori tarif tersedia di [KNOWLEDGE BASE] dan user tidak menyebutkan band/kategori spesifik, jelaskan seluruh opsi yang memang tertulis di dokumen dan relevan dengan pertanyaan user. Jangan menghilangkan opsi yang penting, dan jangan mengarang opsi baru.
    - CEK TOPIK ADA TAPI DATA TERBATAS: Jika topik ada namun informasinya tidak lengkap, jawab HANYA berdasarkan yang BENAR-BENAR TERTULIS di [KNOWLEDGE BASE]. DILARANG menambahkan informasi dari pengetahuan umum.
 4. 🚫 CEK RELEVANSI BERDASARKAN ISI PASAL, BUKAN NAMA FILE:
    Sebelum menggunakan isi sebuah chunk, pastikan ISI TEKS di dalamnya relevan dengan topik kompensasi yang ditanyakan user.
@@ -968,6 +1224,12 @@ Anda adalah Asisten Profesional HRD PT Semen Indonesia.
 5. 🚫 DILARANG MERANGKAI ATURAN LINTAS TOPIK: DILARANG KERAS memaksakan angka/aturan dari satu konteks (misal: nominal Tunjangan Tugas) untuk menjawab konteks lain (misal: Upah Lembur), meski berasal dari file yang sama.
 6. Angka tarif, jarak, dan durasi HARUS persis sama dengan dokumen.
 7. 🔥 TUGAS KALKULASI: JIKA ADA angka jarak (km) atau durasi (jam) dari [INFO SISTEM & INSTRUKSI MUTLAK], WAJIB gunakan angka tersebut.
+10. 🧮 KALKULASI HARUS SELESAI (WAJIB): Jika user meminta "hitung", "simulasi", "berapa total", atau memberi beberapa kondisi/skenario, Anda WAJIB:
+   - menghitung setiap skenario secara terpisah,
+   - menuliskan subtotal tiap skenario jika ada lebih dari satu,
+   - dan mengakhiri jawaban dengan TOTAL AKHIR/GRAND TOTAL yang eksplisit.
+   Jawaban dianggap tidak lengkap jika hanya menjelaskan aturan tanpa hasil akhir yang diminta user.
+   - PENGECUALIAN: Jika ada konflik eligibility personal sesuai aturan di atas, JANGAN tampilkan total personal user. Sebagai gantinya, tampilkan penjelasan aturan umum dan kapan/untuk siapa hitungan itu berlaku.
 8. 🚨 KEPATUHAN FORMAT: WAJIB MEMATUHI SEMUA PERINTAH di dalam [INFO SISTEM & INSTRUKSI MUTLAK] TANPA TERKECUALI!
 9. 🚨 ATURAN KUTIPAN SUMBER — WAJIB URUT & RAPI (HINDARI OVER-CITATION):
    - 🌟 WAJIB RE-INDEX: Nomor sitasi di dalam teks keluaran Anda WAJIB diurutkan dinamis mulai dari [1], lalu [2], dst., TERLEPAS dari atribut id asli tag <dokumen> di [KNOWLEDGE BASE].

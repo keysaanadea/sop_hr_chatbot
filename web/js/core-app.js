@@ -956,6 +956,9 @@ function _buildRujukanCards(grouped) {
   window._rujukanChunksMap = window._rujukanChunksMap || {};
   if (window._lastSourceChunks) {
     window._rujukanChunksMap[rujukanKey] = window._lastSourceChunks;
+    try {
+      localStorage.setItem(`dp_rujukan_${rujukanKey}`, JSON.stringify(window._lastSourceChunks));
+    } catch (e) {}
   }
 
   // Capture session_id saat card dibangun — bisa dipakai setelah refresh
@@ -965,7 +968,7 @@ function _buildRujukanCards(grouped) {
     const icon = ICONS[idx % ICONS.length];
     const isLastOdd = (idx === grouped.length - 1) && (grouped.length % 2 !== 0);
     const bagianDisplay = src.bagians.filter(Boolean).join(', ');
-    return `<div class="rujukan-card${isLastOdd ? ' rujukan-card--full' : ''}" onclick="window.DocPanel?.openByRujukan('${rujukanKey}',${idx},'${_currentSessionId}')" title="Lihat dokumen">
+    return `<div class="rujukan-card${isLastOdd ? ' rujukan-card--full' : ''}" data-rujukan-key="${escapeHtml(rujukanKey)}" data-rujukan-idx="${idx}" data-session-id="${escapeHtml(_currentSessionId)}" title="Lihat dokumen" role="button" tabindex="0">
       <div class="rujukan-card-shimmer"></div>
       <div class="rujukan-card-inner">
         <div class="rujukan-card-icon">
@@ -1043,6 +1046,31 @@ function _postProcessBotHTML(html) {
   // Strip inline [N] dari teks
   const bodyHTML = _stripCitations(root.innerHTML);
   return sanitizeHtmlFragment(bodyHTML + rujukanHTML);
+}
+
+function _bindRujukanCardInteractions() {
+  const openCard = (card) => {
+    if (!card) return;
+    const rujukanKey = card.dataset.rujukanKey;
+    const idx = Number(card.dataset.rujukanIdx || "-1");
+    const sessionId = card.dataset.sessionId || "";
+    if (!rujukanKey || Number.isNaN(idx) || idx < 0) return;
+    window.DocPanel?.openByRujukan(rujukanKey, idx, sessionId);
+  };
+
+  document.addEventListener("click", (event) => {
+    const card = event.target.closest(".rujukan-card[data-rujukan-key]");
+    if (!card) return;
+    openCard(card);
+  });
+
+  document.addEventListener("keydown", (event) => {
+    if (event.key !== "Enter" && event.key !== " ") return;
+    const card = event.target.closest(".rujukan-card[data-rujukan-key]");
+    if (!card) return;
+    event.preventDefault();
+    openCard(card);
+  });
 }
 
 /**
@@ -1642,13 +1670,26 @@ window.DocPanel = (() => {
     } catch (e) { return null; }
   }
 
+  function _loadRujukanChunks(rujukanKey, sessionId) {
+    try {
+      if (rujukanKey && window._rujukanChunksMap?.[rujukanKey]?.length) {
+        return window._rujukanChunksMap[rujukanKey];
+      }
+      if (rujukanKey) {
+        const rawByKey = localStorage.getItem(`dp_rujukan_${rujukanKey}`);
+        if (rawByKey) return JSON.parse(rawByKey);
+      }
+    } catch (e) {}
+    return _loadCachedChunks(sessionId) || window._lastSourceChunks || null;
+  }
+
   /** Buka panel berdasarkan unique rujukan key + index (fix: tiap chat punya datanya sendiri) */
   function openByRujukan(rujukanKey, idx, sessionId) {
     const grouped = window._rujukanMap?.[rujukanKey];
     const src = grouped?.[idx];
     if (!src) return;
     // Prioritaskan chunks yang di-snapshot saat card dibangun, baru fallback ke session/last
-    const cachedChunks = window._rujukanChunksMap?.[rujukanKey] || _loadCachedChunks(sessionId) || window._lastSourceChunks;
+    const cachedChunks = _loadRujukanChunks(rujukanKey, sessionId);
     open(src.fileName, src.bagians, cachedChunks);
   }
 
@@ -1900,6 +1941,7 @@ window.DenaiApp = {
 };
 
 document.addEventListener("DOMContentLoaded", async () => {
+  _bindRujukanCardInteractions();
   setupEventListeners();
   await initializeApp();
 });

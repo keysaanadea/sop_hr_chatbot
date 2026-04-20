@@ -282,8 +282,22 @@ class ChatService:
             logger.info(f"⚡ SKIP paraphrase: No history")
             return current_question
         
-        # Always contextualize when history exists — let the LLM decide if context is needed
-        logger.info(f"🔄 Contextualizing with history ({len(history)} messages)")
+        ambiguous_patterns = [
+            " itu", " nya", " dia", " mereka", " tersebut", " yang tadi",
+            "it", "that", "this", "they", "he", "she", "them",
+        ]
+
+        question_lower = f" {current_question.lower()} "
+        has_ambiguity = any(pattern in question_lower for pattern in ambiguous_patterns)
+        word_count = len(current_question.split())
+
+        # Pertanyaan yang sudah panjang dan jelas biasanya justru rusak kalau dipaksa
+        # membawa konteks lama. Hanya contextualize saat memang ambigu / terlalu pendek.
+        if not has_ambiguity and word_count > 6:
+            logger.info(f"⚡ SKIP paraphrase: Question clear ({word_count} words, no ambiguity)")
+            return current_question
+
+        logger.info(f"🔄 NEED paraphrase: Ambiguous or short ({word_count} words)")
         return await self._contextualize_query(current_question, history)
 
     async def _contextualize_query(
@@ -303,37 +317,20 @@ class ChatService:
             for h in history[-4:]
         ])
 
-        prompt = f"""Diberikan riwayat percakapan berikut dan pertanyaan baru dari pengguna.
+        prompt = f"""Diberikan riwayat percakapan berikut dan pertanyaan lanjutan dari pengguna.
+Formulasikan ulang pertanyaan lanjutan tersebut menjadi satu pertanyaan mandiri (standalone query) yang komprehensif tanpa perlu membaca riwayat lagi.
+JANGAN menjawab pertanyaannya, cukup tulis ulang pertanyaannya agar jelas maksud subjeknya.
+Jika pertanyaan lanjutan sudah sangat jelas dengan sendirinya tanpa perlu history, kembalikan persis seperti aslinya.
 
-TUGAS: Tentukan apakah pertanyaan baru adalah LANJUTAN dari percakapan sebelumnya, atau topik BARU yang tidak berkaitan.
-
-ATURAN:
-1. Jika pertanyaan baru adalah LANJUTAN (ada kata ganti ambigu "ini/itu/nya", atau membutuhkan konteks dari history untuk dimengerti):
-   → Tulis ulang menjadi pertanyaan mandiri yang lengkap dengan menyisipkan konteks relevan dari history.
-   → Konteks yang WAJIB diinjeksikan jika ada: kota asal/tujuan perjalanan dinas, jarak, band/level jabatan.
-
-2. Jika pertanyaan baru adalah topik BERBEDA TOTAL dari history (ganti topik, pertanyaan sudah jelas berdiri sendiri):
-   → Kembalikan pertanyaan apa adanya TANPA mengubah atau menambah konteks dari history.
-
-DILARANG:
-- Menambahkan informasi yang TIDAK ADA di history maupun pertanyaan baru.
-- Mengubah maksud atau scope pertanyaan.
-- Menambahkan nama dokumen/SKD kecuali user memang merujuknya.
-
-Contoh LANJUTAN:
-- History: "perjalanan dinas ke Gresik dari Jakarta (781 km)" | Pertanyaan: "totalkan UPD 5 hari Band 2"
-  → "Totalkan UPD perjalanan dinas dari Jakarta ke Gresik (781 km) selama 5 hari untuk Band 2"
-
-Contoh BERBEDA TOTAL:
-- History: "halo, apa yang bisa dibantu?" | Pertanyaan: "Kerja Lembur"
-  → "Kerja Lembur"
-- History: "berapa UPD ke Surabaya?" | Pertanyaan: "syarat pengajuan cuti tahunan"
-  → "syarat pengajuan cuti tahunan"
+ATURAN TAMBAHAN:
+- Jangan tambahkan band, lokasi, kota, jabatan, atau angka dari history kecuali benar-benar dibutuhkan agar pertanyaan ambigu menjadi jelas.
+- Jika pertanyaan baru adalah topik yang sudah jelas berdiri sendiri, JANGAN bawa konteks lama.
+- DILARANG mengasumsikan detail baru yang tidak tertulis eksplisit di history maupun pertanyaan pengguna.
 
 Riwayat Percakapan:
 {context_text}
 
-Pertanyaan Baru: {current_question}
+Pertanyaan Lanjutan: {current_question}
 
 Pertanyaan Mandiri:"""
 
@@ -384,6 +381,23 @@ Pertanyaan Mandiri:"""
         group_markers = ["seluruh", "semua", "karyawan", "pegawai", "band", "divisi", "departemen"]
         calc_markers = ["lembur", "bonus", "thr", "biaya", "total uang", "simulasi", "estimasi", "jika", "misal", "kalau"]
         return any(m in q for m in group_markers) and any(m in q for m in calc_markers)
+
+    def _looks_like_personal_simulation(self, question: str) -> bool:
+        q = (question or "").lower()
+        personal_markers = [
+            " saya ", " gaji saya", "untuk saya", "yang saya dapatkan", "yang saya terima",
+            "perjalanan dinas saya", "kalau saya", "jika saya", "besok ke", "selama saya di sana"
+        ]
+        explicit_group_markers = [
+            "semua karyawan", "seluruh karyawan", "jumlah karyawan", "berapa karyawan",
+            "headcount", "penyebaran", "distribusi", "ranking", "daftar karyawan",
+            "seluruh band", "semua band", "pegawai", "orang"
+        ]
+
+        padded = f" {q} "
+        has_personal_signal = any(marker in padded for marker in personal_markers)
+        asks_group_data = any(marker in q for marker in explicit_group_markers)
+        return has_personal_signal and not asks_group_data
 
     def _build_base_data_query_for_b(self, question: str) -> str:
         q = (question or "").strip()
@@ -509,14 +523,10 @@ Balas HANYA dengan JSON valid:
             run_a = bool(parsed.get("run_a", True))
             run_b = bool(parsed.get("run_b", False))
             
-            # Jika pertanyaan PERSONAL diri sendiri (bukan tentang kelompok/karyawan lain), paksa run_b=False
-            question_lower = question.lower()
-            is_personal = (
-                ("saya" in question_lower or "gaji saya" in question_lower)
-                and not any(w in question_lower for w in ["karyawan", "seluruh", "semua", "band", "divisi", "pegawai"])
-            )
-            if is_personal:
+            # Jika pertanyaan PERSONAL diri sendiri, paksa run_b=False walaupun user role HC
+            if self._looks_like_personal_simulation(question):
                 run_b = False
+                run_a = True
 
             query_a = parsed.get("query_a") or (question if run_a else "")
             # Fallback: jika query_b kosong atau LLM mengubah terlalu jauh, gunakan pertanyaan original
